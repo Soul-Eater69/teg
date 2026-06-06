@@ -24,7 +24,7 @@ class ResolvedContext:
     ticket_id: str
     ticket_title: str
     description: str
-    primary_source: str  # "idea_card" | "description_fallback"
+    primary_source: str  # "idea_card" | "attachments_fallback"
     attachments_used: list[str] = field(default_factory=list)
     consolidated_text: str = ""
 
@@ -58,7 +58,7 @@ async def resolve_from_ticket(
         primary_source = "idea_card"
     else:
         chosen = selection.fallback
-        primary_source = "description_fallback"
+        primary_source = "attachments_fallback"
 
     async def _extract(attachment: JiraAttachment) -> tuple[str, str]:
         content = await jira_client.download_attachment(ticket.ticket_id, attachment.filename)

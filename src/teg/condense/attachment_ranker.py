@@ -1,8 +1,8 @@
 """Attachment selection for the idea-card source (TDD 3, 5.2 / ticket A7).
 
 Rules:
-  - Prefer the idea card: an attachment named/tagged ``idea_card.ppt`` / ``idea_card.pptx``
-    is the sole primary source when present.
+  - Prefer the idea card: an attachment explicitly named ``idea_card.<format>`` (exact
+    stem, any supported format) is the sole primary source when present.
   - Otherwise take the top four *supported* attachments in priority order:
     PowerPoint, then PDF, then Word. Original order is preserved within a format.
 Unsupported formats are ignored.
@@ -24,7 +24,7 @@ _FORMAT_PRIORITY: dict[str, int] = {
 }
 
 _MAX_FALLBACK_ATTACHMENTS = 4
-_IDEA_CARD_STEMS = ("idea_card", "ideacard", "idea card")
+_IDEA_CARD_STEM = "idea_card"
 
 
 def _extension(filename: str) -> str:
@@ -33,17 +33,19 @@ def _extension(filename: str) -> str:
     return name[dot:] if dot != -1 else ""
 
 
+def _stem(filename: str) -> str:
+    name = filename.lower().strip()
+    dot = name.rfind(".")
+    return name[:dot] if dot != -1 else name
+
+
 def is_supported(filename: str) -> bool:
     return _extension(filename) in _FORMAT_PRIORITY
 
 
 def is_idea_card(filename: str) -> bool:
-    """True for idea_card.ppt / idea_card.pptx (and close name variants)."""
-    name = filename.lower().strip()
-    if _extension(name) not in (".ppt", ".pptx"):
-        return False
-    stem = name[: name.rfind(".")]
-    return any(token in stem for token in _IDEA_CARD_STEMS)
+    """True only when explicitly named idea_card.<format> with a supported format."""
+    return is_supported(filename) and _stem(filename) == _IDEA_CARD_STEM
 
 
 @dataclass

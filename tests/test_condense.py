@@ -79,6 +79,14 @@ def test_idea_card_is_sole_source_when_present() -> None:
     assert selection.fallback == []
 
 
+def test_idea_card_requires_exact_name() -> None:
+    # near-miss names are NOT treated as the idea card
+    selection = select_attachments(
+        [JiraAttachment("the_idea_card.pptx"), JiraAttachment("idea_card_v2.pptx")]
+    )
+    assert selection.idea_card is None
+
+
 def test_fallback_takes_top_four_ppt_pdf_doc() -> None:
     selection = select_attachments(
         [
@@ -108,7 +116,7 @@ async def test_resolve_prefers_idea_card() -> None:
 async def test_resolve_falls_back_to_top_attachments() -> None:
     ticket = _ticket([JiraAttachment("a.docx"), JiraAttachment("b.pdf")])
     ctx = await resolve_from_ticket(ticket, FakeJira(ticket), FakeExtractor())
-    assert ctx.primary_source == "description_fallback"
+    assert ctx.primary_source == "attachments_fallback"
     assert ctx.attachments_used == ["b.pdf", "a.docx"]
 
 

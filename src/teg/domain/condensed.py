@@ -64,7 +64,7 @@ class CondensedTicket(CamelModel):
 
     ticket_id: str
     ticket_title: str
-    primary_source: str  # "idea_card" | "description_fallback"
+    primary_source: str  # "idea_card" | "attachments_fallback"
     attachments_used: list[str] = Field(default_factory=list)
     summary_fields: SummaryFields
     generation_signals: GenerationSignals

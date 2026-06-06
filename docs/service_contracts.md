@@ -40,7 +40,7 @@ JSON is `camelCase`. Field shapes follow the TDD (sections noted per contract).
   (PPT->PDF->DOC) when it is absent. Attachment text extraction is markitdown.
 
 **Response** `CondenseResponse.condensed` = `CondensedTicket` (backend stores + replays):
-- `ticketId`, `ticketTitle`, `primarySource` (`idea_card`|`description_fallback`), `attachmentsUsed[]`
+- `ticketId`, `ticketTitle`, `primarySource` (`idea_card`|`attachments_fallback`), `attachmentsUsed[]`
 - `summaryFields`: `generatedSummary`, `businessProblem`, `businessCapability`, `keyTerms[]`, `stakeholders[]`, `systemsAndProducts[]`
 - `generationSignals`: 18 arrays of `{text, source, sourceSection}`; `[]` when absent, never invented
 - `description`, `rawText`
