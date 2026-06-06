@@ -14,7 +14,6 @@ from teg.domain.condensed import (
     CondensedTicket,
     Evidence,
     GenerationSignals,
-    NormalizedContext,
     SummaryFields,
 )
 from teg.integrations.llm_client import LLMClient
@@ -69,10 +68,8 @@ async def condense(context: ResolvedContext, llm_client: LLMClient) -> Condensed
         attachments_used=list(context.attachments_used),
         summary_fields=_summary_fields(payload.get("summaryFields", {})),
         generation_signals=_generation_signals(payload.get("generationSignals", {})),
-        normalized_context=NormalizedContext(
-            description=context.description,
-            raw_text=context.consolidated_text,
-        ),
+        description=context.description,
+        raw_text=context.consolidated_text,
     )
 
 

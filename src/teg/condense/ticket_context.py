@@ -7,6 +7,7 @@ description + top-4 attachments) converge on the same :class:`ResolvedContext`.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 from teg.condense.attachment_ranker import select_attachments
@@ -59,10 +60,11 @@ async def resolve_from_ticket(
         chosen = selection.fallback
         primary_source = "description_fallback"
 
-    documents: list[tuple[str, str]] = []
-    for attachment in chosen:
+    async def _extract(attachment: JiraAttachment) -> tuple[str, str]:
         content = await jira_client.download_attachment(ticket.ticket_id, attachment.filename)
-        documents.append((attachment.filename, extractor.extract(attachment.filename, content)))
+        return attachment.filename, extractor.extract(attachment.filename, content)
+
+    documents = list(await asyncio.gather(*(_extract(a) for a in chosen)))
 
     return ResolvedContext(
         ticket_id=ticket.ticket_id,

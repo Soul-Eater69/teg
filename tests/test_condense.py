@@ -152,7 +152,9 @@ async def test_service_uses_idea_card_text_override() -> None:
     assert response.condensed.raw_text.startswith("[DESCRIPTION]")
 
 
-async def test_service_requires_some_input() -> None:
-    service = CondenseService(FakeJira(_ticket([])), FakeLLM(), FakeExtractor())
-    with pytest.raises(ValueError):
-        await service.condense(CondenseRequest())
+def test_request_requires_some_input() -> None:
+    # validation now lives on the contract, not the service
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        CondenseRequest()

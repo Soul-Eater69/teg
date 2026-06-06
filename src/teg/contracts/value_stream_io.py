@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from .condense_io import SummaryFieldsDTO
+from teg.domain.condensed import SummaryFields
 
 
 class _Camel(BaseModel):
@@ -20,7 +20,7 @@ class _Camel(BaseModel):
 
 class ValueStreamRequest(_Camel):
     ticket_id: str
-    summary_fields: SummaryFieldsDTO
+    summary_fields: SummaryFields
     requested_count: int = 10  # upper bound, not a target
     custom_instruction: str | None = None
     # OPEN #3: only the SME-selected analogs; omit to auto-use the retrieved set.

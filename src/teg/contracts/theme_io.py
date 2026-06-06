@@ -10,7 +10,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from .condense_io import GenerationSignalsDTO, SummaryFieldsDTO
+from teg.domain.condensed import GenerationSignals, SummaryFields
 
 
 class _Camel(BaseModel):
@@ -18,8 +18,8 @@ class _Camel(BaseModel):
 
 
 class CondensedContextDTO(_Camel):
-    summary_fields: SummaryFieldsDTO
-    generation_signals: GenerationSignalsDTO
+    summary_fields: SummaryFields
+    generation_signals: GenerationSignals
 
 
 class ApprovedValueStreamDTO(_Camel):

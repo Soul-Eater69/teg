@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-from teg.contracts.condense_io import (
-    CondensedTicketDTO,
-    CondenseResponse,
-    GenerationSignalsDTO,
-    SummaryFieldsDTO,
-)
+import pytest
+from pydantic import ValidationError
+
+from teg.contracts.condense_io import CondensedTicket, CondenseRequest, CondenseResponse
 from teg.contracts.theme_io import (
     ApprovedValueStreamDTO,
     CondensedContextDTO,
     ThemeGenerationRequest,
 )
 from teg.contracts.value_stream_io import RecommendationDTO, ValueStreamRequest
+from teg.domain.condensed import GenerationSignals, SummaryFields
 
 
-def _summary() -> SummaryFieldsDTO:
-    return SummaryFieldsDTO(
+def _summary() -> SummaryFields:
+    return SummaryFields(
         generated_summary="s",
         business_problem="p",
         business_capability="c",
@@ -27,12 +26,12 @@ def _summary() -> SummaryFieldsDTO:
 
 def test_condense_response_serializes_camel_case() -> None:
     response = CondenseResponse(
-        condensed=CondensedTicketDTO(
+        condensed=CondensedTicket(
             ticket_id="IDMT-1",
             ticket_title="t",
             primary_source="idea_card",
             summary_fields=_summary(),
-            generation_signals=GenerationSignalsDTO(),
+            generation_signals=GenerationSignals(),
             description="d",
             raw_text="r",
         ),
@@ -42,6 +41,12 @@ def test_condense_response_serializes_camel_case() -> None:
     data = response.model_dump(by_alias=True)
     assert data["condensed"]["summaryFields"]["generatedSummary"] == "s"
     assert data["condensed"]["generationSignals"]["marketSegments"] == []
+
+
+def test_condense_request_requires_some_input() -> None:
+    with pytest.raises(ValidationError):
+        CondenseRequest()
+    assert CondenseRequest(ticket_id="IDMT-1").ticket_id == "IDMT-1"
 
 
 def test_value_stream_request_round_trips_camel_case() -> None:
@@ -56,9 +61,6 @@ def test_value_stream_request_round_trips_camel_case() -> None:
 
 
 def test_recommendation_enforces_confidence_and_reason_bounds() -> None:
-    import pytest
-    from pydantic import ValidationError
-
     with pytest.raises(ValidationError):
         RecommendationDTO(
             value_stream_id="VSR1",
@@ -76,7 +78,7 @@ def test_theme_request_validates() -> None:
         ticket_title="t",
         condensed=CondensedContextDTO(
             summary_fields=_summary(),
-            generation_signals=GenerationSignalsDTO(),
+            generation_signals=GenerationSignals(),
         ),
         approved_value_streams=[
             ApprovedValueStreamDTO(value_stream_id="VSR1", value_stream_name="n")
