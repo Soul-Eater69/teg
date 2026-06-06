@@ -26,10 +26,22 @@ class Settings(BaseSettings):
     cosmos_key: str = ""
     cosmos_database: str = ""
 
-    # LLM
-    llm_model: str = ""
-    llm_api_key: str = ""
+    # LLM (IDP OpenAI-compatible gateway)
+    llm_base_url: str = ""
+    llm_completion_path: str = "/chat/completions"
+    llm_model: str = "gpt-5-mini-idp"
+    llm_app_id: str = ""
+    llm_api_version: str = "2024-04-01-preview"
     llm_reasoning_effort: str = "low"
+    llm_timeout_seconds: float = 60.0
+    llm_verify_ssl: bool = False
+
+    # IDP auth (token endpoint for the LLM gateway)
+    idp_auth_url: str = ""
+    idp_client_id: str = ""
+    idp_client_secret: str = ""
+    idp_user: str = ""
+    idp_password: str = ""
 
 
 def load_settings() -> Settings:
