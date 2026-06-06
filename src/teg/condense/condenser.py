@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from teg.condense.ticket_context import ResolvedContext
 from teg.domain.condensed import CondensedTicket, CondenseExtraction
-from teg.integrations.llm_client import LLMClient
+from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
 
 # The consolidated context is capped before the LLM call to control tokens (TDD 3).
@@ -25,7 +25,7 @@ async def condense(context: ResolvedContext, llm_client: LLMClient) -> Condensed
     if not context.consolidated_text.strip():
         raise CondenseError(f"No source text to condense for {context.ticket_id}")
 
-    prompt = load_prompt("condense")
+    prompt = load_prompt("condense/condense")
     system, user = prompt.render(
         ticket_id=context.ticket_id,
         consolidated_text=context.consolidated_text[:_INPUT_CHAR_LIMIT],

@@ -8,7 +8,7 @@ from teg.condense.attachment_ranker import select_attachments
 from teg.condense.condenser import condense
 from teg.condense.ticket_context import resolve_from_ticket
 from teg.contracts.condense_io import CondenseRequest
-from teg.integrations.jira_client import JiraAttachment, JiraTicket
+from teg.integrations.jira import JiraAttachment, JiraTicket
 from teg.services.condense_service import CondenseService
 
 

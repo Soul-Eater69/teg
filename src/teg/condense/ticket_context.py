@@ -11,12 +11,8 @@ import asyncio
 from dataclasses import dataclass, field
 
 from teg.condense.attachment_ranker import select_attachments
-from teg.integrations.jira_client import (
-    AttachmentTextExtractor,
-    JiraAttachment,
-    JiraClient,
-    JiraTicket,
-)
+from teg.integrations.files import AttachmentTextExtractor
+from teg.integrations.jira import JiraAttachment, JiraClient, JiraTicket
 
 
 @dataclass

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from teg.integrations.jira_client import JiraAttachment
+from teg.integrations.jira import JiraAttachment
 
 # Lower number = higher priority. PPT first: SMEs confirmed it is the common idea-card format.
 _FORMAT_PRIORITY: dict[str, int] = {

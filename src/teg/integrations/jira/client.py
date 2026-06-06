@@ -34,10 +34,3 @@ class JiraClient(Protocol):
     async def fetch_ticket(self, ticket_id: str) -> JiraTicket: ...
 
     async def download_attachment(self, ticket_id: str, filename: str) -> bytes: ...
-
-
-@runtime_checkable
-class AttachmentTextExtractor(Protocol):
-    """Extract plain text from an attachment's bytes (PPT/PDF/DOC backends)."""
-
-    def extract(self, filename: str, content: bytes) -> str: ...

@@ -9,8 +9,9 @@ from __future__ import annotations
 from teg.condense.condenser import condense as run_condense
 from teg.condense.ticket_context import resolve_from_ticket
 from teg.contracts.condense_io import CondenseRequest, CondenseResponse
-from teg.integrations.jira_client import AttachmentTextExtractor, JiraClient
-from teg.integrations.llm_client import LLMClient
+from teg.integrations.files import AttachmentTextExtractor
+from teg.integrations.jira import JiraClient
+from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
 
 
@@ -39,5 +40,5 @@ class CondenseService:
         return CondenseResponse(
             condensed=condensed,
             model=self._model_name,
-            prompt_version=load_prompt("condense").version,
+            prompt_version=load_prompt("condense/condense").version,
         )

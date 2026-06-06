@@ -34,8 +34,15 @@ class Prompt:
 
 @lru_cache(maxsize=None)
 def load_prompt(name: str) -> Prompt:
-    """Load ``src/teg/prompts/<name>.yaml`` (cached)."""
-    raw = resources.files(__package__).joinpath(f"{name}.yaml").read_text(encoding="utf-8")
+    """Load a prompt by path under ``src/teg/prompts/`` (cached).
+
+    ``name`` is a slash path without extension, e.g. ``"condense/condense"`` or
+    ``"theme/stage_prediction"``.
+    """
+    resource = resources.files(__package__)
+    for part in f"{name}.yaml".split("/"):
+        resource = resource.joinpath(part)
+    raw = resource.read_text(encoding="utf-8")
     data = yaml.safe_load(raw)
     return Prompt(
         name=name,

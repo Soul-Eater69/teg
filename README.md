@@ -29,7 +29,8 @@ src/teg/
   config/        env-driven settings
   domain/        core records - single source of truth for data shapes
   contracts/     pydantic I/O DTOs the backend calls (camelCase JSON + JSON Schema)
-  integrations/  low-level clients (Jira, Azure Search, Cosmos, LLM) - DI-injected
+  integrations/  external clients by system: llm/ (protocol + IDP gateway), jira/, files/
+  prompts/       prompt YAMLs by layer (condense/, value_stream/, theme/) + loader
   ingestion/     offline batch: historical IDMT -> Cosmos + idp_idmt_data
   condense/      5.1-5.2 condense step
   value_stream/  5.3-5.5 retrieval, merge, review-pool selection

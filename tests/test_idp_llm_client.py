@@ -8,7 +8,7 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from teg.integrations.idp_llm_client import IdpLLMClient, LLMError
+from teg.integrations.llm import IdpLLMClient, LLMError
 
 
 class _Out(BaseModel):

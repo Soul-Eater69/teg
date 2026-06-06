@@ -17,7 +17,7 @@ import httpx
 from pydantic import BaseModel
 
 from teg.config.settings import Settings
-from teg.integrations.idp_auth import IDPCustomAuth
+from teg.integrations.llm.idp_auth import IDPCustomAuth
 
 logger = logging.getLogger(__name__)
 
