@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from teg.condense.attachment_ranker import select_attachments
@@ -52,11 +50,13 @@ _LLM_JSON = {
 
 
 class FakeLLM:
+    """Validates the canned payload against the requested schema, like the real client."""
+
     def __init__(self, payload: dict | None = None) -> None:
         self._payload = payload if payload is not None else _LLM_JSON
 
-    async def complete(self, *, system: str, user: str, max_output_tokens=None) -> str:
-        return "```json\n" + json.dumps(self._payload) + "\n```"
+    async def complete(self, *, system: str, user: str, schema):
+        return schema.model_validate(self._payload)
 
 
 def _ticket(attachments: list[JiraAttachment]) -> JiraTicket:

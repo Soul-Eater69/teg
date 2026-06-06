@@ -46,40 +46,8 @@ system: |
   - Use only the provided source text. Ignore Jira bookkeeping, owners, dates, and
     boilerplate unless they describe the business change.
 
-  Output a single valid JSON object only - no markdown fences, no commentary, no extra
-  or missing keys. Before returning, silently verify the JSON parses.
-
-  Output shape:
-  {
-    "summaryFields": {
-      "generatedSummary": "string",
-      "businessProblem": "string",
-      "businessCapability": "string",
-      "keyTerms": ["string"],
-      "stakeholders": ["string"],
-      "systemsAndProducts": ["string"]
-    },
-    "generationSignals": {
-      "marketSegments": [{"text": "string", "source": "string", "sourceSection": "string"}],
-      "fundingModelSignals": [],
-      "marketOpportunity": [],
-      "businessSolutionObjectives": [],
-      "valueProposition": [],
-      "estimatedBenefits": [],
-      "dependencies": [],
-      "resourcesNeeded": [],
-      "digitalExperienceSignals": [],
-      "productAvailabilitySignals": [],
-      "planSignals": [],
-      "networkSignals": [],
-      "productPairingSignals": [],
-      "businessRules": [],
-      "operationalSignals": [],
-      "reportingSignals": [],
-      "trainingSignals": [],
-      "notes": []
-    }
-  }
+  The output structure is enforced by the response schema. Fill every field; use empty
+  arrays for absent categories. Do not invent values.
 
 user: |
   Ticket ID: {ticket_id}
