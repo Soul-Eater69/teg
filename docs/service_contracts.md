@@ -35,9 +35,9 @@ JSON is `camelCase`. Field shapes follow the TDD (sections noted per contract).
 ## Contract A - Condense  (`contracts/condense_io.py`)
 
 **Request** `CondenseRequest`
-- `ticketId` (string, required unless `ideaCardText` given - we fetch from Jira)
-- `ideaCardText` (string, optional - supply text directly, skip Jira)
-- `options.extractionBackend` (`auto`|`current`|`unstructured`, default `auto`), `options.maxAttachments` (default 4)
+- `ticketId` (string, required) - the only input. We fetch from Jira, locate the idea
+  card (`idea_card.ppt`/`idea_card.pptx`), and fall back to the top-4 attachments
+  (PPT->PDF->DOC) when it is absent. Attachment text extraction is markitdown.
 
 **Response** `CondenseResponse.condensed` = `CondensedTicket` (backend stores + replays):
 - `ticketId`, `ticketTitle`, `primarySource` (`idea_card`|`description_fallback`), `attachmentsUsed[]`
@@ -80,7 +80,7 @@ JSON is `camelCase`. Field shapes follow the TDD (sections noted per contract).
 ## Open items - need a decision before final handoff
 
 1. **Ingestion trigger** - backend-triggered or our offline batch? Assumed: our offline batch (no live contract).
-2. **Who fetches Jira** for a live idea card - us (`ticketId`, default) or backend (`ideaCardText`)? Assumed: us.
+2. ~~Who fetches Jira~~ - RESOLVED: backend sends only `ticketId`; we fetch from Jira and resolve the idea card / attachments.
 3. **Historical-ticket HITL** - does the SME pick the 6 analogs inside B (then B splits into `retrieveCandidates` + `predict`), or auto-use? Assumed: single call, auto-use, `selectedHistoricalTicketIds` optional.
 4. **Sync vs async transport** - VS ~35s, theme generation longer. Blocking HTTP, or job + poll/stream? Recommend async job for C (and optionally B). Backend's call.
 5. **Theme call granularity** - one C call returning all packages, or one per approved VS (better progress/partial-failure)? Assumed: one call, array response.

@@ -74,15 +74,3 @@ async def resolve_from_ticket(
         attachments_used=[a.filename for a in chosen],
         consolidated_text=_consolidate(ticket.description, documents),
     )
-
-
-def resolve_from_text(ticket_id: str, text: str, *, title: str = "") -> ResolvedContext:
-    """Backend supplied idea-card text directly; skip Jira."""
-    return ResolvedContext(
-        ticket_id=ticket_id,
-        ticket_title=title,
-        description=text,
-        primary_source="idea_card",
-        attachments_used=[],
-        consolidated_text=_section("DESCRIPTION", text),
-    )

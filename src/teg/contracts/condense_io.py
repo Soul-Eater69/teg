@@ -1,34 +1,20 @@
 """Contract A - Condense. Backend -> us; backend stores the response.
 
-The condensed records themselves live in ``teg.domain.condensed`` (single source of
-truth) and serialize to camelCase JSON directly. This module only adds the request /
-response envelope. Generate JSON Schema for the backend with
+The backend sends only a ticket id. We fetch from Jira, locate the idea card
+(idea_card.ppt/pptx), and fall back to the top-4 attachments when it is absent.
+The condensed records live in ``teg.domain.condensed`` (single source of truth) and
+serialize to camelCase JSON. JSON Schema for the backend:
 ``CondenseResponse.model_json_schema(by_alias=True)``.
 """
 
 from __future__ import annotations
 
-from pydantic import Field, model_validator
-
 from teg.domain.base import CamelModel
 from teg.domain.condensed import CondensedTicket  # re-exported for the boundary
 
 
-class CondenseOptions(CamelModel):
-    extraction_backend: str = "auto"  # auto | current | unstructured
-    max_attachments: int = 4
-
-
 class CondenseRequest(CamelModel):
-    ticket_id: str | None = None  # required unless idea_card_text is given
-    idea_card_text: str | None = None  # optional override; skips Jira fetch
-    options: CondenseOptions = Field(default_factory=CondenseOptions)
-
-    @model_validator(mode="after")
-    def _require_some_input(self) -> "CondenseRequest":
-        if not self.ticket_id and not self.idea_card_text:
-            raise ValueError("ticket_id or idea_card_text is required")
-        return self
+    ticket_id: str  # the only input; we resolve the idea card / attachments from Jira
 
 
 class CondenseResponse(CamelModel):
@@ -37,4 +23,4 @@ class CondenseResponse(CamelModel):
     prompt_version: str
 
 
-__all__ = ["CondenseOptions", "CondenseRequest", "CondenseResponse", "CondensedTicket"]
+__all__ = ["CondenseRequest", "CondenseResponse", "CondensedTicket"]

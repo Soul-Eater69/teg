@@ -143,17 +143,7 @@ async def test_service_condenses_from_ticket_id_and_serializes_camel_case() -> N
     assert data["model"] == "test-model"
 
 
-async def test_service_uses_idea_card_text_override() -> None:
-    service = CondenseService(FakeJira(_ticket([])), FakeLLM(), FakeExtractor())
-    response = await service.condense(
-        CondenseRequest(ticket_id="IDMT-9", idea_card_text="Direct idea card text")
-    )
-    assert response.condensed.primary_source == "idea_card"
-    assert response.condensed.raw_text.startswith("[DESCRIPTION]")
-
-
-def test_request_requires_some_input() -> None:
-    # validation now lives on the contract, not the service
+def test_request_requires_ticket_id() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):

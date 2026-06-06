@@ -7,7 +7,7 @@ tests pass fakes - no live Jira/LLM calls in tests.
 from __future__ import annotations
 
 from teg.condense.condenser import condense as run_condense
-from teg.condense.ticket_context import resolve_from_text, resolve_from_ticket
+from teg.condense.ticket_context import resolve_from_ticket
 from teg.contracts.condense_io import CondenseRequest, CondenseResponse
 from teg.integrations.jira_client import AttachmentTextExtractor, JiraClient
 from teg.integrations.llm_client import LLMClient
@@ -29,17 +29,12 @@ class CondenseService:
         self._model_name = model_name
 
     async def condense(self, request: CondenseRequest) -> CondenseResponse:
-        """Resolve the idea-card source (idea-card-first), run the condense pass.
+        """Fetch the ticket, resolve the idea-card source, run the condense pass.
 
-        Input is guaranteed by CondenseRequest validation (ticket_id or idea_card_text).
         Backlog: A7 (attachment priority), B1 (condense), B2 (ticket context).
         """
-        if request.idea_card_text:
-            context = resolve_from_text(request.ticket_id or "", request.idea_card_text)
-        else:
-            ticket = await self._jira.fetch_ticket(request.ticket_id)
-            context = await resolve_from_ticket(ticket, self._jira, self._extractor)
-
+        ticket = await self._jira.fetch_ticket(request.ticket_id)
+        context = await resolve_from_ticket(ticket, self._jira, self._extractor)
         condensed = await run_condense(context, self._llm)
         return CondenseResponse(
             condensed=condensed,
