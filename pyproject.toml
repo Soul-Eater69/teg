@@ -15,9 +15,11 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
 ]
-# Runtime attachment extraction (heavy; install for production: uv sync --extra extract)
+# Runtime attachment extraction (install for production: uv sync --extra extract)
 extract = [
-    "markitdown[all]>=0.0.1a2",
+    "pypdfium2>=4.0",
+    "python-pptx>=0.6",
+    "python-docx>=1.0",
 ]
 
 [build-system]

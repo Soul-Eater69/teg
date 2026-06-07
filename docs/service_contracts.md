@@ -37,7 +37,8 @@ JSON is `camelCase`. Field shapes follow the TDD (sections noted per contract).
 **Request** `CondenseRequest`
 - `ticketId` (string, required) - the only input. We fetch from Jira, locate the idea
   card (`idea_card.ppt`/`idea_card.pptx`), and fall back to the top-4 attachments
-  (PPT->PDF->DOC) when it is absent. Attachment text extraction is markitdown.
+  (PPT->PDF->DOC) when it is absent. Attachment text extraction is text-layer only
+  (pypdfium2 / python-pptx / python-docx); no OCR, legacy .ppt/.doc skipped.
 
 **Response** `CondenseResponse.condensed` = `CondensedTicket` (backend stores + replays):
 - `ticketId`, `ticketTitle`, `primarySource` (`idea_card`|`attachments_fallback`), `attachmentsUsed[]`

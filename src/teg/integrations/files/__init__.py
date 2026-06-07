@@ -1,9 +1,9 @@
-"""File text extraction: protocol + markitdown implementation."""
+"""File text extraction: protocol + per-format implementation."""
 
-from teg.integrations.files.extractor import AttachmentTextExtractor
-from teg.integrations.files.markitdown_extractor import (
-    MarkitdownExtractor,
+from teg.integrations.files.document_extractor import (
+    DocumentExtractor,
     build_attachment_extractor,
 )
+from teg.integrations.files.extractor import AttachmentTextExtractor
 
-__all__ = ["AttachmentTextExtractor", "MarkitdownExtractor", "build_attachment_extractor"]
+__all__ = ["AttachmentTextExtractor", "DocumentExtractor", "build_attachment_extractor"]

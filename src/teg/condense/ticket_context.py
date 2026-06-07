@@ -83,8 +83,8 @@ async def resolve_from_ticket(
 
     async def _extract(attachment: JiraAttachment) -> tuple[str, str]:
         content = await jira_client.download_attachment(attachment)
-        # markitdown is synchronous CPU work - run it off the event loop so it does
-        # not block concurrent downloads (and so extractions can overlap).
+        # Extraction is synchronous CPU work - run it off the event loop so it does
+        # not block concurrent downloads (pypdfium2 also releases the GIL while parsing).
         text = await asyncio.to_thread(extractor.extract, attachment.filename, content)
         return attachment.filename, text
 
