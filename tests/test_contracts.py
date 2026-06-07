@@ -11,8 +11,9 @@ from teg.contracts.theme_io import (
     CondensedContextDTO,
     ThemeGenerationRequest,
 )
-from teg.contracts.value_stream_io import RecommendationDTO, ValueStreamRequest
+from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.domain.condensed import GenerationSignals, SummaryFields
+from teg.domain.value_stream import ValueStreamRecommendation
 
 
 def _summary() -> SummaryFields:
@@ -60,16 +61,25 @@ def test_value_stream_request_round_trips_camel_case() -> None:
     assert request.requested_count == 5
 
 
-def test_recommendation_enforces_confidence_and_reason_bounds() -> None:
+def test_recommendation_confidence_bounded_to_unit_interval() -> None:
     with pytest.raises(ValidationError):
-        RecommendationDTO(
+        ValueStreamRecommendation(
             value_stream_id="VSR1",
             value_stream_name="n",
-            confidence=0.1,  # below 0.30 floor
+            confidence=1.5,  # out of 0-1
             support_type="direct",
             reason="ok",
             bucket="semantic_only",
         )
+    rec = ValueStreamRecommendation(
+        value_stream_id="VSR1",
+        value_stream_name="n",
+        confidence=0.82,
+        support_type="implied",
+        reason="downstream billing impact",
+        bucket="semantic_plus_historic",
+    )
+    assert rec.confidence == 0.82
 
 
 def test_theme_request_validates() -> None:
