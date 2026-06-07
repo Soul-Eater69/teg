@@ -1,8 +1,11 @@
 """Manual smoke test for the condense step against the real Jira + LLM gateway.
 
-Reports per-call LLM timings (summary + signals run in parallel) and the total
-end-to-end condense time, then prints the condensed package (minus the bulky
-description / rawText).
+Times every stage - Jira fetch, attachment download, markitdown extract, and the
+two parallel LLM calls - so you can see exactly where the time goes. Then prints
+the condensed package (minus the bulky description / rawText).
+
+The condense LLM-gather wall vs the sum of the two call times tells you whether the
+calls actually ran in parallel.
 
 Prerequisites:
   1. cp .env.example .env  and fill in the gateway + IDP auth + Jira values
@@ -17,17 +20,45 @@ import json
 import sys
 from time import perf_counter
 
+from teg.condense.condenser import condense
+from teg.condense.ticket_context import resolve_from_ticket
 from teg.config.settings import load_settings
-from teg.contracts.condense_io import CondenseRequest
 from teg.integrations.files import build_attachment_extractor
 from teg.integrations.jira import build_jira_client
 from teg.integrations.llm import build_llm_client
-from teg.services.condense_service import CondenseService
+from teg.prompts.loader import load_prompt
 
 
-class _TimingLLM:
-    """Wraps the real LLM client to record each call's duration + schema."""
+class _TimedJira:
+    def __init__(self, inner) -> None:
+        self._inner = inner
+        self.downloads: list[tuple[str, float]] = []
 
+    async def fetch_ticket(self, ticket_id):
+        return await self._inner.fetch_ticket(ticket_id)
+
+    async def download_attachment(self, attachment):
+        start = perf_counter()
+        try:
+            return await self._inner.download_attachment(attachment)
+        finally:
+            self.downloads.append((attachment.filename, perf_counter() - start))
+
+
+class _TimedExtractor:
+    def __init__(self, inner) -> None:
+        self._inner = inner
+        self.extracts: list[tuple[str, float]] = []
+
+    def extract(self, filename, content):
+        start = perf_counter()
+        try:
+            return self._inner.extract(filename, content)
+        finally:
+            self.extracts.append((filename, perf_counter() - start))
+
+
+class _TimedLLM:
     def __init__(self, inner) -> None:
         self._inner = inner
         self.calls: list[tuple[str, float]] = []
@@ -42,32 +73,50 @@ class _TimingLLM:
 
 async def main(ticket_id: str) -> None:
     settings = load_settings()
-    llm = _TimingLLM(build_llm_client(settings))
-    service = CondenseService(
-        build_jira_client(settings),
-        llm,
-        build_attachment_extractor(),
-        model_name=settings.llm_model,
+    jira = _TimedJira(build_jira_client(settings))
+    extractor = _TimedExtractor(build_attachment_extractor())
+    llm = _TimedLLM(build_llm_client(settings))
+
+    t = perf_counter()
+    ticket = await jira.fetch_ticket(ticket_id)
+    fetch_s = perf_counter() - t
+
+    t = perf_counter()
+    context = await resolve_from_ticket(
+        ticket,
+        jira,
+        extractor,
         doc_char_budget=settings.condense_doc_char_budget,
         max_attachments=settings.condense_max_attachments,
     )
+    resolve_s = perf_counter() - t
 
-    start = perf_counter()
-    response = await service.condense(CondenseRequest(ticket_id=ticket_id))
-    total = perf_counter() - start
+    t = perf_counter()
+    condensed = await condense(context, llm)
+    condense_s = perf_counter() - t
 
-    print("# timings (summary + signals run in parallel)")
+    total = fetch_s + resolve_s + condense_s
+
+    print("# stage timings")
+    print(f"#   jira.fetch_ticket           {fetch_s:6.2f}s")
+    print(f"#   resolve (download+extract)  {resolve_s:6.2f}s")
+    for name, secs in jira.downloads:
+        print(f"#       download {name:<22} {secs:6.2f}s")
+    for name, secs in extractor.extracts:
+        print(f"#       extract  {name:<22} {secs:6.2f}s  (markitdown)")
+    print(f"#   condense LLM gather wall    {condense_s:6.2f}s")
     for name, secs in llm.calls:
-        print(f"#   {name:<18} {secs:6.2f}s")
-    print(f"#   {'TOTAL end-to-end':<18} {total:6.2f}s  (incl. Jira fetch + extract)\n")
+        print(f"#       {name:<26} {secs:6.2f}s")
+    sum_calls = sum(s for _, s in llm.calls)
+    print(f"#       (sum of calls {sum_calls:.2f}s -> {'PARALLEL' if condense_s < sum_calls * 0.9 else 'SEQUENTIAL?'})")
+    print(f"#   TOTAL                       {total:6.2f}s\n")
 
-    condensed = response.condensed
     print(f"# source: {condensed.primary_source}  attachments: {condensed.attachments_used}")
-    print(f"# model: {response.model}  prompt: {response.prompt_version}\n")
+    print(f"# model: {settings.llm_model}  prompt: {load_prompt('condense/summary').version}\n")
 
-    data = response.model_dump(by_alias=True)
-    data["condensed"].pop("description", None)
-    data["condensed"].pop("rawText", None)
+    data = condensed.model_dump(by_alias=True)
+    data.pop("description", None)
+    data.pop("rawText", None)
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
 
