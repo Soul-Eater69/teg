@@ -59,13 +59,6 @@ class GenerationSignals(CamelModel):
     notes: list[Evidence] = Field(default_factory=list)
 
 
-class CondenseExtraction(CamelModel):
-    """Exactly what the condense LLM produces. Passed as the structured-output schema."""
-
-    summary_fields: SummaryFields
-    generation_signals: GenerationSignals = Field(default_factory=GenerationSignals)
-
-
 class CondensedTicket(CamelModel):
     """Full condense output. The backend stores this and replays it downstream."""
 

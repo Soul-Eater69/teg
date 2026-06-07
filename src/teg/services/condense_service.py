@@ -50,5 +50,5 @@ class CondenseService:
         return CondenseResponse(
             condensed=condensed,
             model=self._model_name,
-            prompt_version=load_prompt("condense/condense").version,
+            prompt_version=load_prompt("condense/summary").version,  # summary+signals share a version
         )

@@ -8,6 +8,7 @@ from teg.condense.attachment_ranker import select_attachments
 from teg.condense.condenser import condense
 from teg.condense.ticket_context import resolve_from_ticket
 from teg.contracts.condense_io import CondenseRequest
+from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.integrations.jira import JiraAttachment, JiraTicket
 from teg.services.condense_service import CondenseService
 
@@ -50,12 +51,16 @@ _LLM_JSON = {
 
 
 class FakeLLM:
-    """Validates the canned payload against the requested schema, like the real client."""
+    """Returns the canned slice for the requested schema (summary | signals call)."""
 
     def __init__(self, payload: dict | None = None) -> None:
         self._payload = payload if payload is not None else _LLM_JSON
 
     async def complete(self, *, system: str, user: str, schema):
+        if schema is SummaryFields:
+            return schema.model_validate(self._payload["summaryFields"])
+        if schema is GenerationSignals:
+            return schema.model_validate(self._payload["generationSignals"])
         return schema.model_validate(self._payload)
 
 
