@@ -1,9 +1,9 @@
-"""VS retrieval lanes (TDD 5.3 / ticket B3).
+"""VS retrieval lanes.
 
-Builds a retrieval query from the condensed summary, embeds it once, and runs the
-two lanes in parallel: the VS-catalogue lane (hybrid) and the historical-ER lane
-(vector, top-6, shown to the SME). Returns the raw hits; bucketing/ranking is the
-merger's job.
+Builds a retrieval query from the condensed summary and runs the two lanes in
+parallel: the VS-catalogue lane and the historical-ER lane (top-6, shown to the SME).
+The search client owns query vectorization. Returns the raw hits; bucketing and
+ranking are the merger's job.
 """
 
 from __future__ import annotations
@@ -12,10 +12,9 @@ import asyncio
 from dataclasses import dataclass, field
 
 from teg.domain.condensed import SummaryFields
-from teg.integrations.embeddings import EmbeddingsClient
 from teg.integrations.search import HistoricalHit, SearchClient, ValueStreamHit
 
-# Winning retrieval knobs: RAG_SEMANTIC_FETCH_K / RAG_HISTORICAL_TICKET_FETCH_K.
+# Winning retrieval knobs.
 _VS_TOP_K = 50
 _HISTORICAL_TOP_K = 6
 
@@ -35,16 +34,14 @@ def _build_query(summary: SummaryFields) -> str:
 async def retrieve(
     summary: SummaryFields,
     search_client: SearchClient,
-    embeddings: EmbeddingsClient,
     *,
     vs_top_k: int = _VS_TOP_K,
     historical_top_k: int = _HISTORICAL_TOP_K,
 ) -> RetrievalResult:
     query = _build_query(summary)
-    query_vector = await embeddings.embed(query)
     vs_hits, historical_hits = await asyncio.gather(
-        search_client.search_value_streams(query, query_vector, top_k=vs_top_k),
-        search_client.search_historical(query_vector, top_k=historical_top_k),
+        search_client.search_value_streams(query, top_k=vs_top_k),
+        search_client.search_historical(query, top_k=historical_top_k),
     )
     return RetrievalResult(
         value_stream_hits=list(vs_hits),

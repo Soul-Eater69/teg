@@ -61,12 +61,12 @@ def test_value_stream_request_round_trips_camel_case() -> None:
     assert request.requested_count == 5
 
 
-def test_recommendation_confidence_bounded_to_unit_interval() -> None:
+def test_recommendation_confidence_bounded_to_0_100() -> None:
     with pytest.raises(ValidationError):
         ValueStreamRecommendation(
             value_stream_id="VSR1",
             value_stream_name="n",
-            confidence=1.5,  # out of 0-1
+            confidence=150,  # out of 0-100
             support_type="direct",
             reason="ok",
             bucket="semantic_only",
@@ -74,12 +74,12 @@ def test_recommendation_confidence_bounded_to_unit_interval() -> None:
     rec = ValueStreamRecommendation(
         value_stream_id="VSR1",
         value_stream_name="n",
-        confidence=0.82,
+        confidence=82,
         support_type="implied",
         reason="downstream billing impact",
         bucket="semantic_plus_historic",
     )
-    assert rec.confidence == 0.82
+    assert rec.confidence == 82
 
 
 def test_theme_request_validates() -> None:

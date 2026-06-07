@@ -1,4 +1,4 @@
-"""Ticket context resolution (TDD 5.2 / ticket B2).
+"""Ticket context resolution.
 
 Resolves the idea-card source for a ticket and consolidates it into one
 section-tagged blob for the condense LLM pass. Both source paths (idea card vs

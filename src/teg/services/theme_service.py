@@ -19,7 +19,7 @@ class ThemeService:
     async def generate(self, request: ThemeGenerationRequest) -> ThemeGenerationResponse:
         """Generate one theme package per approved Value Stream, in parallel.
 
-        Per-VS fan-out (TDD 6.1):
+        Per-VS fan-out:
           stage prediction  ||  theme description
                  |                     (both off condensed context)
                  +--> business needs, L2, L3   (all wait on stage output, run parallel)

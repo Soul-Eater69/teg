@@ -28,7 +28,7 @@ new idea card
   -> [C: Theme generation]  -> one theme package per approved VS
 ```
 
-JSON is `camelCase`. Field shapes follow the TDD (sections noted per contract).
+JSON is `camelCase`.
 
 ---
 

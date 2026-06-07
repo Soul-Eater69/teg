@@ -1,4 +1,4 @@
-"""Stage prediction records (TDD 6.2).
+"""Stage prediction records.
 
 A stage is represented by a Jira Epic. Prediction selects approved stages for an
 already-selected Value Stream, against the governed Cosmos stage catalogue.

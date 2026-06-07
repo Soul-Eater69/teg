@@ -1,4 +1,4 @@
-# Condense - SUMMARY pass (TDD 5.1). Produces summaryFields: the faithful,
+# Condense - SUMMARY pass. Produces summaryFields: the faithful,
 # retrieval-ready digest every downstream step reads. Runs in parallel with the
 # signals pass. Output shape enforced by the SummaryFields schema.
 # Template vars: {ticket_id}, {consolidated_text}.

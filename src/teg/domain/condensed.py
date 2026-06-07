@@ -1,4 +1,4 @@
-"""Condensed ticket records (TDD 5.1-5.2).
+"""Condensed ticket records.
 
 The condense step is two parallel LLM passes over the idea-card source material:
 ``summary_fields`` (retrieval + routing + LLM context) and ``generation_signals``

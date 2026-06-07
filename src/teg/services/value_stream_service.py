@@ -17,7 +17,7 @@ class ValueStreamService:
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
         """Two retrieval lanes -> merge/rank -> review-pool LLM selection.
 
-        Flow (TDD 5.3-5.5):
+        Flow:
           1. parallel lanes vs idp_idmt_data: VS catalogue (top 50) + historical ER (top 6).
           2. merge into buckets (semantic+historic / historic-only / semantic-only),
              apply caps + gates + generic/risky penalty.

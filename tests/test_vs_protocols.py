@@ -1,8 +1,7 @@
-"""Lock the VS retrieval protocols: fakes satisfy them; records construct."""
+"""Lock the search protocol: a fake satisfies it; records construct."""
 
 from __future__ import annotations
 
-from teg.integrations.embeddings import EmbeddingsClient
 from teg.integrations.search import (
     HistoricalHit,
     HistoricalValueStreamLabel,
@@ -12,21 +11,15 @@ from teg.integrations.search import (
 
 
 class _FakeSearch:
-    async def search_value_streams(self, query, query_vector, *, top_k=50):
+    async def search_value_streams(self, query, *, top_k=50):
         return []
 
-    async def search_historical(self, query_vector, *, top_k=6):
+    async def search_historical(self, query, *, top_k=6):
         return []
 
 
-class _FakeEmbeddings:
-    async def embed(self, text):
-        return [0.0, 1.0]
-
-
-def test_fakes_satisfy_protocols() -> None:
+def test_fake_satisfies_search_protocol() -> None:
     assert isinstance(_FakeSearch(), SearchClient)
-    assert isinstance(_FakeEmbeddings(), EmbeddingsClient)
 
 
 def test_records_construct() -> None:

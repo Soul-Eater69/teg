@@ -1,4 +1,4 @@
-"""Theme package records (TDD 6.2-6.3).
+"""Theme package records.
 
 One ThemePackage is produced per approved Value Stream. It stays a recommendation
 until the SME approves it for Jira writeback (HITL is owned by the backend).

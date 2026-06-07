@@ -1,4 +1,4 @@
-"""Value Stream prediction records (TDD 5.3-5.5).
+"""Value Stream prediction output records.
 
 Single source of truth for the VS output shapes - used internally and serialized at
 the backend boundary (camelCase via CamelModel). The internal retrieval/merge
@@ -29,14 +29,15 @@ class HistoricalTicket(CamelModel):
 class ValueStreamRecommendation(CamelModel):
     """A recommended Value Stream, resolved to the approved catalogue.
 
-    ``confidence`` is expected in 0.30-1.00 (prompt-guided); we bound it to 0-1 only,
-    so a slightly out-of-band model value never fails validation downstream.
-    ``reason`` is prompt-guided to <=80 chars; not hard-enforced for the same reason.
+    ``confidence`` is a 0-100 percentage (the model emits 0-1; selection scales it).
+    ``reason`` is prompt-guided to a short phrase; not hard-enforced so a slightly
+    longer model value never fails validation. ``source_tickets`` is populated only
+    for historically-backed picks (historic_only / semantic_plus_historic).
     """
 
     value_stream_id: str
     value_stream_name: str
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=100.0)
     support_type: SupportType
     reason: str
     bucket: Bucket

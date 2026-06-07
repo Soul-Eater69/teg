@@ -1,4 +1,4 @@
-# Condense - SIGNALS pass (TDD 5.1). Produces generationSignals: targeted evidence
+# Condense - SIGNALS pass. Produces generationSignals: targeted evidence
 # for Theme Description + Business Needs. Runs in parallel with the summary pass.
 # Output shape enforced by the GenerationSignals schema.
 # Template vars: {ticket_id}, {consolidated_text}.

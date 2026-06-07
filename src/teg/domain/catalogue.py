@@ -1,4 +1,4 @@
-"""Governed catalogue records (TDD 2, 4.6-4.7, 6.2).
+"""Governed catalogue records.
 
 Catalogues come from Sightline into Cosmos. We read them; the backend never sends
 them. They govern what VS / stage / L2 / L3 values predictions may resolve to.

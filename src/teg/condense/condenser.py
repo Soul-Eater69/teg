@@ -1,4 +1,4 @@
-"""Condense step (TDD 5.1 / ticket B1).
+"""Condense step.
 
 Two structured LLM passes run in parallel over the resolved ticket context:
   - SUMMARY  -> summaryFields (retrieval-ready digest)

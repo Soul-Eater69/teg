@@ -1,4 +1,4 @@
-"""VS retrieval tests with fake search + embeddings clients."""
+"""VS retrieval tests with a fake search client (text-in; client owns vectorization)."""
 
 from __future__ import annotations
 
@@ -11,19 +11,13 @@ class _FakeSearch:
     def __init__(self) -> None:
         self.calls: dict = {}
 
-    async def search_value_streams(self, query, query_vector, *, top_k=50):
-        self.calls["vs"] = {"query": query, "vector": query_vector, "top_k": top_k}
+    async def search_value_streams(self, query, *, top_k=50):
+        self.calls["vs"] = {"query": query, "top_k": top_k}
         return [ValueStreamHit("VSR1", "Adjudicate Claim", score=1.2)]
 
-    async def search_historical(self, query_vector, *, top_k=6):
-        self.calls["historical"] = {"vector": query_vector, "top_k": top_k}
+    async def search_historical(self, query, *, top_k=6):
+        self.calls["historical"] = {"query": query, "top_k": top_k}
         return [HistoricalHit("IDMT-9", "Claims savings", score=0.9)]
-
-
-class _FakeEmbeddings:
-    async def embed(self, text):
-        self.text = text
-        return [0.1, 0.2]
 
 
 def _summary() -> SummaryFields:
@@ -37,16 +31,17 @@ def _summary() -> SummaryFields:
     )
 
 
-async def test_retrieve_runs_both_lanes_with_embedded_query() -> None:
-    search, embeddings = _FakeSearch(), _FakeEmbeddings()
-    result = await retrieve(_summary(), search, embeddings, vs_top_k=50, historical_top_k=6)
+async def test_retrieve_runs_both_lanes_with_the_query_text() -> None:
+    search = _FakeSearch()
+    result = await retrieve(_summary(), search, vs_top_k=50, historical_top_k=6)
 
     assert [h.value_stream_id for h in result.value_stream_hits] == ["VSR1"]
     assert [h.ticket_id for h in result.historical_hits] == ["IDMT-9"]
     assert search.calls["vs"]["top_k"] == 50
     assert search.calls["historical"]["top_k"] == 6
-    assert search.calls["vs"]["vector"] == [0.1, 0.2]  # embedded query reused by both lanes
-    assert search.calls["historical"]["vector"] == [0.1, 0.2]
+    # both lanes get the same composed query text
+    assert search.calls["vs"]["query"] == search.calls["historical"]["query"]
+    assert "claims savings analysis" in search.calls["vs"]["query"]
 
 
 def test_build_query_combines_summary_fields() -> None:

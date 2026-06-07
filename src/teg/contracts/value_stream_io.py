@@ -18,7 +18,8 @@ from teg.domain.value_stream import HistoricalTicket, ValueStreamRecommendation
 class ValueStreamRequest(CamelModel):
     ticket_id: str
     summary_fields: SummaryFields
-    requested_count: int = 10  # default 10; upper bound, not a target
+    requested_count: int = 10  # exact number of value streams to return
+    # Free-text steer (e.g. "I need 4 value streams"); threaded into the prompts.
     custom_instruction: str | None = None
     # Only the SME-selected analogs; omit to auto-use the retrieved set.
     selected_historical_ticket_ids: list[str] = Field(default_factory=list)
@@ -29,7 +30,6 @@ class ValueStreamResponse(CamelModel):
     recommendations: list[ValueStreamRecommendation]
     historical_tickets: list[HistoricalTicket] = Field(default_factory=list)
     model: str
-    prompt_version: str
     latency_ms: int = 0
 
 

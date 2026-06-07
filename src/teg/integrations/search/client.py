@@ -1,8 +1,8 @@
-"""Search protocols + records for the two VS retrieval lanes (TDD 5.3).
+"""Search protocols + records for the two VS retrieval lanes.
 
 VS retrieval depends on these protocols, not a concrete Azure client, so it is
-unit-tested with fakes. The real Azure AI Search implementation (TEG-34) lands
-alongside this module and is configured from Settings.
+unit-tested with fakes. The client owns query vectorization (integrated server-side
+on the index, or internally), so the retrieval layer just passes query text.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class ValueStreamHit:
     value_stream_id: str
     value_stream_name: str
     value_stream_description: str = ""
-    score: float = 0.0  # hybrid relevance score
+    score: float = 0.0
 
 
 @dataclass
@@ -38,21 +38,17 @@ class HistoricalHit:
 
     ticket_id: str
     title: str
-    score: float = 0.0  # vector similarity
+    score: float = 0.0
     snippet: str = ""
     value_streams: list[HistoricalValueStreamLabel] = field(default_factory=list)
 
 
 @runtime_checkable
 class SearchClient(Protocol):
-    async def search_value_streams(
-        self, query: str, query_vector: list[float], *, top_k: int = 50
-    ) -> list[ValueStreamHit]:
-        """VS-catalogue lane: hybrid (text + vector) over the valueStream documents."""
+    async def search_value_streams(self, query: str, *, top_k: int = 50) -> list[ValueStreamHit]:
+        """VS-catalogue lane over the valueStream documents."""
         ...
 
-    async def search_historical(
-        self, query_vector: list[float], *, top_k: int = 6
-    ) -> list[HistoricalHit]:
-        """Historical-ER lane: vector similarity over EngagementRequest documents."""
+    async def search_historical(self, query: str, *, top_k: int = 6) -> list[HistoricalHit]:
+        """Historical-ER lane over the EngagementRequest documents."""
         ...

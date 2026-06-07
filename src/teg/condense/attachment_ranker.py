@@ -1,4 +1,4 @@
-"""Attachment selection for the idea-card source (TDD 3, 5.2 / ticket A7).
+"""Attachment selection for the idea-card source.
 
 Rules:
   - Prefer the idea card: an attachment explicitly named ``idea_card.<format>`` (exact
