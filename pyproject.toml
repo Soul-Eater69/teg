@@ -15,6 +15,10 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
 ]
+# Runtime attachment extraction (heavy; install for production: uv sync --extra extract)
+extract = [
+    "markitdown[all]>=0.0.1a2",
+]
 
 [build-system]
 requires = ["hatchling"]
