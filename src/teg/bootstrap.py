@@ -21,4 +21,5 @@ def build_condense_service(settings: Settings | None = None) -> CondenseService:
         build_llm_client(settings),
         build_attachment_extractor(),
         model_name=settings.llm_model,
+        input_char_limit=settings.condense_input_char_limit,
     )

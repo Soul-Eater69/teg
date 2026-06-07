@@ -30,15 +30,17 @@ class IdpLLMClient:
         http_client: httpx.AsyncClient,
         *,
         model: str,
-        completion_path: str = "/chat/completions",
+        completion_path: str = "/api/v1/chatcompletions",
         api_version: str = "2024-04-01-preview",
         reasoning_effort: str | None = None,
+        max_output_tokens: int | None = None,
     ) -> None:
         self._http = http_client
         self._model = model
         self._completion_path = completion_path
         self._api_version = api_version
         self._reasoning_effort = reasoning_effort or None
+        self._max_output_tokens = max_output_tokens
 
     async def complete(self, *, system: str, user: str, schema: type[ModelT]) -> ModelT:
         body: dict = {
@@ -58,6 +60,8 @@ class IdpLLMClient:
         }
         if self._reasoning_effort:
             body["reasoning_effort"] = self._reasoning_effort
+        if self._max_output_tokens:
+            body["max_completion_tokens"] = self._max_output_tokens
 
         response = await self._http.post(self._completion_path, json=body)
         response.raise_for_status()
@@ -103,4 +107,5 @@ def build_llm_client(settings: Settings) -> IdpLLMClient:
         completion_path=settings.llm_completion_path,
         api_version=settings.llm_api_version,
         reasoning_effort=settings.llm_reasoning_effort or None,
+        max_output_tokens=settings.llm_max_output_tokens,
     )

@@ -23,11 +23,13 @@ class CondenseService:
         extractor: AttachmentTextExtractor,
         *,
         model_name: str = "",
+        input_char_limit: int = 24_000,
     ) -> None:
         self._jira = jira_client
         self._llm = llm_client
         self._extractor = extractor
         self._model_name = model_name
+        self._input_char_limit = input_char_limit
 
     async def condense(self, request: CondenseRequest) -> CondenseResponse:
         """Fetch the ticket, resolve the idea-card source, run the condense pass.
@@ -36,7 +38,9 @@ class CondenseService:
         """
         ticket = await self._jira.fetch_ticket(request.ticket_id)
         context = await resolve_from_ticket(ticket, self._jira, self._extractor)
-        condensed = await run_condense(context, self._llm)
+        condensed = await run_condense(
+            context, self._llm, input_char_limit=self._input_char_limit
+        )
         return CondenseResponse(
             condensed=condensed,
             model=self._model_name,

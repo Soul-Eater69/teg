@@ -13,22 +13,27 @@ from teg.domain.condensed import CondensedTicket, CondenseExtraction
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
 
-# The consolidated context is capped before the LLM call to control tokens (TDD 3).
-_INPUT_CHAR_LIMIT = 60_000
+# The consolidated context is capped before the LLM call to control tokens + latency.
+_DEFAULT_INPUT_CHAR_LIMIT = 24_000
 
 
 class CondenseError(RuntimeError):
     pass
 
 
-async def condense(context: ResolvedContext, llm_client: LLMClient) -> CondensedTicket:
+async def condense(
+    context: ResolvedContext,
+    llm_client: LLMClient,
+    *,
+    input_char_limit: int = _DEFAULT_INPUT_CHAR_LIMIT,
+) -> CondensedTicket:
     if not context.consolidated_text.strip():
         raise CondenseError(f"No source text to condense for {context.ticket_id}")
 
     prompt = load_prompt("condense/condense")
     system, user = prompt.render(
         ticket_id=context.ticket_id,
-        consolidated_text=context.consolidated_text[:_INPUT_CHAR_LIMIT],
+        consolidated_text=context.consolidated_text[:input_char_limit],
     )
     extraction = await llm_client.complete(system=system, user=user, schema=CondenseExtraction)
 

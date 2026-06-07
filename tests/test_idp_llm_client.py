@@ -32,7 +32,7 @@ async def test_builds_json_schema_request_and_parses_idp_choice() -> None:
 
     assert out.answer == "42"
     body = captured["body"]
-    assert captured["path"] == "/chat/completions"
+    assert captured["path"] == "/api/v1/chatcompletions"
     assert body["model"] == "gpt-5-mini-idp"
     assert body["reasoning_effort"] == "low"
     assert body["messages"][0] == {"role": "system", "content": "sys"}

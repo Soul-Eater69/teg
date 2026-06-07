@@ -31,13 +31,17 @@ class Settings(BaseSettings):
 
     # LLM (IDP OpenAI-compatible gateway)
     llm_base_url: str = ""
-    llm_completion_path: str = "/chat/completions"
+    llm_completion_path: str = "/api/v1/chatcompletions"
     llm_model: str = "gpt-5-mini-idp"
     llm_app_id: str = ""
     llm_api_version: str = "2024-04-01-preview"
     llm_reasoning_effort: str = "low"
+    llm_max_output_tokens: int | None = None
     llm_timeout_seconds: float = 60.0
     llm_verify_ssl: bool = False
+
+    # Condense
+    condense_input_char_limit: int = 24_000
 
     # IDP auth (token endpoint for the LLM gateway)
     idp_auth_url: str = ""
