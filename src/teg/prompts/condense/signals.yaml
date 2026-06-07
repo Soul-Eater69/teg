@@ -24,13 +24,12 @@ system: |
     - [DOCUMENT: name] - the idea card or a supporting attachment.
 
   ## What you produce
-  generationSignals: for each category, a list of evidence items - a short supporting
-  quote or tight paraphrase plus where it came from. Set ``source`` to the section or
-  document the item came from, and ``sourceSection`` to a finer location when known.
-  Categories span market segments, funding model, market opportunity, business
-  objectives, value proposition, estimated benefits, dependencies, resources needed,
-  digital experience, product availability, plans, networks, product pairing, business
-  rules, and operational / reporting / training signals (plus a notes catch-all).
+  generationSignals: for each category, a list of short evidence strings - a supporting
+  quote or tight paraphrase taken from the source. Categories span market segments,
+  funding model, market opportunity, business objectives, value proposition, estimated
+  benefits, dependencies, resources needed, digital experience, product availability,
+  plans, networks, product pairing, business rules, and operational / reporting /
+  training signals (plus a notes catch-all).
 
   ## Rules
   - Capture a signal ONLY when the source genuinely states it. When a category is absent,

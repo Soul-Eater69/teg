@@ -1,10 +1,10 @@
 """Condensed ticket records (TDD 5.1-5.2).
 
-The condense step is one LLM pass over the idea-card source material. It returns
+The condense step is two parallel LLM passes over the idea-card source material:
 ``summary_fields`` (retrieval + routing + LLM context) and ``generation_signals``
-(evidence for Theme Description and Business Needs). This output is shared by every
-downstream step, so these models are the single source of truth - used internally
-and serialized directly at the backend boundary (camelCase via CamelModel).
+(evidence strings for Theme Description and Business Needs). These models are the
+single source of truth - used internally and serialized at the backend boundary
+(camelCase via CamelModel).
 """
 
 from __future__ import annotations
@@ -12,17 +12,6 @@ from __future__ import annotations
 from pydantic import Field
 
 from teg.domain.base import CamelModel
-
-
-class Evidence(CamelModel):
-    """One lightweight evidence item inside a generation signal.
-
-    Signals are never invented: an absent category is an empty list, not a guess.
-    """
-
-    text: str
-    source: str
-    source_section: str | None = None
 
 
 class SummaryFields(CamelModel):
@@ -37,26 +26,30 @@ class SummaryFields(CamelModel):
 
 
 class GenerationSignals(CamelModel):
-    """Evidence arrays for Theme Description + Business Needs. Empty when absent."""
+    """Evidence strings for Theme Description + Business Needs. Empty when absent.
 
-    market_segments: list[Evidence] = Field(default_factory=list)
-    funding_model_signals: list[Evidence] = Field(default_factory=list)
-    market_opportunity: list[Evidence] = Field(default_factory=list)
-    business_solution_objectives: list[Evidence] = Field(default_factory=list)
-    value_proposition: list[Evidence] = Field(default_factory=list)
-    estimated_benefits: list[Evidence] = Field(default_factory=list)
-    dependencies: list[Evidence] = Field(default_factory=list)
-    resources_needed: list[Evidence] = Field(default_factory=list)
-    digital_experience_signals: list[Evidence] = Field(default_factory=list)
-    product_availability_signals: list[Evidence] = Field(default_factory=list)
-    plan_signals: list[Evidence] = Field(default_factory=list)
-    network_signals: list[Evidence] = Field(default_factory=list)
-    product_pairing_signals: list[Evidence] = Field(default_factory=list)
-    business_rules: list[Evidence] = Field(default_factory=list)
-    operational_signals: list[Evidence] = Field(default_factory=list)
-    reporting_signals: list[Evidence] = Field(default_factory=list)
-    training_signals: list[Evidence] = Field(default_factory=list)
-    notes: list[Evidence] = Field(default_factory=list)
+    Each field is a list of short source-grounded snippets (no provenance metadata -
+    the UI does not surface citations, and generation only needs the text).
+    """
+
+    market_segments: list[str] = Field(default_factory=list)
+    funding_model_signals: list[str] = Field(default_factory=list)
+    market_opportunity: list[str] = Field(default_factory=list)
+    business_solution_objectives: list[str] = Field(default_factory=list)
+    value_proposition: list[str] = Field(default_factory=list)
+    estimated_benefits: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    resources_needed: list[str] = Field(default_factory=list)
+    digital_experience_signals: list[str] = Field(default_factory=list)
+    product_availability_signals: list[str] = Field(default_factory=list)
+    plan_signals: list[str] = Field(default_factory=list)
+    network_signals: list[str] = Field(default_factory=list)
+    product_pairing_signals: list[str] = Field(default_factory=list)
+    business_rules: list[str] = Field(default_factory=list)
+    operational_signals: list[str] = Field(default_factory=list)
+    reporting_signals: list[str] = Field(default_factory=list)
+    training_signals: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
 
 
 class CondensedTicket(CamelModel):

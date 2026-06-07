@@ -42,9 +42,7 @@ _LLM_JSON = {
         "systemsAndProducts": ["ClaimsHub"],
     },
     "generationSignals": {
-        "marketSegments": [
-            {"text": "Medicare members", "source": "DESCRIPTION", "sourceSection": ""}
-        ],
+        "marketSegments": ["Medicare members"],
         "dependencies": [],
         # other 16 keys intentionally absent -> must become empty lists
     },
@@ -187,8 +185,7 @@ async def test_condense_maps_fields_and_keeps_absent_signals_empty() -> None:
 
     assert condensed.summary_fields.generated_summary == "A proposed change to claims intake."
     assert condensed.summary_fields.key_terms == ["claims", "intake"]
-    assert len(condensed.generation_signals.market_segments) == 1
-    assert condensed.generation_signals.market_segments[0].text == "Medicare members"
+    assert condensed.generation_signals.market_segments == ["Medicare members"]
     # absent categories never invented:
     assert condensed.generation_signals.notes == []
     assert condensed.generation_signals.reporting_signals == []
@@ -205,7 +202,7 @@ async def test_service_condenses_from_ticket_id_and_serializes_camel_case() -> N
     assert data["condensed"]["ticketId"] == "IDMT-1"
     assert data["condensed"]["primarySource"] == "idea_card"
     assert data["condensed"]["summaryFields"]["businessProblem"] == "Manual intake is slow."
-    assert data["condensed"]["generationSignals"]["marketSegments"][0]["text"] == "Medicare members"
+    assert data["condensed"]["generationSignals"]["marketSegments"] == ["Medicare members"]
     assert data["model"] == "test-model"
 
 
