@@ -40,9 +40,11 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
     llm_verify_ssl: bool = False
 
-    # Condense
-    condense_doc_char_budget: int = 20_000  # total chars across attachments (split per doc)
-    condense_max_attachments: int = 4  # top-N fallback when no idea card; latency-neutral
+    # Condense (fallback path only; idea card is always used in full)
+    condense_doc_char_budget: int = 20_000  # total chars across fallback docs (split per doc)
+    condense_max_attachments: int = 4  # top-N fallback when no idea card
+    condense_max_attachment_bytes: int = 10_000_000  # skip larger fallback files pre-download
+    condense_min_doc_chars: int = 200  # drop fallback docs that extract to less than this
 
     # IDP auth (token endpoint for the LLM gateway)
     idp_auth_url: str = ""

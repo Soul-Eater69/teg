@@ -21,6 +21,7 @@ import sys
 from time import perf_counter
 
 from teg.condense.condenser import condense
+from teg.condense.config import CondenseConfig
 from teg.condense.ticket_context import resolve_from_ticket
 from teg.config.settings import load_settings
 from teg.integrations.files import build_attachment_extractor
@@ -52,10 +53,9 @@ class _TimedExtractor:
 
     def extract(self, filename, content):
         start = perf_counter()
-        try:
-            return self._inner.extract(filename, content)
-        finally:
-            self.extracts.append((filename, perf_counter() - start))
+        text = self._inner.extract(filename, content)
+        self.extracts.append((filename, perf_counter() - start, len(text)))
+        return text
 
 
 class _TimedLLM:
@@ -81,14 +81,19 @@ async def main(ticket_id: str) -> None:
     ticket = await jira.fetch_ticket(ticket_id)
     fetch_s = perf_counter() - t
 
-    t = perf_counter()
-    context = await resolve_from_ticket(
-        ticket,
-        jira,
-        extractor,
+    print("# attachments (from metadata, before any download):")
+    for a in ticket.attachments:
+        print(f"#   {a.filename:<44} {a.size_bytes:>13,} bytes")
+    print()
+
+    config = CondenseConfig(
         doc_char_budget=settings.condense_doc_char_budget,
         max_attachments=settings.condense_max_attachments,
+        max_attachment_bytes=settings.condense_max_attachment_bytes,
+        min_doc_chars=settings.condense_min_doc_chars,
     )
+    t = perf_counter()
+    context = await resolve_from_ticket(ticket, jira, extractor, config=config)
     resolve_s = perf_counter() - t
 
     t = perf_counter()
@@ -102,8 +107,8 @@ async def main(ticket_id: str) -> None:
     print(f"#   resolve (download+extract)  {resolve_s:6.2f}s")
     for name, secs in jira.downloads:
         print(f"#       download {name:<22} {secs:6.2f}s")
-    for name, secs in extractor.extracts:
-        print(f"#       extract  {name:<22} {secs:6.2f}s  (markitdown)")
+    for name, secs, chars in extractor.extracts:
+        print(f"#       extract  {name:<22} {secs:6.2f}s  {chars:>7,} chars (markitdown)")
     print(f"#   condense LLM gather wall    {condense_s:6.2f}s")
     for name, secs in llm.calls:
         print(f"#       {name:<26} {secs:6.2f}s")

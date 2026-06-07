@@ -11,6 +11,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from teg.condense.attachment_ranker import select_attachments
+from teg.condense.config import CondenseConfig
 from teg.integrations.files import AttachmentTextExtractor
 from teg.integrations.jira import JiraAttachment, JiraClient, JiraTicket
 
@@ -29,26 +30,32 @@ def _section(tag: str, body: str) -> str:
     return f"[{tag}]\n{body.strip()}"
 
 
-def _consolidate(description: str, documents: list[tuple[str, str]], doc_char_budget: int) -> str:
-    """Description in full + an even share of the document budget per attachment.
+def _consolidate(
+    description: str,
+    documents: list[tuple[str, str]],
+    *,
+    doc_char_budget: int | None = None,
+    min_doc_chars: int = 0,
+) -> str:
+    """Combine the description (always full - the one authoritative source) with docs.
 
-    The description is the one authoritative source, so it is never truncated. The
-    documents share ``doc_char_budget`` evenly: with idea-card-first that single doc
-    gets the whole budget; in the heuristic fallback the docs share it. So attachment
-    COUNT does not change total size - only how finely the doc budget is sliced -
-    which lets us keep several candidates for coverage at no extra cost.
+    ``doc_char_budget=None`` -> include each doc in full (idea-card path). Otherwise the
+    documents share the budget evenly (fallback path), and docs that extract to fewer
+    than ``min_doc_chars`` are dropped as near-empty (image files without OCR).
     """
     docs = [(name, text) for name, text in documents if text and text.strip()]
+    if min_doc_chars:
+        docs = [(name, text) for name, text in docs if len(text.strip()) >= min_doc_chars]
 
     blocks: list[str] = []
     if description.strip():
         blocks.append(_section("DESCRIPTION", description))
     if docs:
-        per_doc = doc_char_budget // len(docs)
+        per_doc = (doc_char_budget // len(docs)) if doc_char_budget else None
         for name, text in docs:
-            chunk = text.strip()[:per_doc]
-            if chunk:
-                blocks.append(_section(f"DOCUMENT: {name}", chunk))
+            body = text.strip() if per_doc is None else text.strip()[:per_doc]
+            if body:
+                blocks.append(_section(f"DOCUMENT: {name}", body))
     return "\n\n".join(blocks)
 
 
@@ -57,11 +64,14 @@ async def resolve_from_ticket(
     jira_client: JiraClient,
     extractor: AttachmentTextExtractor,
     *,
-    doc_char_budget: int = 20_000,
-    max_attachments: int = 4,
+    config: CondenseConfig = CondenseConfig(),
 ) -> ResolvedContext:
-    """Idea-card-first resolution. Idea card -> sole attachment; else top-N."""
-    selection = select_attachments(ticket.attachments, max_fallback=max_attachments)
+    """Idea-card-first resolution. Idea card -> sole attachment (used in full); else top-N."""
+    selection = select_attachments(
+        ticket.attachments,
+        max_fallback=config.max_attachments,
+        max_bytes=config.max_attachment_bytes,
+    )
 
     chosen: list[JiraAttachment]
     if selection.idea_card is not None:
@@ -77,11 +87,21 @@ async def resolve_from_ticket(
 
     documents = list(await asyncio.gather(*(_extract(a) for a in chosen)))
 
+    if primary_source == "idea_card":
+        consolidated = _consolidate(ticket.description, documents)  # idea card in full
+    else:
+        consolidated = _consolidate(
+            ticket.description,
+            documents,
+            doc_char_budget=config.doc_char_budget,
+            min_doc_chars=config.min_doc_chars,
+        )
+
     return ResolvedContext(
         ticket_id=ticket.ticket_id,
         ticket_title=ticket.title,
         description=ticket.description,
         primary_source=primary_source,
         attachments_used=[a.filename for a in chosen],
-        consolidated_text=_consolidate(ticket.description, documents, doc_char_budget),
+        consolidated_text=consolidated,
     )

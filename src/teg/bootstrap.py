@@ -7,6 +7,7 @@ httpx connections for the service's lifetime).
 
 from __future__ import annotations
 
+from teg.condense.config import CondenseConfig
 from teg.config.settings import Settings, load_settings
 from teg.integrations.files import build_attachment_extractor
 from teg.integrations.jira import build_jira_client
@@ -16,11 +17,16 @@ from teg.services.condense_service import CondenseService
 
 def build_condense_service(settings: Settings | None = None) -> CondenseService:
     settings = settings or load_settings()
+    config = CondenseConfig(
+        doc_char_budget=settings.condense_doc_char_budget,
+        max_attachments=settings.condense_max_attachments,
+        max_attachment_bytes=settings.condense_max_attachment_bytes,
+        min_doc_chars=settings.condense_min_doc_chars,
+    )
     return CondenseService(
         build_jira_client(settings),
         build_llm_client(settings),
         build_attachment_extractor(),
         model_name=settings.llm_model,
-        doc_char_budget=settings.condense_doc_char_budget,
-        max_attachments=settings.condense_max_attachments,
+        config=config,
     )

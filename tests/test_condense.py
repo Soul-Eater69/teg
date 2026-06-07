@@ -6,6 +6,7 @@ import pytest
 
 from teg.condense.attachment_ranker import select_attachments
 from teg.condense.condenser import condense
+from teg.condense.config import CondenseConfig
 from teg.condense.ticket_context import resolve_from_ticket
 from teg.contracts.condense_io import CondenseRequest
 from teg.domain.condensed import GenerationSignals, SummaryFields
@@ -133,18 +134,25 @@ class _LongExtractor:
 async def test_description_kept_full_and_doc_budget_split_across_fallback() -> None:
     ticket = _ticket([JiraAttachment("a.pdf"), JiraAttachment("b.pdf")])
     ctx = await resolve_from_ticket(
-        ticket, FakeJira(ticket), _LongExtractor(), doc_char_budget=400
+        ticket, FakeJira(ticket), _LongExtractor(), config=CondenseConfig(doc_char_budget=400)
     )
     assert ticket.description in ctx.consolidated_text  # authoritative, never truncated
     assert ctx.consolidated_text.count("X") == 400  # 400 budget split 200/doc across 2 docs
 
 
-async def test_idea_card_gets_the_whole_doc_budget() -> None:
+async def test_idea_card_used_in_full_ignoring_budget() -> None:
     ticket = _ticket([JiraAttachment("idea_card.pptx")])
     ctx = await resolve_from_ticket(
-        ticket, FakeJira(ticket), _LongExtractor(), doc_char_budget=400
+        ticket, FakeJira(ticket), _LongExtractor(), config=CondenseConfig(doc_char_budget=400)
     )
-    assert ctx.consolidated_text.count("X") == 400  # single doc -> full budget
+    assert ctx.consolidated_text.count("X") == 5000  # idea card is used complete, not capped
+
+
+async def test_fallback_drops_near_empty_docs() -> None:
+    ticket = _ticket([JiraAttachment("a.pdf")])  # FakeExtractor yields < min_doc_chars
+    ctx = await resolve_from_ticket(ticket, FakeJira(ticket), FakeExtractor())
+    assert "[DESCRIPTION]" in ctx.consolidated_text
+    assert "[DOCUMENT:" not in ctx.consolidated_text  # near-empty extraction dropped
 
 
 def test_select_attachments_respects_max_fallback() -> None:
@@ -154,6 +162,20 @@ def test_select_attachments_respects_max_fallback() -> None:
     )
     assert selection.idea_card is None
     assert [a.filename for a in selection.fallback] == ["a.pdf", "b.pdf"]
+
+
+def test_select_attachments_skips_oversized_fallback() -> None:
+    selection = select_attachments(
+        [
+            JiraAttachment("big.pdf", size_bytes=50_000_000),
+            JiraAttachment("small.pdf", size_bytes=1_000),
+            JiraAttachment("unknown.pdf", size_bytes=0),
+        ],
+        max_bytes=10_000_000,
+    )
+    names = [a.filename for a in selection.fallback]
+    assert "big.pdf" not in names  # oversized skipped pre-download
+    assert names == ["small.pdf", "unknown.pdf"]  # small kept; unknown size kept
 
 
 # ---- condenser -----------------------------------------------------------
