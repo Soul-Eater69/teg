@@ -60,7 +60,11 @@ class SelectedAttachments:
     fallback: list[JiraAttachment]
 
 
-def select_attachments(attachments: list[JiraAttachment]) -> SelectedAttachments:
+def select_attachments(
+    attachments: list[JiraAttachment],
+    *,
+    max_fallback: int = _MAX_FALLBACK_ATTACHMENTS,
+) -> SelectedAttachments:
     for attachment in attachments:
         if is_idea_card(attachment.filename):
             return SelectedAttachments(idea_card=attachment, fallback=[])
@@ -70,5 +74,5 @@ def select_attachments(attachments: list[JiraAttachment]) -> SelectedAttachments
         enumerate(supported),
         key=lambda pair: (_FORMAT_PRIORITY[_extension(pair[1].filename)], pair[0]),
     )
-    fallback = [attachment for _, attachment in ranked[:_MAX_FALLBACK_ATTACHMENTS]]
+    fallback = [attachment for _, attachment in ranked[:max_fallback]]
     return SelectedAttachments(idea_card=None, fallback=fallback)

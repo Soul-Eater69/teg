@@ -125,17 +125,30 @@ class _LongExtractor:
         return "X" * 5000
 
 
-async def test_budget_is_distributed_evenly_across_fallback_docs() -> None:
+async def test_description_kept_full_and_doc_budget_split_across_fallback() -> None:
     ticket = _ticket([JiraAttachment("a.pdf"), JiraAttachment("b.pdf")])
     ctx = await resolve_from_ticket(
-        ticket, FakeJira(ticket), _LongExtractor(), char_budget=400
+        ticket, FakeJira(ticket), _LongExtractor(), doc_char_budget=400
     )
-    desc_len = len(ticket.description)  # short, under the 30% reserve
-    per_doc = (400 - desc_len) // 2
-    # each doc contributes exactly its even share, not the full 5000 chars
-    assert ctx.consolidated_text.count("X") == per_doc * 2
-    # total content stays within the budget (plus small section-tag overhead)
-    assert len(ctx.consolidated_text) <= 400 + 60
+    assert ticket.description in ctx.consolidated_text  # authoritative, never truncated
+    assert ctx.consolidated_text.count("X") == 400  # 400 budget split 200/doc across 2 docs
+
+
+async def test_idea_card_gets_the_whole_doc_budget() -> None:
+    ticket = _ticket([JiraAttachment("idea_card.pptx")])
+    ctx = await resolve_from_ticket(
+        ticket, FakeJira(ticket), _LongExtractor(), doc_char_budget=400
+    )
+    assert ctx.consolidated_text.count("X") == 400  # single doc -> full budget
+
+
+def test_select_attachments_respects_max_fallback() -> None:
+    selection = select_attachments(
+        [JiraAttachment("a.pdf"), JiraAttachment("b.pdf"), JiraAttachment("c.pdf")],
+        max_fallback=2,
+    )
+    assert selection.idea_card is None
+    assert [a.filename for a in selection.fallback] == ["a.pdf", "b.pdf"]
 
 
 # ---- condenser -----------------------------------------------------------

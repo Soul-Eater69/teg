@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     llm_verify_ssl: bool = False
 
     # Condense
-    condense_input_char_limit: int = 24_000
+    condense_doc_char_budget: int = 20_000  # total chars across attachments (split per doc)
+    condense_max_attachments: int = 4  # top-N fallback when no idea card; latency-neutral
 
     # IDP auth (token endpoint for the LLM gateway)
     idp_auth_url: str = ""
