@@ -120,6 +120,24 @@ async def test_resolve_falls_back_to_top_attachments() -> None:
     assert ctx.attachments_used == ["b.pdf", "a.docx"]
 
 
+class _LongExtractor:
+    def extract(self, filename: str, content: bytes) -> str:
+        return "X" * 5000
+
+
+async def test_budget_is_distributed_evenly_across_fallback_docs() -> None:
+    ticket = _ticket([JiraAttachment("a.pdf"), JiraAttachment("b.pdf")])
+    ctx = await resolve_from_ticket(
+        ticket, FakeJira(ticket), _LongExtractor(), char_budget=400
+    )
+    desc_len = len(ticket.description)  # short, under the 30% reserve
+    per_doc = (400 - desc_len) // 2
+    # each doc contributes exactly its even share, not the full 5000 chars
+    assert ctx.consolidated_text.count("X") == per_doc * 2
+    # total content stays within the budget (plus small section-tag overhead)
+    assert len(ctx.consolidated_text) <= 400 + 60
+
+
 # ---- condenser -----------------------------------------------------------
 
 async def test_condense_maps_fields_and_keeps_absent_signals_empty() -> None:

@@ -37,10 +37,10 @@ class CondenseService:
         Backlog: A7 (attachment priority), B1 (condense), B2 (ticket context).
         """
         ticket = await self._jira.fetch_ticket(request.ticket_id)
-        context = await resolve_from_ticket(ticket, self._jira, self._extractor)
-        condensed = await run_condense(
-            context, self._llm, input_char_limit=self._input_char_limit
+        context = await resolve_from_ticket(
+            ticket, self._jira, self._extractor, char_budget=self._input_char_limit
         )
+        condensed = await run_condense(context, self._llm)
         return CondenseResponse(
             condensed=condensed,
             model=self._model_name,
