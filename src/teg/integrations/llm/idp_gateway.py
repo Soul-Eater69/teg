@@ -2,15 +2,13 @@
 
 The gateway is OpenAI-compatible with two POC-confirmed quirks: custom IDP bearer
 auth (see idp_auth) and a response that wraps the single result under "choice"
-instead of "choices". Guardrails are enforced gateway-side, so there is no prompt
+instead of "choices". Guardrails are gateway-side, so there is no prompt
 sanitization here. The output structure is requested as a json_schema built from the
 caller's pydantic model and re-validated locally.
 """
 
 from __future__ import annotations
 
-import logging
-import time
 from typing import TypeVar
 
 import httpx
@@ -18,8 +16,6 @@ from pydantic import BaseModel
 
 from teg.config.settings import Settings
 from teg.integrations.llm.idp_auth import IDPCustomAuth
-
-logger = logging.getLogger(__name__)
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -63,13 +59,9 @@ class IdpLLMClient:
         if self._reasoning_effort:
             body["reasoning_effort"] = self._reasoning_effort
 
-        started = time.perf_counter()
         response = await self._http.post(self._completion_path, json=body)
         response.raise_for_status()
-        elapsed = time.perf_counter() - started
-
         content = _extract_content(response.json())
-        logger.info("LLM %s -> %s in %.2fs", self._model, schema.__name__, elapsed)
         try:
             return schema.model_validate_json(content)
         except Exception as exc:  # noqa: BLE001
@@ -97,6 +89,7 @@ def build_llm_client(settings: Settings) -> IdpLLMClient:
         client_secret=settings.idp_client_secret,
         user=settings.idp_user,
         password=settings.idp_password,
+        verify_ssl=settings.llm_verify_ssl,
     )
     http_client = httpx.AsyncClient(
         base_url=settings.llm_base_url,

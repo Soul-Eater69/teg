@@ -1,52 +1,16 @@
-"""IDP bearer auth for the LLM gateway (ported from the POC).
+"""IDP bearer auth for the LLM gateway.
 
-Fetches a JWT from the IDP token endpoint, caches it with a short TTL, injects it
-as ``Authorization: Bearer`` plus the ``app-id`` header on every request, and
-refreshes once on a 401. An ``SSO_TOKEN`` env var overrides the fetch when present.
+Fetches a JWT from the IDP token endpoint, caches it, injects it as
+``Authorization: Bearer`` plus the ``app-id`` header, and refreshes once on a 401.
+Async-only: the gateway client is an httpx.AsyncClient.
 """
 
 from __future__ import annotations
 
-import logging
-import os
-import threading
-import time
-
 import httpx
-import requests
-
-logger = logging.getLogger(__name__)
-
-_DEFAULT_TTL = 300
-OPENAI_COMPAT_API_KEY = "idp-auth-managed"  # dummy key; real auth is the bearer token
-
-
-def _fetch_idp_token(
-    *, auth_url: str, client_id: str, client_secret: str, user: str, password: str
-) -> str:
-    """POST credentials to the IDP token endpoint and return the JWT."""
-    headers = {
-        "Accept": "*/*",
-        "ClientSecret": client_secret,
-        "Content-Type": "application/json",
-        "ClientId": client_id,
-        "scope": "profile openid roles permissions",
-    }
-    response = requests.post(
-        auth_url, headers=headers, json={"username": user, "password": password}, verify=False
-    )
-    response.raise_for_status()
-    body = response.json()
-    token = body.get("jwt_token") or body.get("access_token") or body.get("token")
-    if not token:
-        raise RuntimeError(f"IDP response had no token. Keys: {list(body.keys())}")
-    logger.info("IDP token acquired from %s", auth_url)
-    return str(token)
 
 
 class IDPCustomAuth(httpx.Auth):
-    requires_request_body = True
-
     def __init__(
         self,
         *,
@@ -56,6 +20,7 @@ class IDPCustomAuth(httpx.Auth):
         client_secret: str,
         user: str,
         password: str,
+        verify_ssl: bool = False,
     ) -> None:
         self._app_id = app_id
         self._auth_url = auth_url
@@ -63,57 +28,36 @@ class IDPCustomAuth(httpx.Auth):
         self._client_secret = client_secret
         self._user = user
         self._password = password
+        self._verify_ssl = verify_ssl
         self._token: str | None = None
-        self._expires_at: float = 0.0
-        self._lock = threading.Lock()
-
-    def _sso_override(self) -> str | None:
-        token = (os.environ.get("SSO_TOKEN") or "").strip()
-        if not token or token.lower() in {"none", "null", "undefined"} or token.count(".") != 2:
-            return None
-        return token
-
-    def _ensure_token(self) -> str | None:
-        sso = self._sso_override()
-        if sso:
-            return sso
-        if self._token and time.time() < self._expires_at - 30:
-            return self._token
-        with self._lock:
-            if self._token and time.time() < self._expires_at - 30:
-                return self._token
-            try:
-                self._token = _fetch_idp_token(
-                    auth_url=self._auth_url,
-                    client_id=self._client_id,
-                    client_secret=self._client_secret,
-                    user=self._user,
-                    password=self._password,
-                )
-                self._expires_at = time.time() + _DEFAULT_TTL
-            except Exception as exc:  # noqa: BLE001 - proceed unauthenticated; gateway returns 401
-                logger.error("IDP token fetch failed: %s", exc)
-                self._token, self._expires_at = None, 0.0
-            return self._token
-
-    def _apply(self, request: httpx.Request, token: str | None) -> None:
-        if token:
-            request.headers["Authorization"] = f"Bearer {token}"
-        request.headers["Content-Type"] = "application/json"
-        request.headers["app-id"] = str(self._app_id)
-
-    def auth_flow(self, request: httpx.Request):
-        self._apply(request, self._ensure_token())
-        response = yield request
-        if response.status_code == 401 and not self._sso_override():
-            self._token = None
-            self._apply(request, self._ensure_token())
-            yield request
 
     async def async_auth_flow(self, request: httpx.Request):
-        self._apply(request, self._ensure_token())
+        if self._token is None:
+            self._token = await self._fetch_token()
+        self._apply(request)
+
         response = yield request
-        if response.status_code == 401 and not self._sso_override():
-            self._token = None
-            self._apply(request, self._ensure_token())
+        if response.status_code == 401:
+            self._token = await self._fetch_token()
+            self._apply(request)
             yield request
+
+    def _apply(self, request: httpx.Request) -> None:
+        request.headers["Authorization"] = f"Bearer {self._token}"
+        request.headers["app-id"] = str(self._app_id)
+
+    async def _fetch_token(self) -> str:
+        headers = {
+            "Accept": "*/*",
+            "ClientId": self._client_id,
+            "ClientSecret": self._client_secret,
+            "scope": "profile openid roles permissions",
+        }
+        body = {"username": self._user, "password": self._password}
+        async with httpx.AsyncClient(verify=self._verify_ssl) as client:
+            response = await client.post(self._auth_url, headers=headers, json=body)
+        response.raise_for_status()
+        token = response.json().get("jwt_token")
+        if not token:
+            raise RuntimeError("IDP token response missing jwt_token")
+        return str(token)
