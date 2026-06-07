@@ -32,12 +32,16 @@ class IDPCustomAuth(httpx.Auth):
         self._token: str | None = None
 
     async def async_auth_flow(self, request: httpx.Request):
-        if self._token is None:
+        fetched_now = self._token is None
+        if fetched_now:
             self._token = await self._fetch_token()
         self._apply(request)
 
         response = yield request
-        if response.status_code == 401:
+        # A 401 on a cached token likely means it expired -> refresh once and retry.
+        # If we just fetched the token and still got 401, the cause is not expiry
+        # (bad creds / permissions), so let that 401 surface to the caller.
+        if response.status_code == 401 and not fetched_now:
             self._token = await self._fetch_token()
             self._apply(request)
             yield request
