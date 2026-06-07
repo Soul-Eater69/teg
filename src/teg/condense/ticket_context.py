@@ -83,7 +83,10 @@ async def resolve_from_ticket(
 
     async def _extract(attachment: JiraAttachment) -> tuple[str, str]:
         content = await jira_client.download_attachment(attachment)
-        return attachment.filename, extractor.extract(attachment.filename, content)
+        # markitdown is synchronous CPU work - run it off the event loop so it does
+        # not block concurrent downloads (and so extractions can overlap).
+        text = await asyncio.to_thread(extractor.extract, attachment.filename, content)
+        return attachment.filename, text
 
     documents = list(await asyncio.gather(*(_extract(a) for a in chosen)))
 
