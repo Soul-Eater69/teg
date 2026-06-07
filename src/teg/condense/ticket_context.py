@@ -57,7 +57,7 @@ async def resolve_from_ticket(
         primary_source = "attachments_fallback"
 
     async def _extract(attachment: JiraAttachment) -> tuple[str, str]:
-        content = await jira_client.download_attachment(ticket.ticket_id, attachment.filename)
+        content = await jira_client.download_attachment(attachment)
         return attachment.filename, extractor.extract(attachment.filename, content)
 
     documents = list(await asyncio.gather(*(_extract(a) for a in chosen)))

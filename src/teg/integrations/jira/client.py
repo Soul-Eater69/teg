@@ -14,9 +14,10 @@ from typing import Protocol, runtime_checkable
 
 @dataclass
 class JiraAttachment:
-    """Attachment metadata from Jira. ``content`` is fetched lazily via the client."""
+    """Attachment metadata from Jira. ``content_url`` is the absolute download URL."""
 
     filename: str
+    content_url: str = ""
     mime_type: str = ""
     size_bytes: int = 0
 
@@ -33,4 +34,4 @@ class JiraTicket:
 class JiraClient(Protocol):
     async def fetch_ticket(self, ticket_id: str) -> JiraTicket: ...
 
-    async def download_attachment(self, ticket_id: str, filename: str) -> bytes: ...
+    async def download_attachment(self, attachment: JiraAttachment) -> bytes: ...

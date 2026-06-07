@@ -21,8 +21,8 @@ class FakeJira:
     async def fetch_ticket(self, ticket_id: str) -> JiraTicket:
         return self._ticket
 
-    async def download_attachment(self, ticket_id: str, filename: str) -> bytes:
-        return f"bytes::{filename}".encode()
+    async def download_attachment(self, attachment: JiraAttachment) -> bytes:
+        return f"bytes::{attachment.filename}".encode()
 
 
 class FakeExtractor:

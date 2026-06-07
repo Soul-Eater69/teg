@@ -14,7 +14,10 @@ class Settings(BaseSettings):
 
     # Jira
     jira_base_url: str = ""
-    jira_token: str = ""
+    jira_token: str = ""  # Personal Access Token (Bearer)
+    jira_api_version: str = "2"
+    jira_verify_ssl: bool = False
+    jira_timeout_seconds: float = 30.0
 
     # Azure AI Search (idp_idmt_data unified index)
     search_endpoint: str = ""
