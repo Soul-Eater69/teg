@@ -1,12 +1,15 @@
 """Upsert documents into the unified Azure Search index (idp_teg_data).
 
 merge_or_upload = upsert by key (id), so re-ingesting a ticket overwrites its doc -
-safe to re-run. Batched to the Azure per-request cap. Gated on the optional 'search'
-extra; the batching helper is pure and unit-tested.
+safe to re-run. Batched to the Azure per-request cap. Each document's IndexingResult is
+inspected so a partial-batch failure (e.g. a schema-rejected doc) is surfaced rather than
+silently swallowed - it matters for an unattended nightly run. Gated on the optional
+'search' extra; the pure helpers are unit-tested.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Iterator
 
 from teg.config.settings import Settings
@@ -26,16 +29,49 @@ def _chunk(documents: list[dict], size: int = _BATCH_SIZE) -> Iterator[list[dict
         yield documents[start : start + size]
 
 
+@dataclass(frozen=True)
+class UploadFailure:
+    document_id: str
+    status_code: int | None
+    error_message: str
+
+
+@dataclass(frozen=True)
+class UploadReport:
+    succeeded: int = 0
+    failures: list[UploadFailure] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+
+def _failures(results) -> list[UploadFailure]:
+    """Pull the failed IndexingResults from one batch response."""
+    out: list[UploadFailure] = []
+    for result in results or []:
+        if getattr(result, "succeeded", True):
+            continue
+        out.append(
+            UploadFailure(
+                document_id=str(getattr(result, "key", "") or ""),
+                status_code=getattr(result, "status_code", None),
+                error_message=str(getattr(result, "error_message", "") or ""),
+            )
+        )
+    return out
+
+
 class SearchUploader:
     def __init__(self, index_client) -> None:
         self._index = index_client
 
-    async def upload(self, documents: list[dict]) -> int:
-        uploaded = 0
+    async def upload(self, documents: list[dict]) -> UploadReport:
+        failures: list[UploadFailure] = []
         for batch in _chunk(documents):
-            await self._index.merge_or_upload_documents(documents=batch)
-            uploaded += len(batch)
-        return uploaded
+            results = await self._index.merge_or_upload_documents(documents=batch)
+            failures.extend(_failures(results))
+        return UploadReport(succeeded=len(documents) - len(failures), failures=failures)
 
     async def close(self) -> None:
         await self._index.close()

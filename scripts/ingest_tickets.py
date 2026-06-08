@@ -76,10 +76,12 @@ async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: boo
         return
     uploader = build_search_uploader(settings)
     try:
-        count = await uploader.upload(historical_docs)
+        report = await uploader.upload(historical_docs)
     finally:
         await uploader.close()
-    print(f"upserted {count} historical docs -> {settings.search_index}")
+    print(f"upserted {report.succeeded}/{len(historical_docs)} historical docs -> {settings.search_index}")
+    for failure in report.failures:
+        print(f"  FAILED {failure.document_id}: [{failure.status_code}] {failure.error_message}")
 
 
 def _write(path: Path, docs: list[dict]) -> None:

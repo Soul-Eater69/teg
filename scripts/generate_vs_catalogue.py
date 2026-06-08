@@ -51,12 +51,15 @@ async def main(map_path: str, out_dir: str, embed: bool, upload: bool) -> None:
     if upload:
         if not embed:
             raise SystemExit("--upload requires --embed (the index needs content_vector)")
-        uploader = build_search_uploader(load_settings())
+        settings = load_settings()
+        uploader = build_search_uploader(settings)
         try:
-            count = await uploader.upload(index_docs)
+            report = await uploader.upload(index_docs)
         finally:
             await uploader.close()
-        print(f"upserted {count} value stream docs -> {load_settings().search_index}")
+        print(f"upserted {report.succeeded}/{len(index_docs)} value stream docs -> {settings.search_index}")
+        for failure in report.failures:
+            print(f"  FAILED {failure.document_id}: [{failure.status_code}] {failure.error_message}")
 
 
 def _write(path: Path, docs: list[dict]) -> None:
