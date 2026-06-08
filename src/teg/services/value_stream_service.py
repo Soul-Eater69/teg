@@ -20,7 +20,7 @@ class ValueStreamService:
         Flow:
           1. parallel lanes vs idp_idmt_data: VS catalogue (top 50) + historical ER (top 6).
           2. merge into buckets (semantic+historic / historic-only / semantic-only),
-             apply caps + gates + generic/risky penalty.
+             apply caps + gates.
           3. two parallel review-pool LLM calls -> merge/dedupe/validate vs approved catalogue.
 
         TODO: implement via teg.value_stream.{retrieval,candidate_merger,review_pool,selection}.

@@ -72,13 +72,6 @@ def test_semantic_only_gate_filters_weak() -> None:
     assert ids == ["VS2"]  # 0.9 < 1.00 floor gated out
 
 
-def test_generic_semantic_only_needs_higher_floor() -> None:
-    generic = _cand("VS1", "semantic_only", semantic=1.1, name="Receive Care")  # needs >=1.25
-    normal = _cand("VS2", "semantic_only", semantic=1.1, name="Issue Payment")  # >=1.00 ok
-    ids = [c.value_stream_id for c in select_review_pool([generic, normal])]
-    assert ids == ["VS2"]
-
-
 def test_historic_only_gate_respects_policy() -> None:
     thin = _cand("VS1", "historic_only", hits=1, direct=0, best=0.5, weighted=0.4)
     strict = CandidateMergePolicy(historic_min_hits=2, historic_min_best=0.9, historic_min_weighted=0.9)
