@@ -1,10 +1,11 @@
-"""VS catalogue loader + Cosmos/index document builders (Generator A)."""
+"""Catalogue loader + Cosmos/index/capability document builders (Generator A)."""
 
 from __future__ import annotations
 
 import json
 
-from teg.ingestion.catalogues.loader import load_value_stream_catalogue
+from teg.ingestion.catalogues.loader import load_capability_tree, load_value_stream_catalogue
+from teg.ingestion.documents.capability_documents import build_capability_document
 from teg.ingestion.documents.value_stream_documents import (
     build_catalogue_content,
     build_catalogue_document,
@@ -18,25 +19,59 @@ SAMPLE = {
         {
             "value_stream_id": "VSR00074583",
             "value_stream_name": "Acquire Asset",
-            "value_stream_description": "The end-to-end view from request to delivery",
-            "value_stream_category": "Finance",
-            "value_stream_trigger": "Asset Requester",
-            "value_stream_stakeholders": "Supplier; Procurement; Asset Requestor",
-            "value_stream_created_date": "2021-03-14",
+            "value_stream_description": "End-to-end request to delivery",
+            "value_proposition": "Faster asset turnaround",
+            "trigger": "Asset Requester",
+            "category": "Finance",
+            "stakeholders": "Supplier; Procurement; Asset Requestor",
+            "assumptions": "Budget approved",
+            "defined_terms": "BOM = bill of materials",
+            "active": True,
+            "created_date": "2021-03-14",
+            "created_by": "U447949",
+            "modified_date": "2025-01-02",
+            "modified_by": "U999999",
             "stages": [
                 {
                     "stage_id": "VSS00074680",
-                    "stage_sequence": 1,
                     "stage_name": "Request Asset",
-                    "stage_display_name": "Request Asset {VSS00074680}",
-                    "stage_description": "The act of submitting a request for a new asset",
-                    "stage_entrance_criteria": "Asset order initiated",
-                    "stage_exit_criteria": "Asset order acknowledged",
-                    "stage_value_items": "Asset order requested",
-                    "stage_stakeholders": "Asset Requestor; Procurement",
+                    "stage_description": "Submit a request for a new asset",
+                    "sequence": 1,
+                    "entrance_criteria": "Asset order initiated",
+                    "exit_criteria": "Asset order acknowledged",
+                    "value_items": "Asset order requested",
+                    "stakeholders": "Asset Requestor; Procurement",
+                    "active": True,
+                    "created_date": "2021-03-14",
+                    "modified_date": "2024-06-01",
+                    "capabilities": [
+                        {
+                            "capability_id": "CAP-L3-1",
+                            "capability_name": "Capture Asset Request",
+                            "capability_description": "Record the request details",
+                            "level": 3,
+                            "tier": "core",
+                            "active": True,
+                            "level_1_id": "CAP-L1-1",
+                            "level_1_name": "Manage Assets",
+                            "level_2_id": "CAP-L2-1",
+                            "level_2_name": "Asset Intake",
+                        }
+                    ],
                 }
             ],
         }
+    ],
+}
+
+TREE = {
+    "source_file": "value_streams.xlsx",
+    "capability_count": 3,
+    "level_counts": {"1": 1, "2": 1, "3": 1},
+    "capabilities": [
+        {"capability_id": "CAP-L1-1", "capability_name": "Manage Assets", "capability_description": None, "level": 1, "tier": None, "active": True, "parent_id": None},
+        {"capability_id": "CAP-L2-1", "capability_name": "Asset Intake", "capability_description": None, "level": 2, "tier": None, "active": True, "parent_id": "CAP-L1-1"},
+        {"capability_id": "CAP-L3-1", "capability_name": "Capture Asset Request", "capability_description": None, "level": 3, "tier": "core", "active": True, "parent_id": "CAP-L2-1"},
     ],
 }
 
@@ -47,41 +82,60 @@ def _load(tmp_path):
     return load_value_stream_catalogue(path)
 
 
-def test_loader_parses_and_splits_semicolons(tmp_path) -> None:
-    catalogue = _load(tmp_path)
-    assert len(catalogue) == 1
-    vs = catalogue[0]
+def test_loader_parses_vs_stage_capability(tmp_path) -> None:
+    vs = _load(tmp_path)[0]
     assert vs.value_stream_id == "VSR00074583"
-    assert vs.value_stream_stakeholders == ["Supplier", "Procurement", "Asset Requestor"]
-    assert vs.stages[0].stage_sequence == 1
-    assert vs.stages[0].stage_stakeholders == ["Asset Requestor", "Procurement"]
+    assert vs.value_proposition == "Faster asset turnaround"
+    assert vs.stakeholders == ["Supplier", "Procurement", "Asset Requestor"]
+    assert vs.active is True
+    stage = vs.stages[0]
+    assert stage.sequence == 1
+    assert stage.stakeholders == ["Asset Requestor", "Procurement"]
+    cap = stage.capabilities[0]
+    assert cap.level == 3
+    assert cap.level_two_id == "CAP-L2-1" and cap.level_two_name == "Asset Intake"
 
 
 def test_catalogue_document_shape(tmp_path) -> None:
     vs = _load(tmp_path)[0]
     doc = build_catalogue_document(vs, ingested_at="2026-06-08T00:00:00+00:00")
     assert doc["id"] == "VSR00074583"
-    assert doc["entityType"] == "valueStream"
     assert doc["ingestedAt"] == "2026-06-08T00:00:00+00:00"
     props = doc["properties"]
-    assert props["createdDate"] == "2021-03-14"  # source date lives in properties
-    assert props["valueStreamCategory"] == "Finance"
-    assert props["valueStreamTrigger"] == "Asset Requester"
+    assert props["category"] == "Finance"
+    assert props["valueProposition"] == "Faster asset turnaround"
+    assert props["createdBy"] == "U447949"  # source audit in properties
     stage = props["valueStages"][0]
-    assert stage["stageId"] == "VSS00074680"
     assert stage["stageSequence"] == 1
-    assert stage["stageEntranceCriteria"] == "Asset order initiated"
-    assert "capabilitiesL2" not in stage  # L2/L3 dropped from this pass
+    cap = stage["capabilities"][0]
+    assert cap["level"] == 3
+    assert cap["levelTwoId"] == "CAP-L2-1"  # L3 -> L2 inline (1-1)
 
 
 def test_index_document_content_and_props(tmp_path) -> None:
     vs = _load(tmp_path)[0]
     content = build_catalogue_content(vs)
-    assert "Acquire Asset" in content and "Finance" in content and "Asset Requester" in content
+    assert "Acquire Asset" in content and "Finance" in content and "Faster asset turnaround" in content
 
-    doc = build_index_document(vs, content_vector=[0.1, 0.2])
-    assert doc["id"] == "VSR00074583"
+    doc = build_index_document(vs, content_vector=[0.1, 0.2], ingested_at="2026-06-08T00:00:00+00:00")
     assert doc["content"] == content
     assert doc["content_vector"] == [0.1, 0.2]
-    assert doc["properties"]["valueStreamCategory"] == "Finance"
+    assert doc["properties"]["category"] == "Finance"
     assert "valueStages" not in doc["properties"]  # index never carries the stage hierarchy
+
+
+def test_capability_tree_documents(tmp_path) -> None:
+    path = tmp_path / "tree.json"
+    path.write_text(json.dumps(TREE), encoding="utf-8")
+    nodes = load_capability_tree(path)
+    assert len(nodes) == 3
+
+    l3 = next(n for n in nodes if n.level == 3)
+    doc = build_capability_document(l3, ingested_at="2026-06-08T00:00:00+00:00")
+    assert doc["id"] == "CAP-L3-1"
+    assert doc["entityType"] == "capability"
+    assert doc["parentId"] == "CAP-L2-1"  # links up to its L2
+    assert doc["properties"]["level"] == 3
+
+    l1 = next(n for n in nodes if n.level == 1)
+    assert build_capability_document(l1)["parentId"] is None  # root has no parent

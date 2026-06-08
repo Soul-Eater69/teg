@@ -1,7 +1,9 @@
-"""Load and parse the Sightline VS catalogue (value_stream_stage_map.json).
+"""Load and parse the Sightline catalogues.
 
-The map is VS -> stages (no L2/L3 - that comes from a separate source). Stakeholder
-fields are semicolon-delimited strings in the source; we split them to lists.
+- value_stream_capability_map.json: VS -> stages -> capabilities (L3 with L2/L1 inline).
+- capability_tree.json: the standalone L1/L2/L3 capability hierarchy (parent_id links).
+
+Stakeholder fields are semicolon-delimited strings in the source; we split them to lists.
 """
 
 from __future__ import annotations
@@ -9,7 +11,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
+from teg.ingestion.catalogues.models import (
+    CapabilityNode,
+    CatalogueCapability,
+    CatalogueStage,
+    CatalogueValueStream,
+)
 
 
 def load_value_stream_catalogue(path: str | Path) -> list[CatalogueValueStream]:
@@ -17,15 +24,27 @@ def load_value_stream_catalogue(path: str | Path) -> list[CatalogueValueStream]:
     return [_value_stream(raw) for raw in data.get("value_streams") or []]
 
 
+def load_capability_tree(path: str | Path) -> list[CapabilityNode]:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return [_capability_node(raw) for raw in data.get("capabilities") or []]
+
+
 def _value_stream(raw: dict) -> CatalogueValueStream:
     return CatalogueValueStream(
         value_stream_id=_text(raw.get("value_stream_id")),
         value_stream_name=_text(raw.get("value_stream_name")),
         value_stream_description=_text(raw.get("value_stream_description")),
-        value_stream_category=_text(raw.get("value_stream_category")),
-        value_stream_trigger=_text(raw.get("value_stream_trigger")),
-        value_stream_created_date=_text(raw.get("value_stream_created_date")),
-        value_stream_stakeholders=_split(raw.get("value_stream_stakeholders")),
+        value_proposition=_text(raw.get("value_proposition")),
+        trigger=_text(raw.get("trigger")),
+        category=_text(raw.get("category")),
+        assumptions=_text(raw.get("assumptions")),
+        defined_terms=_text(raw.get("defined_terms")),
+        active=_bool(raw.get("active")),
+        created_date=_text(raw.get("created_date")),
+        created_by=_text(raw.get("created_by")),
+        modified_date=_text(raw.get("modified_date")),
+        modified_by=_text(raw.get("modified_by")),
+        stakeholders=_split(raw.get("stakeholders")),
         stages=[_stage(s) for s in raw.get("stages") or []],
     )
 
@@ -33,14 +52,44 @@ def _value_stream(raw: dict) -> CatalogueValueStream:
 def _stage(raw: dict) -> CatalogueStage:
     return CatalogueStage(
         stage_id=_text(raw.get("stage_id")),
-        stage_sequence=_int(raw.get("stage_sequence")),
         stage_name=_text(raw.get("stage_name")),
-        stage_display_name=_text(raw.get("stage_display_name")),
         stage_description=_text(raw.get("stage_description")),
-        stage_entrance_criteria=_text(raw.get("stage_entrance_criteria")),
-        stage_exit_criteria=_text(raw.get("stage_exit_criteria")),
-        stage_value_items=_text(raw.get("stage_value_items")),
-        stage_stakeholders=_split(raw.get("stage_stakeholders")),
+        sequence=_int(raw.get("sequence")),
+        entrance_criteria=_text(raw.get("entrance_criteria")),
+        exit_criteria=_text(raw.get("exit_criteria")),
+        value_items=_text(raw.get("value_items")),
+        active=_bool(raw.get("active")),
+        created_date=_text(raw.get("created_date")),
+        modified_date=_text(raw.get("modified_date")),
+        stakeholders=_split(raw.get("stakeholders")),
+        capabilities=[_capability(c) for c in raw.get("capabilities") or []],
+    )
+
+
+def _capability(raw: dict) -> CatalogueCapability:
+    return CatalogueCapability(
+        capability_id=_text(raw.get("capability_id")),
+        capability_name=_text(raw.get("capability_name")),
+        capability_description=_text(raw.get("capability_description")),
+        level=_int(raw.get("level")),
+        tier=_text(raw.get("tier")),
+        active=_bool(raw.get("active")),
+        level_one_id=_text(raw.get("level_1_id")),
+        level_one_name=_text(raw.get("level_1_name")),
+        level_two_id=_text(raw.get("level_2_id")),
+        level_two_name=_text(raw.get("level_2_name")),
+    )
+
+
+def _capability_node(raw: dict) -> CapabilityNode:
+    return CapabilityNode(
+        capability_id=_text(raw.get("capability_id")),
+        capability_name=_text(raw.get("capability_name")),
+        capability_description=_text(raw.get("capability_description")),
+        level=_int(raw.get("level")),
+        tier=_text(raw.get("tier")),
+        active=_bool(raw.get("active")),
+        parent_id=_text(raw.get("parent_id")),
     )
 
 
@@ -53,6 +102,10 @@ def _int(value: object) -> int:
         return int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 0
+
+
+def _bool(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 def _split(raw: object) -> list[str]:
