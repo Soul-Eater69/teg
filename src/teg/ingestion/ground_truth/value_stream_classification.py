@@ -16,14 +16,15 @@ from teg.domain.value_stream import SupportType
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
 
-# The consolidated ticket text can be large; cap what we send to the classifier.
-_INPUT_CHAR_LIMIT = 12000
+# The consolidated ticket text can be large; cap what we send (matches the vs flow).
+_INPUT_CHAR_LIMIT = 20_000
 
 
 class VsClassificationItem(CamelModel):
     vs_name: str
     inference_type: SupportType = "implied"
     reason: str = ""
+    evidence: str = ""  # short verbatim snippet from the ticket supporting the call
 
 
 class VsClassification(CamelModel):

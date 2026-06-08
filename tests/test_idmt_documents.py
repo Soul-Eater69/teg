@@ -48,10 +48,12 @@ def test_idmt_document_shape() -> None:
             value_stream_name="Resolve Appeal",
             support_type="direct",
             reason="ticket centers on appeal resolution",
+            evidence="processed appeal or reconsideration of claim",
         )
     ]
     doc = build_idmt_document(er=_er(), condensed=_condensed(), theme_gt=gt)
     assert doc["id"] == "3364549"  # stable Jira id, not the IDMT key
+    assert doc["sourceId"] == "IDMT-19761"  # mutable Jira key
     assert doc["entityType"] == "EngagementRequest"
     assert doc["createdBy"] == "U133178"
     assert "ingestedAt" not in doc and "parentId" not in doc  # ER is a root
@@ -64,6 +66,7 @@ def test_idmt_document_shape() -> None:
     assert theme["groupId"] == "GROUP-23618"
     assert theme["valueStreamId"] == "VSR00074590"
     assert theme["supportType"] == "direct"
+    assert theme["evidence"].startswith("processed appeal")
 
 
 def test_theme_document_shape() -> None:
@@ -77,7 +80,8 @@ def test_theme_document_shape() -> None:
         created_by="U447949",
     )
     doc = build_theme_document(theme, parent_er_id="3364549")
-    assert doc["id"] == "3966046"
+    assert doc["id"] == "3966046"  # stable Jira id
+    assert doc["groupId"] == "GROUP-23618"  # mutable GROUP key
     assert doc["entityType"] == "Theme"
     assert doc["parentId"] == "3364549"  # links to its ER
     assert doc["parentEntityType"] == "EngagementRequest"

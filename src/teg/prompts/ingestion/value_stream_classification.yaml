@@ -33,6 +33,11 @@ system: |
   processes, populations, regulations, or workflows that actually appear in the source. Avoid
   generic phrasing like "this is related to the value stream."
 
+  ## Evidence field
+  A short verbatim snippet (<=160 chars) copied directly from the ticket text - the specific
+  sentence or phrase that supports the classification. Use an empty string only when nothing
+  in the text is relevant.
+
   ## Rules
   - Classify every supplied value stream - never omit one.
   - Do not introduce, invent, or substitute names not on the supplied list.

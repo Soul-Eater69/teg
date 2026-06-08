@@ -29,6 +29,7 @@ def build_idmt_document(
         "id": er.stable_id,
         "source": ER_SOURCE,
         "entityType": ER_ENTITY_TYPE,
+        "sourceId": er.key or None,  # IDMT-#### (mutable Jira key)
         "createdDate": er.created_date or None,
         "createdBy": er.created_by or None,
         "modifiedDate": er.modified_date or None,
@@ -66,6 +67,7 @@ def build_theme_document(theme: ExtractedTheme, *, parent_er_id: str) -> dict:
         "id": theme.stable_id,
         "source": ER_SOURCE,
         "entityType": THEME_ENTITY_TYPE,
+        "groupId": theme.group_key or None,  # GROUP-#### (mutable Jira key)
         "parentId": parent_er_id,
         "parentEntityType": ER_ENTITY_TYPE,
         "createdDate": theme.created_date or None,

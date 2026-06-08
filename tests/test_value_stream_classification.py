@@ -22,7 +22,7 @@ class FakeLLM:
 async def test_labels_each_vs_direct_or_implied() -> None:
     result = VsClassification(
         value_streams=[
-            VsClassificationItem(vs_name="Adjudicate Claim", inference_type="direct", reason="claims adjudication is central"),
+            VsClassificationItem(vs_name="Adjudicate Claim", inference_type="direct", reason="claims adjudication is central", evidence="automate claims adjudication"),
             VsClassificationItem(vs_name="Configure, Price, and Quote", inference_type="implied", reason="adjacent quoting step"),
         ]
     )
@@ -34,6 +34,7 @@ async def test_labels_each_vs_direct_or_implied() -> None:
     )
     assert out["Adjudicate Claim"].inference_type == "direct"
     assert "claims" in out["Adjudicate Claim"].reason
+    assert out["Adjudicate Claim"].evidence == "automate claims adjudication"
     assert out["Configure, Price, and Quote"].inference_type == "implied"
 
 

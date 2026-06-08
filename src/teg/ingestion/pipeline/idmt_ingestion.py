@@ -64,6 +64,7 @@ class IdmtIngestion:
                     value_stream_name=vs_name,
                     support_type=label.inference_type if label else "implied",
                     reason=label.reason if label else "",
+                    evidence=label.evidence if label else "",
                 )
             )
             theme_docs.append(build_theme_document(theme, parent_er_id=er.stable_id))
