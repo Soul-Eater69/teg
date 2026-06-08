@@ -59,11 +59,12 @@ def test_loader_parses_and_splits_semicolons(tmp_path) -> None:
 
 def test_catalogue_document_shape(tmp_path) -> None:
     vs = _load(tmp_path)[0]
-    doc = build_catalogue_document(vs)
+    doc = build_catalogue_document(vs, ingested_at="2026-06-08T00:00:00+00:00")
     assert doc["id"] == "VSR00074583"
     assert doc["entityType"] == "valueStream"
-    assert doc["createdAt"] == "2021-03-14"
+    assert doc["ingestedAt"] == "2026-06-08T00:00:00+00:00"
     props = doc["properties"]
+    assert props["createdDate"] == "2021-03-14"  # source date lives in properties
     assert props["valueStreamCategory"] == "Finance"
     assert props["valueStreamTrigger"] == "Asset Requester"
     stage = props["valueStages"][0]

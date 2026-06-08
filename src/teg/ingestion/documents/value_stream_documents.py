@@ -7,24 +7,31 @@ hierarchy; the index doc carries only retrieval text + vector + display/filter f
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
 
 CATALOGUE_SOURCE = "Sightline"
 ENTITY_TYPE = "valueStream"
 
 
-def build_catalogue_document(vs: CatalogueValueStream) -> dict:
-    """Cosmos governed-catalogue document (point-read by valueStreamId at stage gen)."""
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def build_catalogue_document(vs: CatalogueValueStream, *, ingested_at: str | None = None) -> dict:
+    """Cosmos governed-catalogue document (point-read by valueStreamId at stage gen).
+
+    The envelope carries ``ingestedAt`` (our write time); the source catalogue date
+    lives in ``properties.createdDate``.
+    """
     return {
         "id": vs.value_stream_id,
         "source": CATALOGUE_SOURCE,
         "entityType": ENTITY_TYPE,
         "parentId": None,
         "parentEntityType": None,
-        "createdAt": vs.value_stream_created_date or None,
-        "createdBy": None,
-        "modifiedAt": None,
-        "modifiedBy": None,
+        "ingestedAt": ingested_at or _utc_now(),
         "properties": {
             "valueStreamId": vs.value_stream_id,
             "valueStreamName": vs.value_stream_name,
@@ -33,6 +40,7 @@ def build_catalogue_document(vs: CatalogueValueStream) -> dict:
             "valueStreamTrigger": vs.value_stream_trigger,
             "valueStreamStakeholders": list(vs.value_stream_stakeholders),
             "valueStages": [_stage_document(stage) for stage in vs.stages],
+            "createdDate": vs.value_stream_created_date or None,
         },
     }
 
@@ -63,17 +71,17 @@ def build_catalogue_content(vs: CatalogueValueStream) -> str:
 
 
 def build_index_document(
-    vs: CatalogueValueStream, content_vector: list[float] | None = None
+    vs: CatalogueValueStream,
+    content_vector: list[float] | None = None,
+    *,
+    ingested_at: str | None = None,
 ) -> dict:
     """VS search-index document: retrieval text + vector + display/filter fields only."""
     return {
         "id": vs.value_stream_id,
         "source": CATALOGUE_SOURCE,
         "entityType": ENTITY_TYPE,
-        "createdAt": vs.value_stream_created_date or None,
-        "createdBy": None,
-        "modifiedAt": None,
-        "modifiedBy": None,
+        "ingestedAt": ingested_at or _utc_now(),
         "content": build_catalogue_content(vs),
         "content_vector": content_vector,
         "properties": {

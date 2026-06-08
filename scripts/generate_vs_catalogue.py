@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from teg.config.settings import load_settings
@@ -30,15 +31,19 @@ async def main(map_path: str, out_dir: str, embed: bool) -> None:
     catalogue = load_value_stream_catalogue(map_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    ingested_at = datetime.now(timezone.utc).isoformat()  # one timestamp for the batch
 
-    cosmos_docs = [build_catalogue_document(vs) for vs in catalogue]
+    cosmos_docs = [build_catalogue_document(vs, ingested_at=ingested_at) for vs in catalogue]
     _write(out / "cosmos_value_streams.json", cosmos_docs)
 
     vectors: list[list[float] | None] = [None] * len(catalogue)
     if embed:
         client = build_embeddings_client(load_settings())
         vectors = list(await client.embed_many([build_catalogue_content(vs) for vs in catalogue]))
-    index_docs = [build_index_document(vs, vec) for vs, vec in zip(catalogue, vectors)]
+    index_docs = [
+        build_index_document(vs, vec, ingested_at=ingested_at)
+        for vs, vec in zip(catalogue, vectors)
+    ]
     _write(out / "index_value_streams.json", index_docs)
 
     stages = sum(len(vs.stages) for vs in catalogue)
