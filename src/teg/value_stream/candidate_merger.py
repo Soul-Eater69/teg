@@ -101,26 +101,48 @@ def select_review_pool(
     *,
     policy: CandidateMergePolicy = CandidateMergePolicy(),
 ) -> list[ValueStreamCandidate]:
-    """Gate, rank, and cap to the candidate window in lane priority order."""
+    """Fill the review window in lane-priority order.
+
+    Preferred fill: gated candidates within each lane's cap (the high-precision mix,
+    semantic+historic -> historic-only -> semantic-only). If that underfills the
+    window - e.g. a thin or empty historic lane, or semantic scores below the floor -
+    backfill greedily from the remaining candidates, relaxing caps and gates, so the
+    pool is never starved. Gates/caps therefore shape preference under surplus, not
+    hard exclusion. The LLM still does the final selection.
+    """
     semantic_plus = sorted(
         (c for c in candidates if c.lane == "semantic_plus_historic"),
         key=_sort_semantic_plus_historic,
     )
     historic_only = sorted(
-        (c for c in candidates if c.lane == "historic_only" and _is_good_historic_only(c, policy)),
-        key=_sort_historic_only,
+        (c for c in candidates if c.lane == "historic_only"), key=_sort_historic_only
     )
     semantic_only = sorted(
-        (c for c in candidates if c.lane == "semantic_only" and _is_strong_semantic_only(c, policy)),
-        key=_sort_semantic_only,
+        (c for c in candidates if c.lane == "semantic_only"), key=_sort_semantic_only
     )
 
     pool: list[ValueStreamCandidate] = []
     pool += semantic_plus[: policy.max_semantic_plus_historic]
     room = max(0, policy.window - len(pool))
-    pool += historic_only[: min(policy.max_historic_only, room)]
+    pool += [c for c in historic_only if _is_good_historic_only(c, policy)][
+        : min(policy.max_historic_only, room)
+    ]
     room = max(0, policy.window - len(pool))
-    pool += semantic_only[: min(policy.max_semantic_only, room)]
+    pool += [c for c in semantic_only if _is_strong_semantic_only(c, policy)][
+        : min(policy.max_semantic_only, room)
+    ]
+
+    # Backfill: top up from whatever is left (lane priority preserved) so a missing
+    # or weak lane never starves the pool. Caps/gates above were the preferred shape.
+    if len(pool) < policy.window:
+        chosen = {c.value_stream_id for c in pool}
+        remaining = [
+            c
+            for c in (*semantic_plus, *historic_only, *semantic_only)
+            if c.value_stream_id not in chosen
+        ]
+        pool += remaining[: policy.window - len(pool)]
+
     return pool[: policy.window]
 
 
