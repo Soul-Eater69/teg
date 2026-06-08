@@ -85,13 +85,16 @@ def test_loader_parses_vs_stage_capability(tmp_path) -> None:
 
 def test_catalogue_document_shape(tmp_path) -> None:
     vs = _load(tmp_path)[0]
-    doc = build_catalogue_document(vs, ingested_at="2026-06-08T00:00:00+00:00")
+    doc = build_catalogue_document(vs)
     assert doc["id"] == "VSR00074583"
-    assert doc["ingestedAt"] == "2026-06-08T00:00:00+00:00"
+    assert "ingestedAt" not in doc  # no ingested date; source audit at the envelope
+    assert doc["createdDate"] == "2021-03-14"
+    assert doc["createdBy"] == "U447949"
+    assert doc["modifiedBy"] == "U999999"
     props = doc["properties"]
     assert props["category"] == "Finance"
     assert props["valueProposition"] == "Faster asset turnaround"
-    assert props["createdBy"] == "U447949"  # source audit in properties
+    assert "createdBy" not in props  # source audit lives on the envelope now
     stage = props["valueStages"][0]
     assert stage["stageSequence"] == 1
     cap = stage["capabilities"][0]
@@ -104,7 +107,7 @@ def test_index_document_content_and_props(tmp_path) -> None:
     content = build_catalogue_content(vs)
     assert "Acquire Asset" in content and "Finance" in content and "Faster asset turnaround" in content
 
-    doc = build_index_document(vs, content_vector=[0.1, 0.2], ingested_at="2026-06-08T00:00:00+00:00")
+    doc = build_index_document(vs, content_vector=[0.1, 0.2])
     assert doc["content"] == content
     assert doc["content_vector"] == [0.1, 0.2]
     assert doc["properties"]["category"] == "Finance"

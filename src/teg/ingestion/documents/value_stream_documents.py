@@ -1,15 +1,13 @@
 """Build the Cosmos VS-catalogue document and the VS search-index document.
 
 Single source of truth for these two shapes. The Cosmos doc is the governed system of
-record: VS -> stages -> capabilities (each capability an L3 leaf carrying its L2/L1
-ancestor, 1-1 L3->L2). The index doc carries only retrieval text + vector + display/
-filter fields. The envelope carries ingestedAt; the source's catalogue audit
-(created/modified) lives in properties.
+record: one nested document per VS -> stages -> capabilities (each capability an L3 leaf
+carrying its L2/L1 ancestor, 1-1 L3->L2). The envelope carries the source's catalogue
+audit (created/modified). The index doc carries only retrieval text + vector + display/
+filter fields.
 """
 
 from __future__ import annotations
-
-from datetime import datetime, timezone
 
 from teg.ingestion.catalogues.models import (
     CatalogueCapability,
@@ -21,11 +19,7 @@ CATALOGUE_SOURCE = "Sightline"
 ENTITY_TYPE = "valueStream"
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def build_catalogue_document(vs: CatalogueValueStream, *, ingested_at: str | None = None) -> dict:
+def build_catalogue_document(vs: CatalogueValueStream) -> dict:
     """Cosmos governed-catalogue document (point-read by valueStreamId at stage gen)."""
     return {
         "id": vs.value_stream_id,
@@ -33,7 +27,10 @@ def build_catalogue_document(vs: CatalogueValueStream, *, ingested_at: str | Non
         "entityType": ENTITY_TYPE,
         "parentId": None,
         "parentEntityType": None,
-        "ingestedAt": ingested_at or _utc_now(),
+        "createdDate": vs.created_date or None,
+        "createdBy": vs.created_by or None,
+        "modifiedDate": vs.modified_date or None,
+        "modifiedBy": vs.modified_by or None,
         "properties": {
             "valueStreamId": vs.value_stream_id,
             "valueStreamName": vs.value_stream_name,
@@ -46,10 +43,6 @@ def build_catalogue_document(vs: CatalogueValueStream, *, ingested_at: str | Non
             "definedTerms": vs.defined_terms,
             "active": vs.active,
             "valueStages": [_stage_document(stage) for stage in vs.stages],
-            "createdDate": vs.created_date or None,
-            "createdBy": vs.created_by or None,
-            "modifiedDate": vs.modified_date or None,
-            "modifiedBy": vs.modified_by or None,
         },
     }
 
@@ -99,17 +92,13 @@ def build_catalogue_content(vs: CatalogueValueStream) -> str:
 
 
 def build_index_document(
-    vs: CatalogueValueStream,
-    content_vector: list[float] | None = None,
-    *,
-    ingested_at: str | None = None,
+    vs: CatalogueValueStream, content_vector: list[float] | None = None
 ) -> dict:
     """VS search-index document: retrieval text + vector + display/filter fields only."""
     return {
         "id": vs.value_stream_id,
         "source": CATALOGUE_SOURCE,
         "entityType": ENTITY_TYPE,
-        "ingestedAt": ingested_at or _utc_now(),
         "content": build_catalogue_content(vs),
         "content_vector": content_vector,
         "properties": {
