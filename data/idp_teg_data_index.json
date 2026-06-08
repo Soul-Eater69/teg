@@ -11,7 +11,7 @@
       "type": "Collection(Edm.Single)",
       "searchable": true,
       "retrievable": false,
-      "dimensions": 3072,
+      "dimensions": 1536,
       "vectorSearchProfile": "teg-vector-profile"
     },
     {
