@@ -14,8 +14,10 @@ import httpx
 from teg.config.settings import Settings
 from teg.ingestion.extraction.jira_records import ExtractedEngagementRequest, ExtractedTheme
 
-_ER_FIELDS = "summary,description,created,updated,reporter,issuelinks"
-_THEME_FIELDS = "summary,description,created,updated,reporter"
+# Jira issue fields we request (the REST `fields` param is a comma-joined list).
+_COMMON_FIELDS = ("summary", "description", "created", "updated", "reporter")
+_ER_FIELDS = (*_COMMON_FIELDS, "issuelinks")  # the ER also needs its linked themes
+_THEME_FIELDS = _COMMON_FIELDS
 
 
 def _text(value: object) -> str:
@@ -99,9 +101,10 @@ class JiraIngestionSource:
         themes = [parse_theme(await self._issue(key, _THEME_FIELDS)) for key in group_keys]
         return replace(er, themes=themes)
 
-    async def _issue(self, issue_id: str, fields: str) -> dict:
+    async def _issue(self, issue_id: str, fields: tuple[str, ...]) -> dict:
         response = await self._http.get(
-            f"/rest/api/{self._api_version}/issue/{issue_id}", params={"fields": fields}
+            f"/rest/api/{self._api_version}/issue/{issue_id}",
+            params={"fields": ",".join(fields)},
         )
         response.raise_for_status()
         return response.json() or {}
