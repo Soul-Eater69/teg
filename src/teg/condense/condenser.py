@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 
-from teg.condense.ticket_context import ResolvedContext
+from teg.condense.models import ResolvedContext
 from teg.domain.condensed import CondensedTicket, GenerationSignals, SummaryFields
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt

@@ -9,20 +9,14 @@ ranking are the merger's job.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 
 from teg.domain.condensed import SummaryFields
-from teg.integrations.search import HistoricalHit, SearchClient, ValueStreamHit
+from teg.integrations.search import SearchClient
+from teg.value_stream.models import RetrievalResult
 
 # Winning retrieval knobs.
 _VS_TOP_K = 50
 _HISTORICAL_TOP_K = 6
-
-
-@dataclass
-class RetrievalResult:
-    value_stream_hits: list[ValueStreamHit] = field(default_factory=list)
-    historical_hits: list[HistoricalHit] = field(default_factory=list)
 
 
 def _build_query(summary: SummaryFields) -> str:

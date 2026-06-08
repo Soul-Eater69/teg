@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 from teg.integrations.search import HistoricalHit, HistoricalValueStreamLabel, ValueStreamHit
-from teg.value_stream.candidate_merger import (
-    CandidateMergePolicy,
-    ValueStreamCandidate,
-    build_candidates,
-    select_review_pool,
-)
+from teg.value_stream.candidate_merger import build_candidates, select_review_pool
+from teg.value_stream.models import CandidateMergePolicy, ValueStreamCandidate
 
 
 def _label(vs_id, name, support_type="implied", reason="", evidence=""):

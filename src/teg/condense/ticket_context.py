@@ -8,22 +8,12 @@ description + top-4 attachments) converge on the same :class:`ResolvedContext`.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 
 from teg.condense.attachment_ranker import select_attachments
 from teg.condense.config import CondenseConfig
+from teg.condense.models import ResolvedContext
 from teg.integrations.files import AttachmentTextExtractor
 from teg.integrations.jira import JiraAttachment, JiraClient, JiraTicket
-
-
-@dataclass
-class ResolvedContext:
-    ticket_id: str
-    ticket_title: str
-    description: str
-    primary_source: str  # "idea_card" | "attachments_fallback"
-    attachments_used: list[str] = field(default_factory=list)
-    consolidated_text: str = ""
 
 
 def _section(tag: str, body: str) -> str:
