@@ -7,6 +7,7 @@ is fetched once to get its stable id + description + dates (the link alone lacks
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 
 import httpx
@@ -97,8 +98,9 @@ class JiraIngestionSource:
 
     async def fetch_engagement_request(self, ticket_id: str) -> ExtractedEngagementRequest:
         er, group_keys = parse_engagement_request(await self._issue(ticket_id, _ER_FIELDS))
-        themes = [parse_theme(await self._issue(key, _THEME_FIELDS)) for key in group_keys]
-        return replace(er, themes=themes)
+        # Linked themes are independent fetches - run them concurrently.
+        issues = await asyncio.gather(*(self._issue(key, _THEME_FIELDS) for key in group_keys))
+        return replace(er, themes=[parse_theme(issue) for issue in issues])
 
     async def _issue(self, issue_id: str, fields: tuple[str, ...]) -> dict:
         response = await self._http.get(

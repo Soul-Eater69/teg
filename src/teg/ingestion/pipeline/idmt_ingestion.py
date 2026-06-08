@@ -9,6 +9,7 @@ an approved value stream are dropped from the GT.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from teg.contracts.condense_io import CondenseRequest
@@ -53,8 +54,12 @@ class IdmtIngestion:
 
     async def ingest(self, ticket_id: str) -> IngestedTicket:
         """Build the Cosmos IDMT/Theme docs + the historical index doc for one ticket."""
-        er = await self._jira.fetch_engagement_request(ticket_id)
-        condensed = (await self._condense.condense(CondenseRequest(ticket_id=ticket_id))).condensed
+        # The ER fetch (+ linked themes) and condense are independent - run concurrently.
+        er, condense_response = await asyncio.gather(
+            self._jira.fetch_engagement_request(ticket_id),
+            self._condense.condense(CondenseRequest(ticket_id=ticket_id)),
+        )
+        condensed = condense_response.condensed
 
         resolved = await self._resolver.resolve([t.summary for t in er.themes], self._llm)
         vs_names = [hit[1] for hit in resolved.values() if hit]

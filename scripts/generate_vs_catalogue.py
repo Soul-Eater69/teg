@@ -27,6 +27,10 @@ from teg.ingestion.upload.search_uploader import build_search_uploader
 
 
 async def main(map_path: str, out_dir: str, embed: bool, upload: bool) -> None:
+    if upload and not embed:  # fail fast, before any embedding work
+        raise SystemExit("--upload requires --embed (the index needs content_vector)")
+
+    settings = load_settings()
     catalogue = load_value_stream_catalogue(map_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -36,7 +40,7 @@ async def main(map_path: str, out_dir: str, embed: bool, upload: bool) -> None:
 
     vectors: list[list[float] | None] = [None] * len(catalogue)
     if embed:
-        client = build_embeddings_client(load_settings())
+        client = build_embeddings_client(settings)
         vectors = list(await client.embed_many([build_catalogue_content(vs) for vs in catalogue]))
     index_docs = [build_index_document(vs, vec) for vs, vec in zip(catalogue, vectors)]
     _write(out / "index_value_streams.json", index_docs)
@@ -49,9 +53,6 @@ async def main(map_path: str, out_dir: str, embed: bool, upload: bool) -> None:
     )
 
     if upload:
-        if not embed:
-            raise SystemExit("--upload requires --embed (the index needs content_vector)")
-        settings = load_settings()
         uploader = build_search_uploader(settings)
         try:
             report = await uploader.upload(index_docs)
