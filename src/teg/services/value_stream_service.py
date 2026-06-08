@@ -11,8 +11,7 @@ from teg.contracts.value_stream_io import ValueStreamRequest, ValueStreamRespons
 from teg.domain.value_stream import HistoricalTicket
 from teg.integrations.llm import LLMClient
 from teg.integrations.search import HistoricalHit, SearchClient
-from teg.value_stream.candidate_merger import build_candidates, select_review_pool
-from teg.value_stream.models import CandidateMergePolicy
+from teg.value_stream.candidate_merger import build_candidates, derive_runtime, select_review_pool
 from teg.value_stream.retrieval import retrieve
 from teg.value_stream.selection import select_value_streams
 
@@ -24,20 +23,27 @@ class ValueStreamService:
         llm_client: LLMClient,
         *,
         model_name: str = "",
-        policy: CandidateMergePolicy = CandidateMergePolicy(),
     ) -> None:
         self._search = search_client
         self._llm = llm_client
         self._model_name = model_name
-        self._policy = policy
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
-        result = await retrieve(request.summary_fields, self._search)
-        # SME-selected analogs become the evidence used for ranking (all six if none
-        # selected); the full retrieved set is still returned for the HITL step.
+        # Fetch sizes + merge policy adapt to the requested count.
+        vs_top_k, historical_top_k, policy = derive_runtime(request.requested_count)
+        result = await retrieve(
+            request.summary_fields,
+            self._search,
+            vs_top_k=vs_top_k,
+            historical_top_k=historical_top_k,
+        )
+        # SME-selected analogs become the evidence used for ranking (all retrieved if
+        # none selected); the full retrieved set is still returned for the HITL step.
         evidence = _selected(result.historical_hits, request.selected_historical_ticket_ids)
-        candidates = build_candidates(result.value_stream_hits, evidence)
-        review_pool = select_review_pool(candidates, policy=self._policy)
+        candidates = build_candidates(
+            result.value_stream_hits, evidence, max_supporting_tickets=policy.max_supporting_tickets
+        )
+        review_pool = select_review_pool(candidates, policy=policy)
         recommendations = await select_value_streams(
             query=request.summary_fields.generated_summary,
             candidates=review_pool,

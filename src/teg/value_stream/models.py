@@ -32,6 +32,8 @@ class CandidateMergePolicy:
     historic_min_weighted: float = 0.5
     # semantic-only gate floor
     semantic_min_score: float = 1.00
+    # supporting tickets / evidence kept per candidate
+    max_supporting_tickets: int = 2
 
 
 @dataclass
