@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     idp_user: str = ""
     idp_password: str = ""
 
+    # Embeddings (same IDP gateway + auth as the LLM)
+    embedding_model: str = "text-embedding-3-large"
+    embedding_dimensions: int = 3072
+    embedding_path: str = "/api/v1/embeddings"
+    embedding_api_version: str = "2024-06-01"
+
 
 def load_settings() -> Settings:
     return Settings()
