@@ -19,13 +19,12 @@ class Settings(BaseSettings):
     jira_verify_ssl: bool = False
     jira_timeout_seconds: float = 30.0
 
-    # Azure AI Search (two indices for now; unify later)
+    # Azure AI Search (one unified index; lane = entityType filter)
     search_endpoint: str = ""
     search_api_key: str = ""
-    search_index_value_stream: str = "idp_kg_data_test"
-    search_index_historical: str = "idp_idmt_data"
+    search_index: str = "idp_teg_data"
     search_vector_field: str = "content_vector"
-    search_semantic_config: str = "default"
+    search_semantic_config: str = "teg-semantic"
 
     # Cosmos (lineage, ground truth, governed catalogues)
     cosmos_endpoint: str = ""

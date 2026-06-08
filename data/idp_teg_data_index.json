@@ -1,0 +1,58 @@
+{
+  "name": "idp_teg_data",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": true, "retrievable": true },
+    { "name": "source", "type": "Edm.String", "filterable": true, "retrievable": true },
+    { "name": "sourceId", "type": "Edm.String", "filterable": true, "retrievable": true },
+    { "name": "entityType", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true, "retrievable": true, "analyzer": "standard.lucene" },
+    {
+      "name": "content_vector",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "retrievable": false,
+      "dimensions": 3072,
+      "vectorSearchProfile": "teg-vector-profile"
+    },
+    {
+      "name": "properties",
+      "type": "Edm.ComplexType",
+      "fields": [
+        { "name": "valueStreamId", "type": "Edm.String", "filterable": true, "retrievable": true },
+        { "name": "valueStreamName", "type": "Edm.String", "retrievable": true },
+        { "name": "valueStreamDescription", "type": "Edm.String", "retrievable": true },
+        { "name": "category", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
+        { "name": "summary", "type": "Edm.String", "retrievable": true },
+        {
+          "name": "valueStreams",
+          "type": "Collection(Edm.ComplexType)",
+          "fields": [
+            { "name": "valueStreamId", "type": "Edm.String", "retrievable": true },
+            { "name": "valueStreamName", "type": "Edm.String", "retrievable": true },
+            { "name": "supportType", "type": "Edm.String", "retrievable": true },
+            { "name": "reason", "type": "Edm.String", "retrievable": true },
+            { "name": "evidence", "type": "Edm.String", "retrievable": true }
+          ]
+        }
+      ]
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      { "name": "teg-hnsw", "kind": "hnsw", "hnswParameters": { "metric": "cosine", "m": 4, "efConstruction": 400, "efSearch": 500 } }
+    ],
+    "profiles": [
+      { "name": "teg-vector-profile", "algorithm": "teg-hnsw" }
+    ]
+  },
+  "semantic": {
+    "configurations": [
+      {
+        "name": "teg-semantic",
+        "prioritizedFields": {
+          "prioritizedContentFields": [ { "fieldName": "content" } ]
+        }
+      }
+    ]
+  }
+}
