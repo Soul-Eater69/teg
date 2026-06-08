@@ -61,6 +61,7 @@ def test_idmt_document_shape() -> None:
     assert props["summary"] == "Automate appeals handling"
     assert props["businessProblem"] == "Manual appeals are slow"
     assert props["keyTerms"] == ["appeals", "Medicare"]
+    assert "marketSegments" in props["generationSignals"]  # full condense output stored
     theme = props["themes"][0]
     assert theme["key"] == "3966046"  # -> Theme doc id
     assert theme["groupId"] == "GROUP-23618"

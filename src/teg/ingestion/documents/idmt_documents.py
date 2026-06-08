@@ -44,6 +44,9 @@ def build_idmt_document(
             "businessCapability": fields.business_capability,
             "stakeholders": list(fields.stakeholders),
             "systemsAndProducts": list(fields.systems_and_products),
+            # Store the full condense output so historic tickets can skip condense on
+            # replay - the 18 generation signals feed Theme Description + Business Needs.
+            "generationSignals": condensed.generation_signals.model_dump(by_alias=True),
             "themes": [_theme_gt(gt) for gt in theme_gt],
         },
     }
