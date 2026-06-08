@@ -12,6 +12,7 @@ from teg.domain.value_stream import HistoricalTicket
 from teg.integrations.llm import LLMClient
 from teg.integrations.search import HistoricalHit, SearchClient
 from teg.value_stream.candidate_merger import build_candidates, derive_runtime, select_review_pool
+from teg.value_stream.config import ValueStreamConfig
 from teg.value_stream.retrieval import retrieve
 from teg.value_stream.selection import select_value_streams
 
@@ -23,14 +24,18 @@ class ValueStreamService:
         llm_client: LLMClient,
         *,
         model_name: str = "",
+        config: ValueStreamConfig = ValueStreamConfig(),
     ) -> None:
         self._search = search_client
         self._llm = llm_client
         self._model_name = model_name
+        self._config = config
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
-        # Fetch sizes + merge policy adapt to the requested count.
-        vs_top_k, historical_top_k, policy = derive_runtime(request.requested_count)
+        # Fetch sizes + merge policy adapt to the requested count and the tuning config.
+        vs_top_k, historical_top_k, policy = derive_runtime(
+            request.requested_count, config=self._config
+        )
         result = await retrieve(
             request.summary_fields,
             self._search,

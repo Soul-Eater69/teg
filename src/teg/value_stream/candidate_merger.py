@@ -13,24 +13,15 @@ from __future__ import annotations
 
 from teg.domain.value_stream import Lane
 from teg.integrations.search import HistoricalHit, ValueStreamHit
+from teg.value_stream.config import ValueStreamConfig
 from teg.value_stream.models import CandidateMergePolicy, ValueStreamCandidate
-
-_MAX_SUPPORTING_TICKETS = 2
-
-# Runtime knobs from the winning config.
-_SEMANTIC_FETCH_CAP = 50  # the VS catalogue has <=50 streams
-_HISTORICAL_FETCH_K = 6
-_LLM_CANDIDATE_WINDOW = 18  # production window for a ~10-stream request
-_WINDOW_HEADROOM = 8
 
 
 def derive_runtime(
     requested_count: int,
     *,
-    llm_candidate_window: int = _LLM_CANDIDATE_WINDOW,
-    semantic_fetch_k: int = _SEMANTIC_FETCH_CAP,
-    historical_fetch_k: int = _HISTORICAL_FETCH_K,
-) -> tuple[int, int, "CandidateMergePolicy"]:
+    config: ValueStreamConfig = ValueStreamConfig(),
+) -> tuple[int, int, CandidateMergePolicy]:
     """Derive (vs_top_k, historical_top_k, policy) for a requested count.
 
     Fetch is capped at the catalogue size and auto-bumped for large requests; the
@@ -38,25 +29,25 @@ def derive_runtime(
     and capped at what retrieval can supply; the semantic-only lane stays small (it
     is the noisiest) while semantic+historic fills the window.
     """
-    vs_top_k = min(_SEMANTIC_FETCH_CAP, max(semantic_fetch_k, requested_count + 5))
-    upper_bound = vs_top_k + historical_fetch_k
-    default_window = min(upper_bound, requested_count + _WINDOW_HEADROOM)
-    window = min(upper_bound, max(llm_candidate_window or default_window, requested_count))
+    vs_top_k = min(config.semantic_fetch_cap, max(config.semantic_fetch_k, requested_count + 5))
+    upper_bound = vs_top_k + config.historical_fetch_k
+    default_window = min(upper_bound, requested_count + config.window_headroom)
+    window = min(upper_bound, max(config.llm_candidate_window or default_window, requested_count))
     policy = CandidateMergePolicy(
         window=window,
         max_semantic_plus_historic=window,
-        max_historic_only=historical_fetch_k,
+        max_historic_only=config.historical_fetch_k,
         max_semantic_only=min(5, max(3, int(window * 0.20))),
-        max_supporting_tickets=_MAX_SUPPORTING_TICKETS,
+        max_supporting_tickets=config.max_supporting_tickets,
     )
-    return vs_top_k, historical_fetch_k, policy
+    return vs_top_k, config.historical_fetch_k, policy
 
 
 def build_candidates(
     value_stream_hits: list[ValueStreamHit],
     historical_hits: list[HistoricalHit],
     *,
-    max_supporting_tickets: int = _MAX_SUPPORTING_TICKETS,
+    max_supporting_tickets: int = 2,
 ) -> list[ValueStreamCandidate]:
     by_id: dict[str, ValueStreamCandidate] = {}
 

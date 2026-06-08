@@ -15,6 +15,7 @@ from teg.integrations.llm import build_llm_client
 from teg.integrations.search import build_search_client
 from teg.services.condense_service import CondenseService
 from teg.services.value_stream_service import ValueStreamService
+from teg.value_stream.config import ValueStreamConfig
 
 
 def build_condense_service(settings: Settings | None = None) -> CondenseService:
@@ -36,8 +37,16 @@ def build_condense_service(settings: Settings | None = None) -> CondenseService:
 
 def build_value_stream_service(settings: Settings | None = None) -> ValueStreamService:
     settings = settings or load_settings()
+    config = ValueStreamConfig(
+        semantic_fetch_k=settings.vs_semantic_fetch_k,
+        historical_fetch_k=settings.vs_historical_fetch_k,
+        llm_candidate_window=settings.vs_llm_candidate_window,
+        window_headroom=settings.vs_window_headroom,
+        max_supporting_tickets=settings.vs_max_supporting_tickets,
+    )
     return ValueStreamService(
         build_search_client(settings),
         build_llm_client(settings),
         model_name=settings.llm_model,
+        config=config,
     )
