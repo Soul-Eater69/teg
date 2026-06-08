@@ -14,8 +14,30 @@ ER_ISSUE = {
         "updated": "2025-12-31T09:47:10.733-0600",
         "reporter": {"name": "U133178", "displayName": "Lisa Yancey"},
         "issuelinks": [
-            {"outwardIssue": {"id": "3966046", "key": "GROUP-23618", "fields": {"summary": "x"}}},
-            {"inwardIssue": {"id": "3575756", "key": "IDMT-27092", "fields": {"summary": "y"}}},
+            {
+                "type": {"name": "Implement", "inward": "is implemented by", "outward": "implements"},
+                "inwardIssue": {
+                    "id": "3966046",
+                    "key": "GROUP-23618",
+                    "fields": {"summary": "... : Appeal Decision", "issuetype": {"name": "Theme"}},
+                },
+            },
+            {  # implementation link but NOT a Theme issuetype -> excluded (the "- BO" case)
+                "type": {"name": "Implement", "inward": "is implemented by", "outward": "implements"},
+                "inwardIssue": {
+                    "id": "9999",
+                    "key": "GROUP-22287",
+                    "fields": {"summary": "... - BO", "issuetype": {"name": "Business Outcome"}},
+                },
+            },
+            {  # non-implementation link -> excluded
+                "type": {"name": "Estimate", "inward": "is estimated by", "outward": "estimates"},
+                "inwardIssue": {
+                    "id": "3575756",
+                    "key": "IDMT-27092",
+                    "fields": {"summary": "y", "issuetype": {"name": "Engagement Request"}},
+                },
+            },
         ],
     },
 }
@@ -38,7 +60,9 @@ def test_parse_engagement_request_and_group_links() -> None:
     assert er.stable_id == "3364549" and er.key == "IDMT-19761"
     assert er.title.startswith("CP 2026")
     assert er.created_by == "U133178"
-    assert group_keys == ["GROUP-23618"]  # only GROUP-keyed links, not the IDMT link
+    # only the Theme-typed implementation link; the '- BO' (non-Theme) and the
+    # 'is estimated by' (non-implementation) links are excluded
+    assert group_keys == ["GROUP-23618"]
 
 
 def test_parse_theme() -> None:

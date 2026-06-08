@@ -29,22 +29,40 @@ def _actor(fields: dict) -> str:
     return ""
 
 
-def _linked_group_keys(fields: dict) -> list[str]:
-    """GROUP-keyed linked issues from both inward and outward links (themes)."""
+def _is_theme_issue(issue: dict) -> bool:
+    issuetype = (issue.get("fields") or {}).get("issuetype") or {}
+    return "theme" in str(issuetype.get("name") or "").lower()
+
+
+def _linked_theme_keys(fields: dict) -> list[str]:
+    """Keys of linked Theme issues.
+
+    Mirrors the vs repo: only implementation-style links ('implement*' link type),
+    AND the linked issue's issuetype must be a Theme - so non-Theme GROUP issues on the
+    same link type (e.g. '... - BO') are skipped.
+    """
     keys: list[str] = []
-    for link in fields.get("issuelinks") or []:
-        for side in ("inwardIssue", "outwardIssue"):
-            issue = link.get(side)
-            if not isinstance(issue, dict):
-                continue
+
+    def add(issue: object) -> None:
+        if isinstance(issue, dict) and _is_theme_issue(issue):
             key = _text(issue.get("key"))
-            if key.upper().startswith("GROUP") and key not in keys:
+            if key and key not in keys:
                 keys.append(key)
+
+    for link in fields.get("issuelinks") or []:
+        link_type = link.get("type") or {}
+        if "implement" in str(link_type.get("outward") or "").lower():
+            add(link.get("outwardIssue"))
+        if "implement" in str(link_type.get("inward") or "").lower():
+            add(link.get("inwardIssue"))
+        if "implement" in str(link_type.get("name") or "").lower():
+            add(link.get("outwardIssue"))
+            add(link.get("inwardIssue"))
     return keys
 
 
 def parse_engagement_request(issue: dict) -> tuple[ExtractedEngagementRequest, list[str]]:
-    """Return the ER (without theme bodies) plus the linked GROUP keys to fetch."""
+    """Return the ER (without theme bodies) plus the linked Theme keys to fetch."""
     fields = issue.get("fields") or {}
     er = ExtractedEngagementRequest(
         stable_id=_text(issue.get("id")),
@@ -55,7 +73,7 @@ def parse_engagement_request(issue: dict) -> tuple[ExtractedEngagementRequest, l
         modified_date=_text(fields.get("updated")),
         created_by=_actor(fields),
     )
-    return er, _linked_group_keys(fields)
+    return er, _linked_theme_keys(fields)
 
 
 def parse_theme(issue: dict) -> ExtractedTheme:
