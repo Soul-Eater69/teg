@@ -27,13 +27,6 @@ class Settings(BaseSettings):
     search_vector_field: str = "content_vector"
     search_semantic_config: str = "default"
 
-    # Value Stream retrieval / review-window tuning (-> ValueStreamConfig)
-    vs_semantic_fetch_k: int = 50
-    vs_historical_fetch_k: int = 6
-    vs_llm_candidate_window: int = 18
-    vs_window_headroom: int = 8
-    vs_max_supporting_tickets: int = 2
-
     # Cosmos (lineage, ground truth, governed catalogues)
     cosmos_endpoint: str = ""
     cosmos_key: str = ""
