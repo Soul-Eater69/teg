@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 
-from teg.ingestion.catalogues.loader import load_capability_tree, load_value_stream_catalogue
-from teg.ingestion.documents.capability_documents import build_capability_document
+from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.ingestion.documents.value_stream_documents import (
     build_catalogue_content,
     build_catalogue_document,
@@ -64,18 +63,6 @@ SAMPLE = {
     ],
 }
 
-TREE = {
-    "source_file": "value_streams.xlsx",
-    "capability_count": 3,
-    "level_counts": {"1": 1, "2": 1, "3": 1},
-    "capabilities": [
-        {"capability_id": "CAP-L1-1", "capability_name": "Manage Assets", "capability_description": None, "level": 1, "tier": None, "active": True, "parent_id": None},
-        {"capability_id": "CAP-L2-1", "capability_name": "Asset Intake", "capability_description": None, "level": 2, "tier": None, "active": True, "parent_id": "CAP-L1-1"},
-        {"capability_id": "CAP-L3-1", "capability_name": "Capture Asset Request", "capability_description": None, "level": 3, "tier": "core", "active": True, "parent_id": "CAP-L2-1"},
-    ],
-}
-
-
 def _load(tmp_path):
     path = tmp_path / "map.json"
     path.write_text(json.dumps(SAMPLE), encoding="utf-8")
@@ -122,20 +109,3 @@ def test_index_document_content_and_props(tmp_path) -> None:
     assert doc["content_vector"] == [0.1, 0.2]
     assert doc["properties"]["category"] == "Finance"
     assert "valueStages" not in doc["properties"]  # index never carries the stage hierarchy
-
-
-def test_capability_tree_documents(tmp_path) -> None:
-    path = tmp_path / "tree.json"
-    path.write_text(json.dumps(TREE), encoding="utf-8")
-    nodes = load_capability_tree(path)
-    assert len(nodes) == 3
-
-    l3 = next(n for n in nodes if n.level == 3)
-    doc = build_capability_document(l3, ingested_at="2026-06-08T00:00:00+00:00")
-    assert doc["id"] == "CAP-L3-1"
-    assert doc["entityType"] == "capability"
-    assert doc["parentId"] == "CAP-L2-1"  # links up to its L2
-    assert doc["properties"]["level"] == 3
-
-    l1 = next(n for n in nodes if n.level == 1)
-    assert build_capability_document(l1)["parentId"] is None  # root has no parent

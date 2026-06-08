@@ -6,7 +6,6 @@ with --embed they include content_vector via the IDP embeddings client.
 Usage:
   uv run python scripts/generate_vs_catalogue.py data/value_stream_capability_map.json
   uv run python scripts/generate_vs_catalogue.py data/value_stream_capability_map.json --embed
-  uv run python scripts/generate_vs_catalogue.py data/value_stream_capability_map.json --tree data/capability_tree.json
 """
 
 from __future__ import annotations
@@ -18,8 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from teg.config.settings import load_settings
-from teg.ingestion.catalogues.loader import load_capability_tree, load_value_stream_catalogue
-from teg.ingestion.documents.capability_documents import build_capability_document
+from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.ingestion.documents.value_stream_documents import (
     build_catalogue_content,
     build_catalogue_document,
@@ -28,7 +26,7 @@ from teg.ingestion.documents.value_stream_documents import (
 from teg.integrations.embeddings import build_embeddings_client
 
 
-async def main(map_path: str, out_dir: str, embed: bool, tree_path: str | None) -> None:
+async def main(map_path: str, out_dir: str, embed: bool) -> None:
     catalogue = load_value_stream_catalogue(map_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -49,17 +47,10 @@ async def main(map_path: str, out_dir: str, embed: bool, tree_path: str | None) 
 
     stages = sum(len(vs.stages) for vs in catalogue)
     caps = sum(len(s.capabilities) for vs in catalogue for s in vs.stages)
-    summary = f"{len(catalogue)} value streams ({stages} stages, {caps} capability links)"
-
-    if tree_path:
-        tree = load_capability_tree(tree_path)
-        _write(
-            out / "cosmos_capabilities.json",
-            [build_capability_document(node, ingested_at=ingested_at) for node in tree],
-        )
-        summary += f"; {len(tree)} capability-tree nodes"
-
-    print(f"{summary} -> {out}/{' (embedded)' if embed else ' (no vectors; pass --embed)'}")
+    print(
+        f"{len(catalogue)} value streams ({stages} stages, {caps} capability links) -> {out}/"
+        f"{' (embedded)' if embed else ' (no vectors; pass --embed)'}"
+    )
 
 
 def _write(path: Path, docs: list[dict]) -> None:
@@ -71,6 +62,5 @@ if __name__ == "__main__":
     parser.add_argument("map_path", nargs="?", default="data/value_stream_capability_map.json")
     parser.add_argument("--out", default="out/catalogue")
     parser.add_argument("--embed", action="store_true")
-    parser.add_argument("--tree", default=None, help="path to capability_tree.json")
     args = parser.parse_args()
-    asyncio.run(main(args.map_path, args.out, args.embed, args.tree))
+    asyncio.run(main(args.map_path, args.out, args.embed))

@@ -60,16 +60,3 @@ class CatalogueValueStream:
     modified_by: str
     stakeholders: list[str] = field(default_factory=list)
     stages: list[CatalogueStage] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class CapabilityNode:
-    """A node in the standalone capability tree (L1/L2/L3, linked by parent_id)."""
-
-    capability_id: str
-    capability_name: str
-    capability_description: str
-    level: int  # 1 | 2 | 3
-    tier: str
-    active: bool | None
-    parent_id: str

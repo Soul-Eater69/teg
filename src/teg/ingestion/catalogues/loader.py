@@ -1,9 +1,7 @@
-"""Load and parse the Sightline catalogues.
+"""Load and parse the Sightline VS catalogue (value_stream_capability_map.json).
 
-- value_stream_capability_map.json: VS -> stages -> capabilities (L3 with L2/L1 inline).
-- capability_tree.json: the standalone L1/L2/L3 capability hierarchy (parent_id links).
-
-Stakeholder fields are semicolon-delimited strings in the source; we split them to lists.
+VS -> stages -> capabilities (each an L3 leaf carrying its L2/L1 ancestor inline).
+Stakeholder fields are semicolon-delimited strings in the source; split to lists.
 """
 
 from __future__ import annotations
@@ -12,7 +10,6 @@ import json
 from pathlib import Path
 
 from teg.ingestion.catalogues.models import (
-    CapabilityNode,
     CatalogueCapability,
     CatalogueStage,
     CatalogueValueStream,
@@ -22,11 +19,6 @@ from teg.ingestion.catalogues.models import (
 def load_value_stream_catalogue(path: str | Path) -> list[CatalogueValueStream]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     return [_value_stream(raw) for raw in data.get("value_streams") or []]
-
-
-def load_capability_tree(path: str | Path) -> list[CapabilityNode]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    return [_capability_node(raw) for raw in data.get("capabilities") or []]
 
 
 def _value_stream(raw: dict) -> CatalogueValueStream:
@@ -78,18 +70,6 @@ def _capability(raw: dict) -> CatalogueCapability:
         level_one_name=_text(raw.get("level_1_name")),
         level_two_id=_text(raw.get("level_2_id")),
         level_two_name=_text(raw.get("level_2_name")),
-    )
-
-
-def _capability_node(raw: dict) -> CapabilityNode:
-    return CapabilityNode(
-        capability_id=_text(raw.get("capability_id")),
-        capability_name=_text(raw.get("capability_name")),
-        capability_description=_text(raw.get("capability_description")),
-        level=_int(raw.get("level")),
-        tier=_text(raw.get("tier")),
-        active=_bool(raw.get("active")),
-        parent_id=_text(raw.get("parent_id")),
     )
 
 
