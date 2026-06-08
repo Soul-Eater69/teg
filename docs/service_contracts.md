@@ -52,11 +52,11 @@ JSON is `camelCase`.
 
 **Request** `ValueStreamRequest`
 - `ticketId`, `summaryFields` (replayed from A)
-- `requestedCount` (default 10, upper bound), `customInstruction` (optional)
+- `requestedCount` (default 10, exact - we return exactly this many; the only VS knob)
 - `selectedHistoricalTicketIds[]` (optional - the SME-selected analogs; see Open #3)
 
 **Response** `ValueStreamResponse`
-- `recommendations[]`: `valueStreamId`, `valueStreamName`, `confidence` (0.30-1.00), `supportType` (`direct`|`implied`), `reason` (<=80 chars), `bucket`, `sourceTickets[]`
+- `recommendations[]`: `valueStreamId`, `valueStreamName`, `confidence` (0-100), `supportType` (`direct`|`implied`), `reason` (<=80 chars), `lane`, `sourceTickets[]`
 - `historicalTickets[]`: top-6 analogs `{ticketId, title, score, snippet}` for the HITL selection step
 
 ---

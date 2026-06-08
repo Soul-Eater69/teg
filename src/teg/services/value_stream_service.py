@@ -54,7 +54,6 @@ class ValueStreamService:
             candidates=review_pool,
             requested_count=request.requested_count,
             llm_client=self._llm,
-            custom_instruction=request.custom_instruction,
         )
         return ValueStreamResponse(
             ticket_id=request.ticket_id,

@@ -41,7 +41,6 @@ async def select_value_streams(
     candidates: list[ValueStreamCandidate],
     requested_count: int,
     llm_client: LLMClient,
-    custom_instruction: str | None = None,  # plumbed; prompt slot is eval-gated (TEG-36)
 ) -> list[ValueStreamRecommendation]:
     prompt = load_prompt("value_stream/selection")
     system, user = prompt.render(
