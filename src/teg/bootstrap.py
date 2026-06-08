@@ -13,6 +13,10 @@ from teg.integrations.files import build_attachment_extractor
 from teg.integrations.jira import build_jira_client
 from teg.integrations.llm import build_llm_client
 from teg.integrations.search import build_search_client
+from teg.ingestion.catalogues.loader import load_value_stream_catalogue
+from teg.ingestion.extraction.jira_source import build_jira_ingestion_source
+from teg.ingestion.ground_truth.value_stream_match import ValueStreamResolver
+from teg.ingestion.pipeline.idmt_ingestion import IdmtIngestion
 from teg.services.condense_service import CondenseService
 from teg.services.value_stream_service import ValueStreamService
 
@@ -31,6 +35,18 @@ def build_condense_service(settings: Settings | None = None) -> CondenseService:
         build_attachment_extractor(),
         model_name=settings.llm_model,
         config=config,
+    )
+
+
+def build_idmt_ingestion(
+    settings: Settings | None = None, *, catalogue_path: str
+) -> IdmtIngestion:
+    settings = settings or load_settings()
+    return IdmtIngestion(
+        jira_source=build_jira_ingestion_source(settings),
+        condense_service=build_condense_service(settings),
+        resolver=ValueStreamResolver(load_value_stream_catalogue(catalogue_path)),
+        llm_client=build_llm_client(settings),
     )
 
 
