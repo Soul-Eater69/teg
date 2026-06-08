@@ -13,7 +13,7 @@ from pydantic import Field
 
 from teg.domain.base import CamelModel
 
-Bucket = Literal["semantic_plus_historic", "historic_only", "semantic_only"]
+Lane = Literal["semantic_plus_historic", "historic_only", "semantic_only"]
 SupportType = Literal["direct", "implied"]
 
 
@@ -40,5 +40,5 @@ class ValueStreamRecommendation(CamelModel):
     confidence: float = Field(ge=0.0, le=100.0)
     support_type: SupportType
     reason: str
-    bucket: Bucket
+    lane: Lane  # which retrieval lane backed this pick
     source_tickets: list[str] = Field(default_factory=list)

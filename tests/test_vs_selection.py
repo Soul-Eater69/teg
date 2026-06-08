@@ -1,0 +1,112 @@
+"""Candidate-block rendering (T7) + selection LLM resolution (T8)."""
+
+from __future__ import annotations
+
+from teg.value_stream.candidate_blocks import render_candidate_blocks
+from teg.value_stream.models import ValueStreamCandidate
+from teg.value_stream.selection import select_value_streams
+
+
+class _FakeLLM:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    async def complete(self, *, system, user, schema):
+        return schema.model_validate(self._payload)
+
+
+def _cand(vs_id, lane, *, name=None, source_ticket_ids=None):
+    return ValueStreamCandidate(
+        value_stream_id=vs_id,
+        value_stream_name=name or vs_id,
+        lane=lane,
+        source_ticket_ids=source_ticket_ids or [],
+    )
+
+
+# ---- T7: candidate block rendering ---------------------------------------
+
+def test_render_includes_entity_id_lane_and_historical() -> None:
+    candidate = ValueStreamCandidate(
+        value_stream_id="VS1",
+        value_stream_name="Adjudicate Claim",
+        from_semantic=True,
+        from_historical=True,
+        semantic_score=1.4,
+        semantic_rank=1,
+        supporting_ticket_count=2,
+        direct_count=1,
+        implied_count=1,
+        best_support_score=0.82,
+        source_ticket_ids=["IDMT-1"],
+        evidence=["claims savings"],
+        lane="semantic_plus_historic",
+    )
+    block = render_candidate_blocks([candidate])
+    assert "entity_id: VS1" in block
+    assert "lane: semantic_plus_historic" in block
+    assert "historical: tickets=2" in block
+    assert "evidence: claims savings" in block
+
+
+def test_render_semantic_only_omits_historical() -> None:
+    block = render_candidate_blocks([_cand("VS2", "semantic_only", name="Receive Care")])
+    assert "lane: semantic_only" in block
+    assert "historical:" not in block
+
+
+# ---- T8: selection resolution --------------------------------------------
+
+async def test_selection_resolves_scales_confidence_and_source_tickets() -> None:
+    candidates = [
+        _cand("VS1", "semantic_plus_historic", name="Adjudicate Claim", source_ticket_ids=["IDMT-1"]),
+        _cand("VS2", "semantic_only", name="Issue Payment"),
+    ]
+    payload = {
+        "picks": [
+            {"entityId": "VS1", "confidence": 0.82, "supportType": "direct", "reason": "claims"},
+            {"entityId": "VS2", "confidence": 0.5, "supportType": "implied", "reason": "billing"},
+        ]
+    }
+    recs = await select_value_streams(
+        query="q", candidates=candidates, requested_count=2, llm_client=_FakeLLM(payload)
+    )
+    assert [r.value_stream_id for r in recs] == ["VS1", "VS2"]
+    assert recs[0].confidence == 82.0  # 0.82 -> 82
+    assert recs[0].source_tickets == ["IDMT-1"]
+    assert recs[1].source_tickets == []  # semantic_only -> no source tickets
+
+
+async def test_selection_ignores_unknown_ids_and_dedupes() -> None:
+    candidates = [_cand("VS1", "semantic_only")]
+    payload = {
+        "picks": [
+            {"entityId": "VS1", "confidence": 0.9, "supportType": "direct", "reason": "a"},
+            {"entityId": "VS1", "confidence": 0.9, "supportType": "direct", "reason": "dup"},
+            {"entityId": "GHOST", "confidence": 0.9, "supportType": "direct", "reason": "x"},
+        ]
+    }
+    recs = await select_value_streams(
+        query="q", candidates=candidates, requested_count=5, llm_client=_FakeLLM(payload)
+    )
+    assert [r.value_stream_id for r in recs] == ["VS1"]  # ghost dropped, dup deduped
+
+
+async def test_enforce_count_trims_and_pads() -> None:
+    candidates = [_cand(f"VS{i}", "semantic_only") for i in range(3)]
+    trim = await select_value_streams(
+        query="q",
+        candidates=candidates,
+        requested_count=2,
+        llm_client=_FakeLLM({"picks": [{"entityId": f"VS{i}", "confidence": 0.8} for i in range(3)]}),
+    )
+    assert len(trim) == 2
+
+    pad = await select_value_streams(
+        query="q",
+        candidates=candidates,
+        requested_count=3,
+        llm_client=_FakeLLM({"picks": [{"entityId": "VS0", "confidence": 0.8, "supportType": "direct"}]}),
+    )
+    assert [r.value_stream_id for r in pad] == ["VS0", "VS1", "VS2"]
+    assert pad[1].confidence == 30.0  # filled at the confidence floor

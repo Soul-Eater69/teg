@@ -11,7 +11,7 @@ casing. Shapes live in teg.value_stream.models; thresholds in CandidateMergePoli
 
 from __future__ import annotations
 
-from teg.domain.value_stream import Bucket
+from teg.domain.value_stream import Lane
 from teg.integrations.search import HistoricalHit, ValueStreamHit
 from teg.value_stream.models import CandidateMergePolicy, ValueStreamCandidate
 
@@ -108,7 +108,7 @@ def _group_historical_by_vs(historical_hits):
     return grouped
 
 
-def _lane(candidate: ValueStreamCandidate) -> Bucket:
+def _lane(candidate: ValueStreamCandidate) -> Lane:
     if candidate.from_semantic and candidate.from_historical:
         return "semantic_plus_historic"
     if candidate.from_semantic:

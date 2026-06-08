@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from teg.domain.value_stream import Bucket
+from teg.domain.value_stream import Lane
 from teg.integrations.search import HistoricalHit, ValueStreamHit
 
 
@@ -51,4 +51,4 @@ class ValueStreamCandidate:
     weighted_support: float = 0.0
     source_ticket_ids: list[str] = field(default_factory=list)
     evidence: list[str] = field(default_factory=list)
-    lane: Bucket = "semantic_only"
+    lane: Lane = "semantic_only"
