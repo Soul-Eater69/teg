@@ -46,11 +46,14 @@ class IdmtIngestion:
             llm_client=self._llm,
         )
 
+        # Only themes that resolve to an approved VS are kept - both as GT and as a
+        # Theme doc - so every Theme doc is referenced by a themes[] entry (no orphans).
         theme_gt: list[ThemeGroundTruth] = []
+        theme_docs: list[dict] = []
         for theme in er.themes:
             hit = resolved.get(theme.summary)
             if not hit:
-                continue  # VS did not resolve to an approved value stream - drop
+                continue  # VS did not resolve to an approved value stream - drop entirely
             vs_id, vs_name = hit
             label = classification.get(vs_name)
             theme_gt.append(
@@ -63,7 +66,7 @@ class IdmtIngestion:
                     reason=label.reason if label else "",
                 )
             )
+            theme_docs.append(build_theme_document(theme, parent_er_id=er.stable_id))
 
         idmt_doc = build_idmt_document(er=er, condensed=condensed, theme_gt=theme_gt)
-        theme_docs = [build_theme_document(theme, parent_er_id=er.stable_id) for theme in er.themes]
         return idmt_doc, theme_docs
