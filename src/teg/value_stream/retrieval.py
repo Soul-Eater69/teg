@@ -19,7 +19,12 @@ _VS_TOP_K = 50
 _HISTORICAL_TOP_K = 6
 
 
-def _build_query(summary: SummaryFields) -> str:
+def build_retrieval_text(summary: SummaryFields) -> str:
+    """Curated retrieval text from the summary fields.
+
+    Shared by prediction (the query) and ingestion (a historical doc's embedded
+    ``content``) so a stored ticket and a live query land in the same vector space.
+    """
     parts = [summary.generated_summary, summary.business_problem, summary.business_capability]
     parts += summary.key_terms + summary.stakeholders + summary.systems_and_products
     return "\n".join(part for part in parts if part and part.strip())
@@ -32,7 +37,7 @@ async def retrieve(
     vs_top_k: int = _VS_TOP_K,
     historical_top_k: int = _HISTORICAL_TOP_K,
 ) -> RetrievalResult:
-    query = _build_query(summary)
+    query = build_retrieval_text(summary)
     vs_hits, historical_hits = await asyncio.gather(
         search_client.search_value_streams(query, top_k=vs_top_k),
         search_client.search_historical(query, top_k=historical_top_k),

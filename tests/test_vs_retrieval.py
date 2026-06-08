@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from teg.domain.condensed import SummaryFields
 from teg.integrations.search import HistoricalHit, ValueStreamHit
-from teg.value_stream.retrieval import _build_query, retrieve
+from teg.value_stream.retrieval import build_retrieval_text, retrieve
 
 
 class _FakeSearch:
@@ -45,6 +45,6 @@ async def test_retrieve_runs_both_lanes_with_the_query_text() -> None:
 
 
 def test_build_query_combines_summary_fields() -> None:
-    query = _build_query(_summary())
+    query = build_retrieval_text(_summary())
     for token in ("claims savings analysis", "manual claims intake", "claims", "ClaimsHub"):
         assert token in query

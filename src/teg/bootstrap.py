@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from teg.condense.config import CondenseConfig
 from teg.config.settings import Settings, load_settings
+from teg.integrations.embeddings import build_embeddings_client
 from teg.integrations.files import build_attachment_extractor
 from teg.integrations.jira import build_jira_client
 from teg.integrations.llm import build_llm_client
@@ -39,7 +40,7 @@ def build_condense_service(settings: Settings | None = None) -> CondenseService:
 
 
 def build_idmt_ingestion(
-    settings: Settings | None = None, *, catalogue_path: str
+    settings: Settings | None = None, *, catalogue_path: str, embed: bool = False
 ) -> IdmtIngestion:
     settings = settings or load_settings()
     return IdmtIngestion(
@@ -47,6 +48,7 @@ def build_idmt_ingestion(
         condense_service=build_condense_service(settings),
         resolver=ValueStreamResolver(load_value_stream_catalogue(catalogue_path)),
         llm_client=build_llm_client(settings),
+        embeddings_client=build_embeddings_client(settings) if embed else None,
     )
 
 
