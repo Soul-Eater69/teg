@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     search_index: str = "idp_teg_data"
     search_vector_field: str = "content_vector"
     search_semantic_config: str = "teg-semantic"
+    search_api_version: str = "2024-07-01"  # needs >=2024-07-01 for 3072-d vectors + complex collections
 
     # Cosmos (lineage, ground truth, governed catalogues)
     cosmos_endpoint: str = ""
