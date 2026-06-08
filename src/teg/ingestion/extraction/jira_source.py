@@ -36,30 +36,29 @@ def _is_theme_issue(issue: dict) -> bool:
     return "theme" in str(issuetype.get("name") or "").lower()
 
 
+def _is_implementation_link(link_type: dict) -> bool:
+    """An 'implement*' link (inward 'is implemented by' / outward 'implements')."""
+    phrases = (link_type.get("inward"), link_type.get("outward"), link_type.get("name"))
+    return any("implement" in str(phrase or "").lower() for phrase in phrases)
+
+
 def _linked_theme_keys(fields: dict) -> list[str]:
     """Keys of linked Theme issues.
 
-    Mirrors the vs repo: only implementation-style links ('implement*' link type),
-    AND the linked issue's issuetype must be a Theme - so non-Theme GROUP issues on the
-    same link type (e.g. '... - BO') are skipped.
+    A theme link is an implementation-style link whose linked issue is a Theme. Each
+    issuelink carries only one end (inwardIssue or outwardIssue - the other side is the
+    ER itself), so we take whichever is present; non-Theme issues on the same link type
+    (e.g. '... - BO') are skipped, and keys are deduped.
     """
     keys: list[str] = []
-
-    def add(issue: object) -> None:
+    for link in fields.get("issuelinks") or []:
+        if not _is_implementation_link(link.get("type") or {}):
+            continue
+        issue = link.get("inwardIssue") or link.get("outwardIssue")
         if isinstance(issue, dict) and _is_theme_issue(issue):
             key = _text(issue.get("key"))
             if key and key not in keys:
                 keys.append(key)
-
-    for link in fields.get("issuelinks") or []:
-        link_type = link.get("type") or {}
-        if "implement" in str(link_type.get("outward") or "").lower():
-            add(link.get("outwardIssue"))
-        if "implement" in str(link_type.get("inward") or "").lower():
-            add(link.get("inwardIssue"))
-        if "implement" in str(link_type.get("name") or "").lower():
-            add(link.get("outwardIssue"))
-            add(link.get("inwardIssue"))
     return keys
 
 
