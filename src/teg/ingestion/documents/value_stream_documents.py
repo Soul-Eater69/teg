@@ -25,8 +25,6 @@ def build_catalogue_document(vs: CatalogueValueStream) -> dict:
         "id": vs.value_stream_id,
         "source": CATALOGUE_SOURCE,
         "entityType": ENTITY_TYPE,
-        "parentId": None,
-        "parentEntityType": None,
         "createdDate": vs.created_date or None,
         "createdBy": vs.created_by or None,
         "modifiedDate": vs.modified_date or None,
