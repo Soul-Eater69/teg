@@ -10,7 +10,18 @@ from teg.services.condense_service import CondenseService
 
 def test_build_condense_service_wires_a_service() -> None:
     pytest.importorskip("markitdown")  # the extractor needs the 'extract' extra
+
     from teg.bootstrap import build_condense_service
 
     service = build_condense_service(Settings())
     assert isinstance(service, CondenseService)
+
+
+def test_build_value_stream_service_wires_a_service() -> None:
+    pytest.importorskip("azure.search.documents")  # needs the 'search' extra
+
+    from teg.bootstrap import build_value_stream_service
+    from teg.services.value_stream_service import ValueStreamService
+
+    service = build_value_stream_service(Settings())
+    assert isinstance(service, ValueStreamService)

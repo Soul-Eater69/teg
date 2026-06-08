@@ -12,7 +12,9 @@ from teg.config.settings import Settings, load_settings
 from teg.integrations.files import build_attachment_extractor
 from teg.integrations.jira import build_jira_client
 from teg.integrations.llm import build_llm_client
+from teg.integrations.search import build_search_client
 from teg.services.condense_service import CondenseService
+from teg.services.value_stream_service import ValueStreamService
 
 
 def build_condense_service(settings: Settings | None = None) -> CondenseService:
@@ -29,4 +31,13 @@ def build_condense_service(settings: Settings | None = None) -> CondenseService:
         build_attachment_extractor(),
         model_name=settings.llm_model,
         config=config,
+    )
+
+
+def build_value_stream_service(settings: Settings | None = None) -> ValueStreamService:
+    settings = settings or load_settings()
+    return ValueStreamService(
+        build_search_client(settings),
+        build_llm_client(settings),
+        model_name=settings.llm_model,
     )

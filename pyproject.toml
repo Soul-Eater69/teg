@@ -21,6 +21,11 @@ extract = [
     "python-pptx>=0.6",
     "python-docx>=1.0",
 ]
+# Azure AI Search (install for live retrieval: uv sync --extra search)
+search = [
+    "azure-search-documents>=11.4",
+    "azure-core>=1.30",
+]
 
 [build-system]
 requires = ["hatchling"]
