@@ -1,0 +1,33 @@
+# Shared non-secret configuration (committed, same across environments).
+# Secrets -> .env. Environment-specific non-secrets (endpoints, ids) -> settings.local.yaml.
+
+# Jira
+jira_api_version: "2"
+jira_verify_ssl: false
+jira_timeout_seconds: 30
+
+# Azure AI Search (one unified index; lane = entityType filter)
+search_index: "idp_teg_data"
+search_vector_field: "content_vector"
+search_semantic_config: "teg-semantic"
+search_api_version: "2024-07-01"
+
+# LLM (IDP OpenAI-compatible gateway)
+llm_completion_path: "/api/v1/chatcompletions"
+llm_model: "gpt-5-mini-idp"
+llm_api_version: "2024-04-01-preview"
+llm_reasoning_effort: "low"
+llm_timeout_seconds: 60
+llm_verify_ssl: false
+
+# Condense
+condense_doc_char_budget: 20000
+condense_max_attachments: 4
+condense_max_attachment_bytes: 10000000
+condense_min_doc_chars: 200
+
+# Embeddings
+embedding_model: "text-embedding-3-large"
+embedding_dimensions: 1536
+embedding_path: "/api/v1/embeddings"
+embedding_api_version: "2024-06-01"

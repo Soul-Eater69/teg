@@ -1,1 +1,1 @@
-"""Cosmos historic IDMT document + idp_idmt_data index document builders."""
+"""Cosmos historic IDMT document + idp_teg_data index document builders."""

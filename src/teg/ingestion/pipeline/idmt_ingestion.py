@@ -33,7 +33,7 @@ class IngestedTicket:
 
     idmt_document: dict  # Cosmos IDMT/ER doc
     theme_documents: list[dict]  # Cosmos Theme docs
-    historical_index_document: dict  # idp_idmt_data search doc
+    historical_index_document: dict  # idp_teg_data search doc
 
 
 class IdmtIngestion:

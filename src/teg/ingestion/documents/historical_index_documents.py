@@ -1,4 +1,4 @@
-"""Build the historical IDMT search-index document (idp_idmt_data).
+"""Build the historical IDMT search-index document (idp_teg_data).
 
 Turns an ingested ticket into the retrieval doc that powers the historic-evidence lane
 of VS prediction: content (embedded) + content_vector + properties.{summary, valueStreams}.
