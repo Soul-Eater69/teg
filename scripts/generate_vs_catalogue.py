@@ -23,9 +23,10 @@ from teg.ingestion.documents.value_stream_documents import (
     build_index_document,
 )
 from teg.integrations.embeddings import build_embeddings_client
+from teg.ingestion.upload.search_uploader import build_search_uploader
 
 
-async def main(map_path: str, out_dir: str, embed: bool) -> None:
+async def main(map_path: str, out_dir: str, embed: bool, upload: bool) -> None:
     catalogue = load_value_stream_catalogue(map_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -47,6 +48,16 @@ async def main(map_path: str, out_dir: str, embed: bool) -> None:
         f"{' (embedded)' if embed else ' (no vectors; pass --embed)'}"
     )
 
+    if upload:
+        if not embed:
+            raise SystemExit("--upload requires --embed (the index needs content_vector)")
+        uploader = build_search_uploader(load_settings())
+        try:
+            count = await uploader.upload(index_docs)
+        finally:
+            await uploader.close()
+        print(f"upserted {count} value stream docs -> {load_settings().search_index}")
+
 
 def _write(path: Path, docs: list[dict]) -> None:
     path.write_text(json.dumps(docs, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -57,5 +68,6 @@ if __name__ == "__main__":
     parser.add_argument("map_path", nargs="?", default="data/value_stream_capability_map.json")
     parser.add_argument("--out", default="out/catalogue")
     parser.add_argument("--embed", action="store_true")
+    parser.add_argument("--upload", action="store_true", help="upsert into idp_teg_data (needs --embed)")
     args = parser.parse_args()
-    asyncio.run(main(args.map_path, args.out, args.embed))
+    asyncio.run(main(args.map_path, args.out, args.embed, args.upload))
