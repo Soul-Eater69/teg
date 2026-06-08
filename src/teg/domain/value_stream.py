@@ -32,7 +32,8 @@ class ValueStreamRecommendation(CamelModel):
     ``confidence`` is a 0-100 percentage (the model emits 0-1; selection scales it).
     ``reason`` is prompt-guided to a short phrase; not hard-enforced so a slightly
     longer model value never fails validation. ``source_tickets`` is populated only
-    for historically-backed picks (historic_only / semantic_plus_historic).
+    for historically-backed picks (the retrieval lane gates this internally but is
+    not surfaced in the output).
     """
 
     value_stream_id: str
@@ -40,5 +41,4 @@ class ValueStreamRecommendation(CamelModel):
     confidence: float = Field(ge=0.0, le=100.0)
     support_type: SupportType
     reason: str
-    lane: Lane  # which retrieval lane backed this pick
     source_tickets: list[str] = Field(default_factory=list)

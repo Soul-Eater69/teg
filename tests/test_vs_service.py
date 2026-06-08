@@ -47,9 +47,8 @@ async def test_predict_end_to_end_camel_case() -> None:
     assert response.ticket_id == "IDMT-9"
     assert [r.value_stream_id for r in response.recommendations] == ["VS1"]
     rec = response.recommendations[0]
-    assert rec.lane == "semantic_plus_historic"  # VS1 hit both lanes
     assert rec.confidence == 90.0
-    assert rec.source_tickets == ["IDMT-1"]
+    assert rec.source_tickets == ["IDMT-1"]  # historic-backed (VS1 hit both lanes)
     assert [h.ticket_id for h in response.historical_tickets] == ["IDMT-1"]
     assert response.model == "m"
 

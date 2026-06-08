@@ -101,6 +101,6 @@ def _recommend(
         confidence=round(confidence, 1),
         support_type=support_type,
         reason=reason,
-        lane=candidate.lane,
+        # candidate.lane gates source_tickets but is not surfaced in the output.
         source_tickets=candidate.source_ticket_ids if candidate.lane in _HISTORIC_LANES else [],
     )

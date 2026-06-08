@@ -69,7 +69,6 @@ def test_recommendation_confidence_bounded_to_0_100() -> None:
             confidence=150,  # out of 0-100
             support_type="direct",
             reason="ok",
-            lane="semantic_only",
         )
     rec = ValueStreamRecommendation(
         value_stream_id="VSR1",
@@ -77,7 +76,6 @@ def test_recommendation_confidence_bounded_to_0_100() -> None:
         confidence=82,
         support_type="implied",
         reason="downstream billing impact",
-        lane="semantic_plus_historic",
     )
     assert rec.confidence == 82
 
