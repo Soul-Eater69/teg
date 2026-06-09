@@ -24,8 +24,12 @@ from teg.value_stream.selection import select_value_streams
 class PredictionTrace:
     """What survived each stage, for eval miss-bucketing (not part of the API contract)."""
 
-    retrieved_ids: list[str] = field(default_factory=list)  # all merged candidates
-    review_pool_ids: list[str] = field(default_factory=list)  # subset the LLM actually saw
+    retrieved_ids: list[str] = field(default_factory=list)  # all merged candidate ids
+    review_pool: list = field(default_factory=list)  # ValueStreamCandidate objects the LLM saw
+
+    @property
+    def review_pool_ids(self) -> list[str]:
+        return [c.value_stream_id for c in self.review_pool]
 
 
 class ValueStreamService:
@@ -91,7 +95,7 @@ class ValueStreamService:
         )
         trace = PredictionTrace(
             retrieved_ids=[c.value_stream_id for c in candidates],
-            review_pool_ids=[c.value_stream_id for c in review_pool],
+            review_pool=review_pool,
         )
         return response, trace
 

@@ -25,9 +25,12 @@ import json
 from pathlib import Path
 
 from teg.bootstrap import build_value_stream_service
+from teg.config.settings import load_settings
 from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.domain.condensed import SummaryFields
+from teg.integrations.llm import build_llm_client
 from teg.value_stream.config import ValueStreamConfig
+from teg.value_stream.drop_explainer import explain_drops
 
 
 def _load(path: str) -> list[dict]:
@@ -71,7 +74,7 @@ def _requested_count(args, gt: set[str]) -> int:
     return args.count
 
 
-async def _eval_one(service, args, doc, ticket_id: str, gt: set[str], sem, progress) -> dict:
+async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], sem, progress) -> dict:
     async with sem:
         request = ValueStreamRequest(
             ticket_id=ticket_id,
@@ -86,12 +89,24 @@ async def _eval_one(service, args, doc, ticket_id: str, gt: set[str], sem, progr
             progress["done"] += 1
             print(f"[{progress['done']}/{progress['total']}] {ticket_id}  ERROR {type(exc).__name__}: {exc}")
             return {"ticket_id": ticket_id, "gt": gt, "predicted": [], "error": str(exc)}
+        buckets = _miss_buckets(gt, predicted, trace)
+        # Post-hoc: ask why the LLM dropped GT it actually saw (never changes the metrics).
+        drop_reasons: dict[str, str] = {}
+        if llm is not None and buckets["llm_dropped"]:
+            explained = await explain_drops(
+                query=request.summary_fields.generated_summary,
+                review_pool=trace.review_pool,
+                picked_ids=predicted,
+                dropped_ids=buckets["llm_dropped"],
+                llm_client=llm,
+            )
+            drop_reasons = {vs: exp.reason_code for vs, exp in explained.items()}
     tp, fp, fn = _prf(predicted, gt)
-    buckets = _miss_buckets(gt, predicted, trace)
     progress["done"] += 1
     print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
           f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)})")
-    return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted, "buckets": buckets}
+    return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted,
+            "buckets": buckets, "drop_reasons": drop_reasons}
 
 
 def _miss_buckets(gt: set[str], predicted: list[str], trace) -> dict[str, list[str]]:
@@ -121,6 +136,7 @@ async def main(args) -> None:
         use_historic_lane=not args.semantic_only,
     )
     service = build_value_stream_service(config=config)
+    llm = build_llm_client(load_settings()) if args.explain_drops else None
 
     jobs = []
     skipped = 0
@@ -136,13 +152,16 @@ async def main(args) -> None:
     print(f"evaluating {len(jobs)} tickets (concurrency={args.concurrency}; "
           f"skipped {skipped} with < {args.min_gt} GT value streams)")
     try:
-        results = await asyncio.gather(*(_eval_one(service, args, d, t, g, sem, progress) for d, t, g in jobs))
+        results = await asyncio.gather(*(_eval_one(service, llm, args, d, t, g, sem, progress) for d, t, g in jobs))
     finally:
         await service.aclose()
+        if llm is not None and hasattr(llm, "aclose"):
+            await llm.aclose()
 
     rows: list[dict] = []
     micro_tp = micro_fp = micro_fn = 0
     bucket_totals = {"not_retrieved": 0, "gated_pre_llm": 0, "llm_dropped": 0}
+    reason_totals: dict[str, int] = {}
     p_at = {k: [] for k in args.k}
     r_at = {k: [] for k in args.k}
     for res in results:
@@ -154,6 +173,9 @@ async def main(args) -> None:
         buckets = res.get("buckets") or {}
         for name in bucket_totals:
             bucket_totals[name] += len(buckets.get(name, []))
+        drop_reasons = res.get("drop_reasons") or {}
+        for code in drop_reasons.values():
+            reason_totals[code] = reason_totals.get(code, 0) + 1
         for k in args.k:
             topk = set(predicted[:k])
             p_at[k].append(_div(len(topk & gt), min(k, len(predicted)) or 1))
@@ -165,6 +187,7 @@ async def main(args) -> None:
             "fn_not_retrieved": "; ".join(buckets.get("not_retrieved", [])),
             "fn_gated_pre_llm": "; ".join(buckets.get("gated_pre_llm", [])),
             "fn_llm_dropped": "; ".join(buckets.get("llm_dropped", [])),
+            "fn_drop_reasons": "; ".join(f"{vs}={code}" for vs, code in drop_reasons.items()),
             "gt": "; ".join(sorted(gt)), "predicted": "; ".join(predicted),
         })
 
@@ -192,6 +215,12 @@ async def main(args) -> None:
     print(f"  llm_dropped    {bucket_totals['llm_dropped']:4}  "
           f"({_div(bucket_totals['llm_dropped'], total_fn):.0%})  - LLM saw it, didn't pick it")
 
+    if reason_totals:
+        explained = sum(reason_totals.values())
+        print(f"\nwhy the LLM dropped them (of {explained} llm_dropped explained):")
+        for code, cnt in sorted(reason_totals.items(), key=lambda kv: -kv[1]):
+            print(f"  {code:24} {cnt:4}  ({_div(cnt, explained):.0%})")
+
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="", encoding="utf-8") as fh:
@@ -213,6 +242,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-classification", action="store_true", help="ablation: ignore direct/implied")
     parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
+    parser.add_argument("--explain-drops", action="store_true",
+                        help="post-hoc LLM probe: classify why each llm_dropped GT was left out (extra calls)")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
     args = parser.parse_args()
     asyncio.run(main(args))
