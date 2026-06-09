@@ -26,7 +26,7 @@ class _FakeSearch:
 class _FakeLLM:
     async def complete(self, *, system, user, schema):
         return schema.model_validate(
-            {"picks": [{"entityId": "VS1", "confidence": 0.9, "supportType": "direct", "reason": "claims"}]}
+            {"picks": [{"entityId": "VS1", "confidence": 0.9, "supportType": "implied", "reason": "claims"}]}
         )
 
 

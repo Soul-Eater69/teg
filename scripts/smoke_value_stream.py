@@ -1,8 +1,8 @@
 """Manual smoke test for Value Stream prediction against the live indices.
 
 Two modes:
-  - raw summary text:  uv run python -m scripts.smoke_value_stream "claims savings ..." [count]
-  - real IDMT ticket:  uv run python -m scripts.smoke_value_stream --ticket IDMT-19761 [count]
+  - raw summary text:  uv run python -m scripts.smoke_value_stream "claims savings ..." --count 12
+  - real IDMT ticket:  uv run python -m scripts.smoke_value_stream --ticket IDMT-19761 --count 12
       (fetches + condenses the ticket first, then predicts off its summaryFields)
 
 Prerequisites:
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("summary", nargs="?", help="raw summary text (omit when using --ticket)")
     parser.add_argument("--ticket", help="IDMT ticket id; condense it first, then predict")
-    parser.add_argument("count", nargs="?", type=int, default=10)
+    parser.add_argument("--count", type=int, default=10, help="exact number of value streams to return")
     args = parser.parse_args()
     if not args.ticket and not args.summary:
         raise SystemExit('usage: smoke_value_stream.py "<summary>" [count]  |  --ticket IDMT-#### [count]')

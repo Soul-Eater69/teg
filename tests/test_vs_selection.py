@@ -88,7 +88,7 @@ async def test_selection_resolves_scales_confidence_and_source_tickets() -> None
     ]
     payload = {
         "picks": [
-            {"entityId": "VS1", "confidence": 0.82, "supportType": "direct", "reason": "claims"},
+            {"entityId": "VS1", "confidence": 0.82, "supportType": "implied", "reason": "claims"},
             {"entityId": "VS2", "confidence": 0.5, "supportType": "implied", "reason": "billing"},
         ]
     }
@@ -97,8 +97,19 @@ async def test_selection_resolves_scales_confidence_and_source_tickets() -> None
     )
     assert [r.value_stream_id for r in recs] == ["VS1", "VS2"]
     assert recs[0].confidence == 82.0  # 0.82 -> 82
-    assert recs[0].source_tickets == ["IDMT-1"]
-    assert recs[1].source_tickets == []  # semantic_only -> no source tickets
+    assert recs[0].source_tickets == ["IDMT-1"]  # implied + historic-backed -> shown
+    assert recs[1].source_tickets == []  # implied but semantic_only -> no tickets to show
+
+
+async def test_direct_pick_hides_source_tickets() -> None:
+    # A direct pick is explicitly named, so its historic backing is not surfaced.
+    candidates = [_cand("VS1", "semantic_plus_historic", name="Adjudicate Claim", source_ticket_ids=["IDMT-1"])]
+    payload = {"picks": [{"entityId": "VS1", "confidence": 0.9, "supportType": "direct", "reason": "claims"}]}
+    recs = await select_value_streams(
+        query="q", candidates=candidates, requested_count=1, llm_client=_FakeLLM(payload)
+    )
+    assert recs[0].support_type == "direct"
+    assert recs[0].source_tickets == []  # direct -> hidden even though historic-backed
 
 
 async def test_selection_ignores_unknown_ids_and_dedupes() -> None:

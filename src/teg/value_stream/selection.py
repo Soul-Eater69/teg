@@ -16,7 +16,6 @@ from teg.prompts.loader import load_prompt
 from teg.value_stream.candidate_blocks import render_candidate_blocks
 from teg.value_stream.models import ValueStreamCandidate
 
-_HISTORIC_LANES = ("historic_only", "semantic_plus_historic")
 _FILL_CONFIDENCE = 30.0  # the 0.30 floor (as a percent) for count-fill picks
 
 
@@ -101,6 +100,8 @@ def _recommend(
         confidence=round(confidence, 1),
         support_type=support_type,
         reason=reason,
-        # candidate.lane gates source_tickets but is not surfaced in the output.
-        source_tickets=candidate.source_ticket_ids if candidate.lane in _HISTORIC_LANES else [],
+        # Source tickets are the historic analogs that justify an INFERRED pick, so they
+        # are surfaced only for implied picks. A direct pick is explicitly named by the
+        # idea card and needs no historic backing. (semantic_only picks have none anyway.)
+        source_tickets=candidate.source_ticket_ids if support_type == "implied" else [],
     )
