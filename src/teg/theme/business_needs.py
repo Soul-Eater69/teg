@@ -23,6 +23,7 @@ from teg.ingestion.catalogues.models import CatalogueStage
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
 from teg.theme.context import render_generation_signals, render_ticket_context
+from teg.theme.stage_catalogue import render_candidate_stages
 
 # Generation signals fed to the business needs prompt (Contract C, section 5.1).
 _BUSINESS_NEEDS_SIGNALS = [
@@ -79,9 +80,7 @@ async def _for_stage(
         value_stream_id=value_stream.value_stream_id,
         value_stream_name=value_stream.value_stream_name,
         value_stream_description=value_stream_description,
-        stage_id=stage.stage_id,
-        stage_name=stage.stage_name,
-        stage_description=stage.stage_description,
+        stage=render_candidate_stages([stage]),  # name, description, entrance/exit, value items
     )
     result = await llm_client.complete(system=system, user=user, schema=_GeneratedBusinessNeed)
     return BusinessNeed(
