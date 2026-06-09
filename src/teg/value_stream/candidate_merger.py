@@ -52,9 +52,10 @@ def build_candidates(
 ) -> list[ValueStreamCandidate]:
     """Merge the two lanes into candidates.
 
-    ``use_classification=False`` is the ablation: it ignores the historic direct/implied
-    label (direct_count/implied_count stay 0), so the gate, ranking, and candidate block fall
-    back to co-occurrence + frequency + similarity only.
+    ``use_classification=False`` is the ablation: it drops everything the ingestion classifier
+    produced - the direct/implied label (counts stay 0) AND the reason/evidence snippets - so a
+    historic candidate is pure co-occurrence + frequency + similarity, with no LLM labels. The
+    historic lane still contributes candidates; only the classification is removed.
     """
     by_id: dict[str, ValueStreamCandidate] = {}
 
@@ -99,9 +100,12 @@ def build_candidates(
         candidate.weighted_support = round(
             _support_weight(candidate.best_support_score) * candidate.supporting_ticket_count, 4
         )
-        candidate.evidence = _unique(
-            label.evidence or label.reason for _, label in pairs if (label.evidence or label.reason)
-        )[:max_supporting_tickets]
+        if use_classification:
+            # reason/evidence are ingestion-classifier output - dropped in the ablation, so a
+            # historic candidate is pure co-occurrence + frequency + score (no LLM labels).
+            candidate.evidence = _unique(
+                label.evidence or label.reason for _, label in pairs if (label.evidence or label.reason)
+            )[:max_supporting_tickets]
 
     for candidate in by_id.values():
         candidate.lane = _lane(candidate)
