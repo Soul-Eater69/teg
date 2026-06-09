@@ -95,7 +95,10 @@ async def _eval_one(service, args, doc, ticket_id: str, gt: set[str], sem, progr
 
 async def main(args) -> None:
     docs = _load(args.dataset)
-    config = ValueStreamConfig(use_historic_classification=not args.no_classification)
+    config = ValueStreamConfig(
+        use_historic_classification=not args.no_classification,
+        use_historic_lane=not args.semantic_only,
+    )
     service = build_value_stream_service(config=config)
 
     jobs = []
@@ -163,6 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 10], help="k values for P@k / R@k")
     parser.add_argument("--concurrency", type=int, default=6, help="tickets evaluated in parallel")
     parser.add_argument("--no-classification", action="store_true", help="ablation: ignore direct/implied")
+    parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
     args = parser.parse_args()

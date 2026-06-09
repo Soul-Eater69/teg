@@ -36,8 +36,11 @@ async def retrieve(
     *,
     vs_top_k: int = _VS_TOP_K,
     historical_top_k: int = _HISTORICAL_TOP_K,
+    include_historical: bool = True,
 ) -> RetrievalResult:
     query = build_retrieval_text(summary)
+    if not include_historical:  # semantic-only (eval ablation): skip the historic lane
+        return RetrievalResult(value_stream_hits=list(await search_client.search_value_streams(query, top_k=vs_top_k)))
     vs_hits, historical_hits = await asyncio.gather(
         search_client.search_value_streams(query, top_k=vs_top_k),
         search_client.search_historical(query, top_k=historical_top_k),

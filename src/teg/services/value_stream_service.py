@@ -46,6 +46,7 @@ class ValueStreamService:
             self._search,
             vs_top_k=vs_top_k,
             historical_top_k=historical_top_k + len(request.exclude_ticket_ids),
+            include_historical=self._config.use_historic_lane,
         )
         historical_hits = _excluding(result.historical_hits, request.exclude_ticket_ids)[:historical_top_k]
         # SME-selected analogs become the evidence used for ranking (all retrieved if

@@ -19,3 +19,4 @@ class ValueStreamConfig:
     window_headroom: int = 8  # buffer over the requested count when the window is derived
     max_supporting_tickets: int = 2  # source tickets / evidence kept per candidate
     use_historic_classification: bool = True  # use the direct/implied label (ablation: False)
+    use_historic_lane: bool = True  # use the historic ER lane at all (ablation: False = semantic-only)
