@@ -34,6 +34,12 @@ class CandidateMergePolicy:
     semantic_min_score: float = 1.00
     # supporting tickets / evidence kept per candidate
     max_supporting_tickets: int = 2
+    # data-driven generic/broad-stream penalty: subtract (scale * base_rate) from a
+    # candidate's ranking score, UNLESS it is earned by historical evidence (hits >=
+    # generic_earned_hits, or any direct hit). 0.0 scale disables it. Replaces the POC's
+    # hardcoded generic/risky list with a corpus-frequency prior - no stream names in code.
+    generic_penalty_scale: float = 0.0
+    generic_earned_hits: int = 3
 
 
 @dataclass
@@ -46,6 +52,7 @@ class ValueStreamCandidate:
     value_proposition: str = ""
     from_semantic: bool = False
     from_historical: bool = False
+    base_rate: float = 0.0  # corpus tag-frequency (0-1); high = broad/generic stream
     semantic_score: float = 0.0
     semantic_rank: int | None = None
     supporting_ticket_count: int = 0

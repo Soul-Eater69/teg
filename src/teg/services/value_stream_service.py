@@ -40,21 +40,33 @@ class ValueStreamService:
         *,
         model_name: str = "",
         config: ValueStreamConfig = ValueStreamConfig(),
+        base_rates: dict[str, float] | None = None,
     ) -> None:
         self._search = search_client
         self._llm = llm_client
         self._model_name = model_name
         self._config = config
+        # Corpus tag-frequency prior per VS (broad-stream penalty). Global default; the eval
+        # passes a per-ticket leave-one-out override via predict_traced.
+        self._base_rates = base_rates or {}
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
         response, _ = await self._predict(request)
         return response
 
-    async def predict_traced(self, request: ValueStreamRequest) -> tuple[ValueStreamResponse, PredictionTrace]:
-        """Same as :meth:`predict` but also returns what reached the LLM (eval diagnostics)."""
-        return await self._predict(request)
+    async def predict_traced(
+        self, request: ValueStreamRequest, *, base_rates: dict[str, float] | None = None
+    ) -> tuple[ValueStreamResponse, PredictionTrace]:
+        """Same as :meth:`predict` but returns what reached the LLM (eval diagnostics).
 
-    async def _predict(self, request: ValueStreamRequest) -> tuple[ValueStreamResponse, PredictionTrace]:
+        ``base_rates`` overrides the global prior for this call (the eval uses it to pass a
+        leave-one-out frequency that excludes the ticket under test).
+        """
+        return await self._predict(request, base_rates=base_rates)
+
+    async def _predict(
+        self, request: ValueStreamRequest, *, base_rates: dict[str, float] | None = None
+    ) -> tuple[ValueStreamResponse, PredictionTrace]:
         # The custom instruction may only set the count: parse it deterministically (the raw
         # text never reaches a prompt); a parsed count overrides requested_count.
         requested_count = parse_requested_count(request.custom_instruction) or request.requested_count
@@ -79,6 +91,7 @@ class ValueStreamService:
             evidence,
             max_supporting_tickets=policy.max_supporting_tickets,
             use_classification=self._config.use_historic_classification,
+            base_rates=base_rates if base_rates is not None else self._base_rates,
         )
         review_pool = select_review_pool(candidates, policy=policy)
         recommendations = await select_value_streams(

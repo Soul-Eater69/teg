@@ -39,6 +39,8 @@ def derive_runtime(
         max_historic_only=config.historical_fetch_k,
         max_semantic_only=min(5, max(3, int(window * 0.20))),
         max_supporting_tickets=config.max_supporting_tickets,
+        generic_penalty_scale=config.generic_penalty_scale,
+        generic_earned_hits=config.generic_earned_hits,
     )
     return vs_top_k, config.historical_fetch_k, policy
 
@@ -49,6 +51,7 @@ def build_candidates(
     *,
     max_supporting_tickets: int = 2,
     use_classification: bool = True,
+    base_rates: dict[str, float] | None = None,
 ) -> list[ValueStreamCandidate]:
     """Merge the two lanes into candidates.
 
@@ -107,8 +110,10 @@ def build_candidates(
                 label.evidence or label.reason for _, label in pairs if (label.evidence or label.reason)
             )[:max_supporting_tickets]
 
+    rates = base_rates or {}
     for candidate in by_id.values():
         candidate.lane = _lane(candidate)
+        candidate.base_rate = rates.get(candidate.value_stream_id, 0.0)
     return list(by_id.values())
 
 
@@ -128,13 +133,14 @@ def select_review_pool(
     """
     semantic_plus = sorted(
         (c for c in candidates if c.lane == "semantic_plus_historic"),
-        key=_sort_semantic_plus_historic,
+        key=lambda c: _sort_semantic_plus_historic(c, policy),
     )
     historic_only = sorted(
         (c for c in candidates if c.lane == "historic_only"), key=_sort_historic_only
     )
     semantic_only = sorted(
-        (c for c in candidates if c.lane == "semantic_only"), key=_sort_semantic_only
+        (c for c in candidates if c.lane == "semantic_only"),
+        key=lambda c: _sort_semantic_only(c, policy),
     )
 
     pool: list[ValueStreamCandidate] = []
@@ -189,14 +195,30 @@ def _is_good_historic_only(c: ValueStreamCandidate, policy: CandidateMergePolicy
 
 
 def _is_strong_semantic_only(c: ValueStreamCandidate, policy: CandidateMergePolicy) -> bool:
-    return c.semantic_score >= policy.semantic_min_score
+    # A broad stream (high base_rate) needs a stronger semantic match to qualify on name
+    # alone, unless earned by history - the penalty raises its effective floor.
+    return (c.semantic_score - _generic_penalty(c, policy)) >= policy.semantic_min_score
 
 
-def _sort_semantic_plus_historic(c: ValueStreamCandidate) -> tuple:
+def _generic_penalty(c: ValueStreamCandidate, policy: CandidateMergePolicy) -> float:
+    """Rank penalty for a broad/generic stream that history hasn't earned.
+
+    scale * base_rate, applied only when the stream lacks real historical backing (fewer
+    than generic_earned_hits supporting tickets and no direct hit). Continuous in base_rate,
+    so broader streams are demoted more - no hardcoded list, no hard threshold.
+    """
+    if policy.generic_penalty_scale <= 0.0:
+        return 0.0
+    if c.supporting_ticket_count >= policy.generic_earned_hits or c.direct_count >= 1:
+        return 0.0
+    return policy.generic_penalty_scale * c.base_rate
+
+
+def _sort_semantic_plus_historic(c: ValueStreamCandidate, policy: CandidateMergePolicy) -> tuple:
     # Blend semantic with historical signal so strong historical evidence isn't buried
     # under a marginally-better-semantic candidate with only one hit.
     boost = min(1.0, c.supporting_ticket_count / 10.0) * 0.20 + c.best_support_score * 0.15
-    blended = c.semantic_score + boost
+    blended = c.semantic_score + boost - _generic_penalty(c, policy)
     return (
         -blended,
         -c.semantic_score,
@@ -207,8 +229,8 @@ def _sort_semantic_plus_historic(c: ValueStreamCandidate) -> tuple:
     )
 
 
-def _sort_semantic_only(c: ValueStreamCandidate) -> tuple:
-    return (-c.semantic_score, c.value_stream_name.lower())
+def _sort_semantic_only(c: ValueStreamCandidate, policy: CandidateMergePolicy) -> tuple:
+    return (-(c.semantic_score - _generic_penalty(c, policy)), c.value_stream_name.lower())
 
 
 def _sort_historic_only(c: ValueStreamCandidate) -> tuple:

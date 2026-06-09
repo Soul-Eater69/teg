@@ -110,3 +110,45 @@ def test_lanes_ordered_when_room() -> None:
         _cand("M1", "semantic_only", semantic=1.5),
     ]
     assert [c.value_stream_id for c in select_review_pool(cands)] == ["S1", "H1", "M1"]
+
+
+# ---- T6b: data-driven generic/broad-stream penalty ----------------------
+
+def _rated(vs_id, lane, *, semantic=0.0, hits=0, direct=0, base_rate=0.0):
+    c = _cand(vs_id, lane, semantic=semantic, hits=hits, direct=direct)
+    c.base_rate = base_rate
+    return c
+
+
+def test_broad_unearned_stream_demoted_below_specific() -> None:
+    # BROAD has the better raw semantic score but a high corpus base rate and no history;
+    # the penalty must sink it below the lower-scoring but specific stream.
+    broad = _rated("BROAD", "semantic_only", semantic=1.3, base_rate=0.5)  # penalty 0.5*0.5=0.25
+    spec = _rated("SPEC", "semantic_only", semantic=1.1, base_rate=0.0)
+    policy = CandidateMergePolicy(window=1, generic_penalty_scale=0.5)
+    pool = select_review_pool([broad, spec], policy=policy)
+    assert [c.value_stream_id for c in pool] == ["SPEC"]
+
+
+def test_broad_stream_exempt_when_earned_by_history() -> None:
+    # Same BROAD stream, now backed by >= generic_earned_hits analog tickets: no penalty,
+    # so its stronger semantic score wins again.
+    broad = _rated("BROAD", "semantic_plus_historic", semantic=1.3, hits=3, base_rate=0.5)
+    spec = _rated("SPEC", "semantic_plus_historic", semantic=1.1, hits=1, base_rate=0.0)
+    policy = CandidateMergePolicy(window=1, generic_penalty_scale=0.5, generic_earned_hits=3)
+    pool = select_review_pool([broad, spec], policy=policy)
+    assert [c.value_stream_id for c in pool] == ["BROAD"]
+
+
+def test_penalty_off_by_default() -> None:
+    # scale 0.0 (default) -> base_rate is ignored, raw semantic order holds.
+    broad = _rated("BROAD", "semantic_only", semantic=1.3, base_rate=0.9)
+    spec = _rated("SPEC", "semantic_only", semantic=1.1, base_rate=0.0)
+    pool = select_review_pool([broad, spec], policy=CandidateMergePolicy(window=1))
+    assert [c.value_stream_id for c in pool] == ["BROAD"]
+
+
+def test_base_rate_assigned_from_lookup() -> None:
+    vs_hits = [ValueStreamHit("VS1", "Broad Stream", score=1.2)]
+    cand = build_candidates(vs_hits, [], base_rates={"VS1": 0.42})[0]
+    assert cand.base_rate == 0.42

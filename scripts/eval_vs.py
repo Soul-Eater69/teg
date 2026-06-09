@@ -56,6 +56,31 @@ def _gt_ids(props: dict) -> set[str]:
     return {t["valueStreamId"] for t in (props.get("themes") or []) if t.get("valueStreamId")}
 
 
+def _base_rate_counts(docs: list[dict]) -> tuple[dict[str, int], int]:
+    """Corpus tag frequency: how many tickets carry each VS as GT, and the ticket total.
+
+    The 'breadth' prior - a VS tagged on many tickets is broad/generic. Built once over the
+    whole corpus; the per-ticket rate is computed leave-one-out so a ticket never informs its
+    own penalty.
+    """
+    counts: dict[str, int] = {}
+    total = 0
+    for doc in docs:
+        gt = _gt_ids(doc.get("properties", {}))
+        if not gt:
+            continue
+        total += 1
+        for vs in gt:
+            counts[vs] = counts.get(vs, 0) + 1
+    return counts, total
+
+
+def _loo_base_rates(counts: dict[str, int], total: int, gt: set[str]) -> dict[str, float]:
+    """Per-ticket base rate excluding this ticket's own tags (leave-one-out)."""
+    denom = max(1, total - 1)
+    return {vs: (n - (1 if vs in gt else 0)) / denom for vs, n in counts.items()}
+
+
 def _prf(predicted: list[str], gt: set[str]) -> tuple[int, int, int]:
     pset = set(predicted)
     tp = len(pset & gt)
@@ -74,7 +99,7 @@ def _requested_count(args, gt: set[str]) -> int:
     return args.count
 
 
-async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], sem, progress) -> dict:
+async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_rates, sem, progress) -> dict:
     async with sem:
         request = ValueStreamRequest(
             ticket_id=ticket_id,
@@ -83,7 +108,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], sem, 
             exclude_ticket_ids=[ticket_id],  # leave-one-out
         )
         try:
-            resp, trace = await service.predict_traced(request)
+            resp, trace = await service.predict_traced(request, base_rates=base_rates)
             predicted = [r.value_stream_id for r in resp.recommendations]
         except Exception as exc:  # one bad ticket must not abort the batch
             progress["done"] += 1
@@ -137,10 +162,14 @@ async def main(args) -> None:
     config = ValueStreamConfig(
         use_historic_classification=not args.no_classification,
         use_historic_lane=not args.semantic_only,
+        generic_penalty_scale=args.generic_penalty,
         **({"llm_candidate_window": args.window} if args.window else {}),
     )
     service = build_value_stream_service(config=config)
     llm = build_llm_client(load_settings()) if args.explain_drops else None
+
+    # Corpus breadth prior for the generic-stream penalty (leave-one-out per ticket).
+    counts, total = _base_rate_counts(docs) if args.generic_penalty > 0 else ({}, 0)
 
     jobs = []
     skipped = 0
@@ -149,14 +178,17 @@ async def main(args) -> None:
         if len(gt) < args.min_gt:  # drop tickets with too few GT VS (e.g. single-label)
             skipped += 1
             continue
-        jobs.append((doc, doc.get("sourceId") or doc.get("id") or f"row{i}", gt))
+        rates = _loo_base_rates(counts, total, gt) if args.generic_penalty > 0 else None
+        jobs.append((doc, doc.get("sourceId") or doc.get("id") or f"row{i}", gt, rates))
 
     sem = asyncio.Semaphore(args.concurrency)
     progress = {"done": 0, "total": len(jobs)}
     print(f"evaluating {len(jobs)} tickets (concurrency={args.concurrency}; "
           f"skipped {skipped} with < {args.min_gt} GT value streams)")
     try:
-        results = await asyncio.gather(*(_eval_one(service, llm, args, d, t, g, sem, progress) for d, t, g in jobs))
+        results = await asyncio.gather(
+            *(_eval_one(service, llm, args, d, t, g, r, sem, progress) for d, t, g, r in jobs)
+        )
     finally:
         await service.aclose()
         if llm is not None and hasattr(llm, "aclose"):
@@ -204,7 +236,8 @@ async def main(args) -> None:
     print("\n" + "=" * 60)
     print(f"tickets evaluated: {n}   "
           f"(count_mode={args.count_mode}, classification={'OFF' if args.no_classification else 'ON'}, "
-          f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18})")
+          f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18}, "
+          f"generic_penalty={args.generic_penalty})")
     print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}")
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}")
     for k in args.k:
@@ -255,6 +288,9 @@ if __name__ == "__main__":
     parser.add_argument("--window", type=int, default=0,
                         help="override the LLM review-pool size (how many candidates the LLM sees; "
                              "default config=18). Decoupled from output count, so count=gt stays honest.")
+    parser.add_argument("--generic-penalty", type=float, default=0.0,
+                        help="broad-stream rank penalty scale (penalty = scale * corpus_base_rate, "
+                             "unless earned by history). Try 0.5. 0 = off. Base rate is leave-one-out.")
     parser.add_argument("--explain-drops", action="store_true",
                         help="post-hoc LLM probe: classify why each llm_dropped GT was left out (extra calls)")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
