@@ -19,6 +19,10 @@ class ValueStreamRequest(CamelModel):
     ticket_id: str
     summary_fields: SummaryFields
     requested_count: int = 10  # exact number of value streams to return (the only VS knob)
+    # Optional free-text steer. May ONLY set the count (e.g. "give me 6"); a count parsed from
+    # it overrides requested_count. Everything else is ignored - the raw text never reaches an
+    # LLM prompt (structural guardrail against injection / off-task instructions).
+    custom_instruction: str | None = None
     # Only the SME-selected analogs; omit to auto-use the retrieved set.
     selected_historical_ticket_ids: list[str] = Field(default_factory=list)
 

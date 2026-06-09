@@ -13,6 +13,7 @@ from teg.integrations.llm import LLMClient
 from teg.integrations.search import HistoricalHit, SearchClient
 from teg.value_stream.candidate_merger import build_candidates, derive_runtime, select_review_pool
 from teg.value_stream.config import ValueStreamConfig
+from teg.value_stream.custom_instruction import parse_requested_count
 from teg.value_stream.retrieval import retrieve
 from teg.value_stream.selection import select_value_streams
 
@@ -32,10 +33,12 @@ class ValueStreamService:
         self._config = config
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
+        # The custom instruction may only set the count: parse it deterministically (the raw
+        # text never reaches a prompt); a parsed count overrides requested_count.
+        requested_count = parse_requested_count(request.custom_instruction) or request.requested_count
+
         # Fetch sizes + merge policy adapt to the requested count and the tuning config.
-        vs_top_k, historical_top_k, policy = derive_runtime(
-            request.requested_count, config=self._config
-        )
+        vs_top_k, historical_top_k, policy = derive_runtime(requested_count, config=self._config)
         result = await retrieve(
             request.summary_fields,
             self._search,
@@ -52,7 +55,7 @@ class ValueStreamService:
         recommendations = await select_value_streams(
             query=request.summary_fields.generated_summary,
             candidates=review_pool,
-            requested_count=request.requested_count,
+            requested_count=requested_count,
             llm_client=self._llm,
         )
         return ValueStreamResponse(
