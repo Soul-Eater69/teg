@@ -79,10 +79,17 @@ async def main(args) -> None:
         gt = _gt_ids(props)
         if not gt:
             continue
+        # Count mode: fixed (--count), gt (= |GT|, R-precision), or gt_buffer (|GT| + buffer).
+        if args.count_mode == "gt":
+            requested = max(1, len(gt))
+        elif args.count_mode == "gt_buffer":
+            requested = max(1, len(gt) + args.buffer)
+        else:
+            requested = args.count
         request = ValueStreamRequest(
             ticket_id=ticket_id,
             summary_fields=_summary_fields(props, raw_text=args.raw_text),
-            requested_count=args.count,
+            requested_count=requested,
             exclude_ticket_ids=[ticket_id],  # leave-one-out
         )
         resp = await service.predict(request)
@@ -110,7 +117,7 @@ async def main(args) -> None:
 
     print("\n" + "=" * 60)
     print(f"tickets evaluated: {n}   "
-          f"(classification={'OFF' if args.no_classification else 'ON'}, "
+          f"(count_mode={args.count_mode}, classification={'OFF' if args.no_classification else 'ON'}, "
           f"input={'rawText' if args.raw_text else 'condensed'})")
     print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}")
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}")
@@ -128,7 +135,10 @@ async def main(args) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", help="cosmos_idmt.json (ingested IDMT docs with GT)")
-    parser.add_argument("--count", type=int, default=10, help="value streams to request per ticket")
+    parser.add_argument("--count", type=int, default=10, help="value streams to request (fixed mode)")
+    parser.add_argument("--count-mode", choices=["fixed", "gt", "gt_buffer"], default="fixed",
+                        help="fixed=--count; gt=|GT| per ticket (R-precision); gt_buffer=|GT|+buffer")
+    parser.add_argument("--buffer", type=int, default=2, help="added to |GT| in gt_buffer mode")
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 10], help="k values for P@k / R@k")
     parser.add_argument("--no-classification", action="store_true", help="ablation: ignore direct/implied")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
