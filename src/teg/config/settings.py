@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     idp_password: str = ""
 
     # Embeddings (same IDP gateway + auth as the LLM)
-    embedding_model: str = "text-embedding-3-large"
+    embedding_model: str = "text-embedding-3-small-idp"  # native 1536 dims
     embedding_dimensions: int = 1536  # must equal the index content_vector dimensions
     embedding_path: str = "/api/v1/embeddings"
     embedding_api_version: str = "2024-06-01"
