@@ -3,8 +3,7 @@
 # invent or rename. Each selected L3 maps 1-1 to its L2 (derived by us, not the model).
 # Output structure is the CapabilitySelectionResult pydantic model (structured output).
 # Template vars: {ticket_context}, {generation_signals}, {value_stream_name},
-#                {value_stream_description}, {stage_name}, {stage_description},
-#                {candidate_capabilities}
+#                {value_stream_description}, {stage}, {candidate_capabilities}
 
 system: |
   You are a senior healthcare business architect selecting the L3 business capabilities that
@@ -30,9 +29,8 @@ user: |
   Name: {value_stream_name}
   Description: {value_stream_description}
 
-  ## Selected stage
-  Name: {stage_name}
-  Description: {stage_description}
+  ## Selected stage (capabilities must fall within this stage's scope)
+  {stage}
 
   ## Candidate L3 capabilities (choose by id; each shows its parent L2)
   {candidate_capabilities}

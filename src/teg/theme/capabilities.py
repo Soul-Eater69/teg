@@ -24,6 +24,7 @@ from teg.ingestion.catalogues.models import CatalogueCapability, CatalogueStage
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
 from teg.theme.context import render_generation_signals, render_ticket_context
+from teg.theme.stage_catalogue import render_candidate_stages
 
 _CAPABILITY_SIGNALS = ["businessSolutionObjectives"]
 
@@ -72,8 +73,7 @@ async def _for_stage(
         generation_signals=render_generation_signals(condensed, _CAPABILITY_SIGNALS),
         value_stream_name=value_stream.value_stream_name,
         value_stream_description=value_stream_description,
-        stage_name=stage.stage_name,
-        stage_description=stage.stage_description,
+        stage=render_candidate_stages([stage]),  # name, description, entrance/exit, value items
         candidate_capabilities=_render_candidates(stage.capabilities),
     )
     result = await llm_client.complete(system=system, user=user, schema=CapabilitySelectionResult)
