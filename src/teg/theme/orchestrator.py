@@ -1,9 +1,9 @@
 """Per-VS theme package assembly.
 
-For one approved Value Stream, the theme description and the stage selection are
-independent - they run in parallel off the condensed context. Business needs and L2/L3
-capabilities (which depend on the selected stages) are a later step. The theme title is
-deterministic: "<ticket title> - <value stream name>".
+For one approved Value Stream: theme description and stage selection run in parallel off the
+condensed context; business needs then run on the selected stages (they depend on the stage
+output). L2/L3 capabilities are a later step. The theme title is deterministic:
+"<ticket title> - <value stream name>".
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import asyncio
 
 from teg.contracts.theme_io import ApprovedValueStream, ThemeGenerationRequest, ThemePackage
 from teg.integrations.llm import LLMClient
+from teg.theme.business_needs import generate_business_needs
 from teg.theme.description import generate_theme_description
 from teg.theme.stage_catalogue import StageCatalogue
 from teg.theme.stage_selection import select_stages
@@ -44,11 +45,24 @@ async def generate_theme_package(
         ),
     )
 
+    # Business needs depend on the selected stages - resolve those back to their full
+    # catalogue stage (description) and generate needs per stage.
+    by_id = {s.stage_id: s for s in stages}
+    selected_catalogue_stages = [by_id[s.stage_id] for s in selected_stages if s.stage_id in by_id]
+    business_needs = await generate_business_needs(
+        condensed=request.condensed,
+        value_stream=approved_vs,
+        value_stream_description=vs_description,
+        selected_stages=selected_catalogue_stages,
+        llm_client=llm_client,
+    )
+
     return ThemePackage(
         value_stream_id=approved_vs.value_stream_id,
         value_stream_name=approved_vs.value_stream_name,
         theme_title=f"{request.ticket_title} - {approved_vs.value_stream_name}",
         theme_description=description,
         selected_stages=selected_stages,
-        # business_needs + l2/l3 capabilities depend on selected_stages - next step.
+        business_needs=business_needs,
+        # l2/l3 capabilities depend on selected_stages - next step.
     )

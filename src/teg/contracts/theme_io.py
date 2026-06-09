@@ -40,20 +40,26 @@ class SelectedStage(_Camel):
     reason: str = ""
 
 
+class BusinessNeedItem(_Camel):
+    """One numbered business need, with optional annotations nested under it."""
+
+    text: str
+    note: str | None = None
+    dependency: str | None = None
+    business_rule: str | None = None
+
+
 class BusinessProductFeature(_Camel):
-    feature_name: str
-    needs: list[str] = Field(default_factory=list)
-    notes: str | None = None
-    dependencies: list[str] = Field(default_factory=list)
-    business_rules: list[str] = Field(default_factory=list)
+    feature_name: str  # e.g. "Overall Scope", "Post-Sale Client Reporting", "AMPPD Dashboard"
+    needs: list[BusinessNeedItem] = Field(default_factory=list)
 
 
 class BusinessNeed(_Camel):
     stage_id: str
     stage_name: str
     business_product_features: list[BusinessProductFeature] = Field(default_factory=list)
-    operational_training: str | None = None
-    operational_reporting: str | None = None
+    operational_training: list[str] = Field(default_factory=list)
+    operational_reporting: list[str] = Field(default_factory=list)
     validation_status: str = "unknown"
 
 
