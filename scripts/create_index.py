@@ -23,18 +23,27 @@ from pathlib import Path
 import httpx
 
 from teg.config.settings import load_settings
+from teg.integrations.search.credential import search_bearer_token
 
 
 async def main(definition_path: str, recreate: bool) -> None:
     settings = load_settings()
-    if not settings.search_endpoint or not settings.search_api_key:
-        raise SystemExit("TEG_SEARCH_ENDPOINT and TEG_SEARCH_API_KEY are required")
+    if not settings.search_endpoint:
+        raise SystemExit("search_endpoint is required")
 
     definition = json.loads(Path(definition_path).read_text(encoding="utf-8"))
     index_name = definition["name"]
     base = settings.search_endpoint.rstrip("/")
     params = {"api-version": settings.search_api_version}
-    headers = {"api-key": settings.search_api_key, "Content-Type": "application/json"}
+
+    # Service principal (bearer) when configured, else the admin api-key.
+    token = search_bearer_token(settings)
+    if token:
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    elif settings.search_api_key:
+        headers = {"api-key": settings.search_api_key, "Content-Type": "application/json"}
+    else:
+        raise SystemExit("no Azure Search credential: set the azure_* service principal or search_api_key")
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         if recreate:

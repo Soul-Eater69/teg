@@ -13,12 +13,11 @@ from dataclasses import dataclass, field
 from typing import Iterator
 
 from teg.config.settings import Settings
+from teg.integrations.search.credential import build_search_credential
 
 try:  # azure SDK is the optional 'search' extra
-    from azure.core.credentials import AzureKeyCredential
     from azure.search.documents.aio import SearchClient as _AzureSearchClient
 except Exception:  # pragma: no cover - import guarded so the module always loads
-    AzureKeyCredential = None  # type: ignore[assignment]
     _AzureSearchClient = None  # type: ignore[assignment]
 
 _BATCH_SIZE = 1000  # Azure caps a request at 1000 documents / 16 MB
@@ -83,6 +82,6 @@ def build_search_uploader(settings: Settings) -> SearchUploader:
     index_client = _AzureSearchClient(
         endpoint=settings.search_endpoint,
         index_name=settings.search_index,
-        credential=AzureKeyCredential(settings.search_api_key),
+        credential=build_search_credential(settings),
     )
     return SearchUploader(index_client)

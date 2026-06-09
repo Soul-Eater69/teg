@@ -17,13 +17,12 @@ from teg.integrations.search.client import (
     HistoricalValueStreamLabel,
     ValueStreamHit,
 )
+from teg.integrations.search.credential import build_search_credential
 
 try:  # azure SDK is the optional 'search' extra
-    from azure.core.credentials import AzureKeyCredential
     from azure.search.documents.aio import SearchClient as _AzureSearchClient
     from azure.search.documents.models import VectorizedQuery
 except Exception:  # pragma: no cover - import guarded so the module always loads
-    AzureKeyCredential = None  # type: ignore[assignment]
     _AzureSearchClient = None  # type: ignore[assignment]
     VectorizedQuery = None  # type: ignore[assignment]
 
@@ -138,7 +137,7 @@ def build_search_client(settings: Settings) -> AzureSearchClient:
     index_client = _AzureSearchClient(
         endpoint=settings.search_endpoint,
         index_name=settings.search_index,
-        credential=AzureKeyCredential(settings.search_api_key),
+        credential=build_search_credential(settings),
     )
     return AzureSearchClient(
         index_client=index_client,
