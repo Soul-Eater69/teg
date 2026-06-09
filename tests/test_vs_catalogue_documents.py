@@ -87,6 +87,7 @@ def test_catalogue_document_shape(tmp_path) -> None:
     vs = _load(tmp_path)[0]
     doc = build_catalogue_document(vs)
     assert doc["id"] == "VSR00074583"
+    assert doc["entityType"] == "ValueStream"  # PascalCase, like EngagementRequest/Theme
     assert "ingestedAt" not in doc  # no ingested date; source audit at the envelope
     assert doc["createdDate"] == "2021-03-14"
     assert doc["createdBy"] == "U447949"

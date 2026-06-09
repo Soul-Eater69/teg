@@ -16,7 +16,7 @@ from teg.ingestion.catalogues.models import (
 )
 
 CATALOGUE_SOURCE = "Sightline"
-ENTITY_TYPE = "valueStream"
+ENTITY_TYPE = "ValueStream"  # PascalCase, consistent with EngagementRequest / Theme
 
 
 def build_catalogue_document(vs: CatalogueValueStream) -> dict:

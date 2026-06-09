@@ -1,7 +1,7 @@
 """Azure AI Search implementation of SearchClient.
 
 One unified index (idp_teg_data) holds both doc types our ingestion produces; the
-``entityType`` field is the lane discriminator: 'valueStream' for the catalogue lane
+``entityType`` field is the lane discriminator: 'ValueStream' for the catalogue lane
 (hybrid text+vector+semantic), 'EngagementRequest' for the historical lane (pure
 vector). The query is embedded via the embeddings client. Result mapping reads our
 generated nested ``properties`` shape; the pure mappers are unit-tested, the SDK search
@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover - import guarded so the module always load
     _AzureSearchClient = None  # type: ignore[assignment]
     VectorizedQuery = None  # type: ignore[assignment]
 
-_VS_FILTER = "entityType eq 'valueStream'"
+_VS_FILTER = "entityType eq 'ValueStream'"
 _HISTORICAL_FILTER = "entityType eq 'EngagementRequest'"
 _VS_SELECT = [
     "id",
