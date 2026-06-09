@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
-from teg.contracts.theme_io import ApprovedValueStreamDTO, ThemeGenerationRequest, ThemePackageDTO
+from teg.contracts.theme_io import ApprovedValueStream, ThemeGenerationRequest, ThemePackage
 from teg.integrations.llm import LLMClient
 from teg.theme.description import generate_theme_description
 from teg.theme.stage_catalogue import StageCatalogue
@@ -19,11 +19,11 @@ from teg.theme.stage_selection import select_stages
 
 async def generate_theme_package(
     *,
-    approved_vs: ApprovedValueStreamDTO,
+    approved_vs: ApprovedValueStream,
     request: ThemeGenerationRequest,
     stage_catalogue: StageCatalogue,
     llm_client: LLMClient,
-) -> ThemePackageDTO:
+) -> ThemePackage:
     stages = stage_catalogue.stages_for(approved_vs.value_stream_id)
     vs_description = stage_catalogue.description_for(approved_vs.value_stream_id)
 
@@ -44,7 +44,7 @@ async def generate_theme_package(
         ),
     )
 
-    return ThemePackageDTO(
+    return ThemePackage(
         value_stream_id=approved_vs.value_stream_id,
         value_stream_name=approved_vs.value_stream_name,
         theme_title=f"{request.ticket_title} - {approved_vs.value_stream_name}",

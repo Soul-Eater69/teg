@@ -1,7 +1,7 @@
 # Theme Description generation for one approved Value Stream (Contract C).
 # The LLM writes the prose (themeOverview, initiativeOverview, keyFeatures, ...). Product
 # Availability is organised strictly from the provided signals - never invented. Output is
-# the ThemeDescriptionDTO pydantic model (structured output).
+# the ThemeDescription pydantic model (structured output).
 # Template vars: {value_stream_id}, {value_stream_name}, {value_stream_description},
 #                {ticket_context}, {generation_signals}
 

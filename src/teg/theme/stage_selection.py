@@ -2,7 +2,7 @@
 
 The LLM picks lifecycle stages from the VS's governed candidate stages (never invents or
 renames). Output is StageSelectionResult (structured output); we then resolve each pick
-back to the canonical catalogue stage and map to the contract's SelectedStageDTO. Picks
+back to the canonical catalogue stage and map to the contract's SelectedStage. Picks
 that don't resolve to an allowed stage are dropped (no invented stages).
 """
 
@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from teg.contracts.theme_io import ApprovedValueStreamDTO, CondensedContextDTO, SelectedStageDTO
+from teg.contracts.theme_io import ApprovedValueStream, CondensedContext, SelectedStage
 from teg.domain.base import CamelModel
 from teg.ingestion.catalogues.models import CatalogueStage
 from teg.integrations.llm import LLMClient
@@ -51,12 +51,12 @@ class StageSelectionResult(CamelModel):
 
 async def select_stages(
     *,
-    condensed: CondensedContextDTO,
-    value_stream: ApprovedValueStreamDTO,
+    condensed: CondensedContext,
+    value_stream: ApprovedValueStream,
     value_stream_description: str,
     stages: list[CatalogueStage],
     llm_client: LLMClient,
-) -> list[SelectedStageDTO]:
+) -> list[SelectedStage]:
     if not stages:
         return []
     prompt = load_prompt("theme/stage_selection")
@@ -72,7 +72,7 @@ async def select_stages(
     return _resolve(result, stages)
 
 
-def _resolve(result: StageSelectionResult, stages: list[CatalogueStage]) -> list[SelectedStageDTO]:
+def _resolve(result: StageSelectionResult, stages: list[CatalogueStage]) -> list[SelectedStage]:
     by_id = {s.stage_id: s for s in stages}
 
     if result.stage_scope == "entire_value_stream":
@@ -86,14 +86,14 @@ def _resolve(result: StageSelectionResult, stages: list[CatalogueStage]) -> list
     else:
         chosen = []  # broad_or_unclear -> no specific stages
 
-    out: list[SelectedStageDTO] = []
+    out: list[SelectedStage] = []
     seen: set[str] = set()
     for rank, (stage_id, reason, evidence) in enumerate(chosen, start=1):
         if stage_id in seen:
             continue
         seen.add(stage_id)
         out.append(
-            SelectedStageDTO(
+            SelectedStage(
                 stage_id=stage_id,
                 stage_name=by_id[stage_id].stage_name,  # canonical name
                 rank=rank,

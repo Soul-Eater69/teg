@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from teg.contracts.theme_io import (
-    ApprovedValueStreamDTO,
-    CondensedContextDTO,
-    ThemeDescriptionDTO,
+    ApprovedValueStream,
+    CondensedContext,
+    ThemeDescription,
     ThemeGenerationRequest,
 )
 from teg.domain.condensed import GenerationSignals, SummaryFields
@@ -50,7 +50,7 @@ def _request() -> ThemeGenerationRequest:
     return ThemeGenerationRequest(
         ticket_id="IDMT-9",
         ticket_title="CP 2027 Guided Health Plans",
-        condensed=CondensedContextDTO(
+        condensed=CondensedContext(
             summary_fields=SummaryFields(
                 generated_summary="Reporting and analytics about member product use",
                 business_problem="No unified analytics",
@@ -58,7 +58,7 @@ def _request() -> ThemeGenerationRequest:
             ),
             generation_signals=GenerationSignals(plan_signals=["IL, TX, OK"], reporting_signals=["dashboards"]),
         ),
-        approved_value_streams=[ApprovedValueStreamDTO(value_stream_id="VSR1", value_stream_name="Discover Business Insights")],
+        approved_value_streams=[ApprovedValueStream(value_stream_id="VSR1", value_stream_name="Discover Business Insights")],
     )
 
 
@@ -66,8 +66,8 @@ class RoutingFakeLLM:
     """Returns the theme description or the stage selection based on the requested schema."""
 
     async def complete(self, *, system, user, schema):
-        if schema is ThemeDescriptionDTO:
-            return ThemeDescriptionDTO(
+        if schema is ThemeDescription:
+            return ThemeDescription(
                 theme_overview="The scope of this theme covers reporting and analytics.",
                 initiative_overview="CareWay+ analytics",
                 key_features=["sales-time analytics", "post-sale savings"],
@@ -98,8 +98,8 @@ async def test_generate_one_package_description_and_stages() -> None:
 async def test_invented_stage_id_is_dropped() -> None:
     class InventLLM(RoutingFakeLLM):
         async def complete(self, *, system, user, schema):
-            if schema is ThemeDescriptionDTO:
-                return ThemeDescriptionDTO(theme_overview="x", initiative_overview="y")
+            if schema is ThemeDescription:
+                return ThemeDescription(theme_overview="x", initiative_overview="y")
             return StageSelectionResult(
                 stage_scope="specific_stages",
                 selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],

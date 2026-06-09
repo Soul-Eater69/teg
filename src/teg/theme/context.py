@@ -8,10 +8,10 @@ theme/stage context is deliberately excluded.
 
 from __future__ import annotations
 
-from teg.contracts.theme_io import CondensedContextDTO
+from teg.contracts.theme_io import CondensedContext
 
 
-def render_ticket_context(condensed: CondensedContextDTO) -> str:
+def render_ticket_context(condensed: CondensedContext) -> str:
     sf = condensed.summary_fields
     lines: list[str] = []
     if sf.generated_summary:
@@ -29,7 +29,7 @@ def render_ticket_context(condensed: CondensedContextDTO) -> str:
     return "\n".join(lines)
 
 
-def render_generation_signals(condensed: CondensedContextDTO, fields: list[str]) -> str:
+def render_generation_signals(condensed: CondensedContext, fields: list[str]) -> str:
     """Render the named generation-signal fields that are populated (camelCase labels)."""
     data = condensed.generation_signals.model_dump(by_alias=True)
     lines = [f"- {name}: {'; '.join(data[name])}" for name in fields if data.get(name)]

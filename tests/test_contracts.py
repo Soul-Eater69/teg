@@ -7,8 +7,8 @@ from pydantic import ValidationError
 
 from teg.contracts.condense_io import CondensedTicket, CondenseRequest, CondenseResponse
 from teg.contracts.theme_io import (
-    ApprovedValueStreamDTO,
-    CondensedContextDTO,
+    ApprovedValueStream,
+    CondensedContext,
     ThemeGenerationRequest,
 )
 from teg.contracts.value_stream_io import ValueStreamRequest
@@ -84,12 +84,12 @@ def test_theme_request_validates() -> None:
     request = ThemeGenerationRequest(
         ticket_id="IDMT-1",
         ticket_title="t",
-        condensed=CondensedContextDTO(
+        condensed=CondensedContext(
             summary_fields=_summary(),
             generation_signals=GenerationSignals(),
         ),
         approved_value_streams=[
-            ApprovedValueStreamDTO(value_stream_id="VSR1", value_stream_name="n")
+            ApprovedValueStream(value_stream_id="VSR1", value_stream_name="n")
         ],
     )
     assert request.approved_value_streams[0].value_stream_id == "VSR1"

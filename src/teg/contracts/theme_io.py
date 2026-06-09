@@ -17,12 +17,12 @@ class _Camel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class CondensedContextDTO(_Camel):
+class CondensedContext(_Camel):
     summary_fields: SummaryFields
     generation_signals: GenerationSignals
 
 
-class ApprovedValueStreamDTO(_Camel):
+class ApprovedValueStream(_Camel):
     value_stream_id: str
     value_stream_name: str
 
@@ -30,11 +30,11 @@ class ApprovedValueStreamDTO(_Camel):
 class ThemeGenerationRequest(_Camel):
     ticket_id: str
     ticket_title: str
-    condensed: CondensedContextDTO
-    approved_value_streams: list[ApprovedValueStreamDTO]
+    condensed: CondensedContext
+    approved_value_streams: list[ApprovedValueStream]
 
 
-class ProductAvailabilityDTO(_Camel):
+class ProductAvailability(_Camel):
     """Organised strictly from the extracted generation signals (never invented)."""
 
     go_live: str | None = None
@@ -46,16 +46,16 @@ class ProductAvailabilityDTO(_Camel):
     product_pairing_exclusions: list[str] = Field(default_factory=list)
 
 
-class ThemeDescriptionDTO(_Camel):
+class ThemeDescription(_Camel):
     theme_overview: str  # LLM-written prose
-    product_availability: ProductAvailabilityDTO = Field(default_factory=ProductAvailabilityDTO)
+    product_availability: ProductAvailability = Field(default_factory=ProductAvailability)
     initiative_overview: str  # LLM-written prose
     key_features: list[str] = Field(default_factory=list)
     digital_experience: list[str] = Field(default_factory=list)
     integration_operational_capabilities: list[str] = Field(default_factory=list)
 
 
-class SelectedStageDTO(_Camel):
+class SelectedStage(_Camel):
     stage_id: str
     stage_name: str
     rank: int
@@ -64,7 +64,7 @@ class SelectedStageDTO(_Camel):
     validation_status: str = "unknown"
 
 
-class BusinessProductFeatureDTO(_Camel):
+class BusinessProductFeature(_Camel):
     feature_name: str
     needs: list[str] = Field(default_factory=list)
     notes: str | None = None
@@ -72,42 +72,42 @@ class BusinessProductFeatureDTO(_Camel):
     business_rules: list[str] = Field(default_factory=list)
 
 
-class BusinessNeedDTO(_Camel):
+class BusinessNeed(_Camel):
     stage_id: str
     stage_name: str
-    business_product_features: list[BusinessProductFeatureDTO] = Field(default_factory=list)
+    business_product_features: list[BusinessProductFeature] = Field(default_factory=list)
     operational_training: str | None = None
     operational_reporting: str | None = None
     validation_status: str = "unknown"
 
 
-class CapabilityDTO(_Camel):
+class Capability(_Camel):
     name: str
     description: str
     reason: str
 
 
-class StageCapabilitiesDTO(_Camel):
+class StageCapabilities(_Camel):
     stage_id: str
     stage_name: str
-    capabilities: list[CapabilityDTO] = Field(default_factory=list)
+    capabilities: list[Capability] = Field(default_factory=list)
 
 
-class ThemePackageDTO(_Camel):
+class ThemePackage(_Camel):
     value_stream_id: str
     value_stream_name: str
     theme_title: str
-    theme_description: ThemeDescriptionDTO
-    selected_stages: list[SelectedStageDTO] = Field(default_factory=list)
-    business_needs: list[BusinessNeedDTO] = Field(default_factory=list)
-    l2_capabilities: list[StageCapabilitiesDTO] = Field(default_factory=list)
-    l3_capabilities: list[StageCapabilitiesDTO] = Field(default_factory=list)
+    theme_description: ThemeDescription
+    selected_stages: list[SelectedStage] = Field(default_factory=list)
+    business_needs: list[BusinessNeed] = Field(default_factory=list)
+    l2_capabilities: list[StageCapabilities] = Field(default_factory=list)
+    l3_capabilities: list[StageCapabilities] = Field(default_factory=list)
     validation_status: str = "recommendation"
 
 
 class ThemeGenerationResponse(_Camel):
     ticket_id: str
-    theme_packages: list[ThemePackageDTO]
+    theme_packages: list[ThemePackage]
     model: str
     prompt_version: str
     latency_ms: int = 0
