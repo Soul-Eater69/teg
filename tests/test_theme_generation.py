@@ -8,12 +8,20 @@ from teg.contracts.theme_io import (
     ThemeGenerationRequest,
 )
 from teg.domain.condensed import GenerationSignals, SummaryFields
-from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
+from teg.ingestion.catalogues.models import CatalogueCapability, CatalogueStage, CatalogueValueStream
 from teg.services.theme_service import ThemeService
 from teg.theme.business_needs import _GeneratedBusinessNeeds
+from teg.theme.capabilities import CapabilitySelectionItem, CapabilitySelectionResult
 from teg.theme.description import _GeneratedDescription
 from teg.theme.stage_catalogue import StageCatalogue
 from teg.theme.stage_selection import StageSelectionItem, StageSelectionResult
+
+
+def _capability(cap_id: str, name: str, l2_id: str, l2_name: str) -> CatalogueCapability:
+    return CatalogueCapability(
+        capability_id=cap_id, capability_name=name, capability_description="", level=3, tier="",
+        active=True, level_one_id="L1", level_one_name="Manage", level_two_id=l2_id, level_two_name=l2_name,
+    )
 
 
 def _catalogue() -> StageCatalogue:
@@ -36,6 +44,10 @@ def _catalogue() -> StageCatalogue:
                 stage_id="VSS1", stage_name="Explore Information", stage_description="explore",
                 sequence=1, entrance_criteria="", exit_criteria="", value_items="", active=True,
                 created_date="", modified_date="",
+                capabilities=[
+                    _capability("CAP-L3-1", "Capture Metrics", "CAP-L2-1", "Reporting"),
+                    _capability("CAP-L3-2", "Publish Dashboard", "CAP-L2-1", "Reporting"),
+                ],
             ),
             CatalogueStage(
                 stage_id="VSS2", stage_name="Publish Report", stage_description="publish",
@@ -79,6 +91,10 @@ class RoutingFakeLLM:
             return _GeneratedBusinessNeeds(
                 text="Value Stage: Explore Information\n\nBusiness Product Feature: Overall Scope\n1. define CareWay+ metrics"
             )
+        if schema is CapabilitySelectionResult:
+            return CapabilitySelectionResult(
+                capabilities=[CapabilitySelectionItem(capability_id="CAP-L3-1", reason="card needs metrics capture")]
+            )
         return StageSelectionResult(
             stage_scope="specific_stages",
             selected_stages=[StageSelectionItem(stage_id="VSS1", reason="card centers on exploring information")],
@@ -104,6 +120,12 @@ async def test_generate_one_package_description_and_stages() -> None:
     # business needs is one consolidated text draft (all selected stages)
     assert pkg.business_needs.startswith("Value Stage: Explore Information")
     assert "Business Product Feature: Overall Scope" in pkg.business_needs
+    # L3 selected from the governed candidates; L2 derived as the 1-1 parent
+    l3 = pkg.l3_capabilities[0].capabilities
+    assert [c.capability_id for c in l3] == ["CAP-L3-1"]
+    assert l3[0].name == "Capture Metrics"
+    l2 = pkg.l2_capabilities[0].capabilities
+    assert [(c.capability_id, c.name) for c in l2] == [("CAP-L2-1", "Reporting")]
 
 
 async def test_invented_stage_id_is_dropped() -> None:

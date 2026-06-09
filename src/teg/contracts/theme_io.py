@@ -41,9 +41,9 @@ class SelectedStage(_Camel):
 
 
 class Capability(_Camel):
+    capability_id: str
     name: str
-    description: str
-    reason: str
+    reason: str = ""  # why it applies (L3); empty for L2 (derived as the L3's parent)
 
 
 class StageCapabilities(_Camel):
