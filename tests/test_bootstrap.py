@@ -23,5 +23,6 @@ def test_build_value_stream_service_wires_a_service() -> None:
     from teg.bootstrap import build_value_stream_service
     from teg.services.value_stream_service import ValueStreamService
 
-    service = build_value_stream_service(Settings())
+    # The search client needs a credential (service principal or key).
+    service = build_value_stream_service(Settings(search_api_key="test-key"))
     assert isinstance(service, ValueStreamService)
