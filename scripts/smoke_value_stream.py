@@ -34,7 +34,7 @@ async def main(summary_text: str, count: int) -> None:
     print(f"# {len(response.recommendations)} recommendations in {elapsed:.2f}s\n")
     for r in response.recommendations:
         print(
-            f"  {r.confidence:5.1f}  {r.support_type:8} {r.lane:22} "
+            f"  {r.confidence:5.1f}  {r.support_type:8} "
             f"{r.value_stream_name}  ({r.value_stream_id})  tickets={r.source_tickets}"
         )
     print("\n# historical tickets (for SME selection):")

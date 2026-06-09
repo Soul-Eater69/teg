@@ -61,7 +61,6 @@ class ThemePackage(_Camel):
     business_needs: str = ""  # the final consolidated Business Needs text (all selected stages)
     l2_capabilities: list[StageCapabilities] = Field(default_factory=list)
     l3_capabilities: list[StageCapabilities] = Field(default_factory=list)
-    validation_status: str = "recommendation"
 
 
 class ThemeGenerationResponse(_Camel):
