@@ -93,14 +93,17 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], sem, 
         # Post-hoc: ask why the LLM dropped GT it actually saw (never changes the metrics).
         drop_reasons: dict[str, str] = {}
         if llm is not None and buckets["llm_dropped"]:
-            explained = await explain_drops(
-                query=request.summary_fields.generated_summary,
-                review_pool=trace.review_pool,
-                picked_ids=predicted,
-                dropped_ids=buckets["llm_dropped"],
-                llm_client=llm,
-            )
-            drop_reasons = {vs: exp.reason_code for vs, exp in explained.items()}
+            try:
+                explained = await explain_drops(
+                    query=request.summary_fields.generated_summary,
+                    review_pool=trace.review_pool,
+                    picked_ids=predicted,
+                    dropped_ids=buckets["llm_dropped"],
+                    llm_client=llm,
+                )
+                drop_reasons = {vs: exp.reason_code for vs, exp in explained.items()}
+            except Exception as exc:  # a failed probe must not abort the batch
+                print(f"    explain-drops failed for {ticket_id}: {type(exc).__name__}: {exc}")
     tp, fp, fn = _prf(predicted, gt)
     progress["done"] += 1
     print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
@@ -220,6 +223,12 @@ async def main(args) -> None:
         print(f"\nwhy the LLM dropped them (of {explained} llm_dropped explained):")
         for code, cnt in sorted(reason_totals.items(), key=lambda kv: -kv[1]):
             print(f"  {code:24} {cnt:4}  ({_div(cnt, explained):.0%})")
+    elif args.explain_drops and bucket_totals["llm_dropped"]:
+        print(f"\n[!] --explain-drops was on and {bucket_totals['llm_dropped']} GT were llm_dropped, "
+              "but the probe returned no reasons - check the explain-drops failure lines above.")
+    elif bucket_totals["llm_dropped"]:
+        print(f"\n[i] {bucket_totals['llm_dropped']} GT were llm_dropped but not explained - "
+              "re-run with --explain-drops to classify why.")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
