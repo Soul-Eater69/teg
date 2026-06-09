@@ -81,6 +81,53 @@ def _loo_base_rates(counts: dict[str, int], total: int, gt: set[str]) -> dict[st
     return {vs: (n - (1 if vs in gt else 0)) / denom for vs, n in counts.items()}
 
 
+async def _collect_predictions(service, args, jobs, sem) -> dict[str, list[str]]:
+    """Pass 1: predict every ticket with the penalty OFF, to measure each stream's FP-rate."""
+    async def _one(doc, ticket_id, gt):
+        async with sem:
+            req = ValueStreamRequest(
+                ticket_id=ticket_id,
+                summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text),
+                requested_count=_requested_count(args, gt),
+                exclude_ticket_ids=[ticket_id],
+            )
+            try:
+                resp, _ = await service.predict_traced(req, base_rates={})  # {} = no penalty
+                return ticket_id, [r.value_stream_id for r in resp.recommendations]
+            except Exception:
+                return ticket_id, []
+    print(f"FP-rate prior: pass 1 predicting {len(jobs)} tickets (penalty off)...")
+    pairs = await asyncio.gather(*(_one(d, t, g) for d, t, g, _ in jobs))
+    return dict(pairs)
+
+
+def _fp_rate_stats(pred_by_ticket: dict[str, list[str]], gt_by_ticket: dict[str, set[str]]):
+    """Per-VS (predicted_count, false_positive_count) across the corpus + the per-ticket views."""
+    pred_count: dict[str, int] = {}
+    fp_count: dict[str, int] = {}
+    for tid, preds in pred_by_ticket.items():
+        gt = gt_by_ticket.get(tid, set())
+        for vs in set(preds):
+            pred_count[vs] = pred_count.get(vs, 0) + 1
+            if vs not in gt:
+                fp_count[vs] = fp_count.get(vs, 0) + 1
+    return pred_count, fp_count
+
+
+def _loo_fp_rates(pred_count, fp_count, ticket_preds: list[str], gt: set[str]) -> dict[str, float]:
+    """Per-ticket FP-rate prior, leave-one-out (Laplace-smoothed so rarely-predicted ~0.5).
+
+    fp_rate = (this stream's false positives) / (times it was predicted). High = attractor.
+    """
+    preds = set(ticket_preds)
+    rates: dict[str, float] = {}
+    for vs, p in pred_count.items():
+        p_loo = p - (1 if vs in preds else 0)
+        fp_loo = fp_count.get(vs, 0) - (1 if (vs in preds and vs not in gt) else 0)
+        rates[vs] = (fp_loo + 1) / (p_loo + 2)  # smoothed; neutral 0.5 when unseen
+    return rates
+
+
 def _prf(predicted: list[str], gt: set[str]) -> tuple[int, int, int]:
     pset = set(predicted)
     tp = len(pset & gt)
@@ -167,24 +214,38 @@ async def main(args) -> None:
     )
     service = build_value_stream_service(config=config)
     llm = build_llm_client(load_settings()) if args.explain_drops else None
+    sem = asyncio.Semaphore(args.concurrency)
 
-    # Corpus breadth prior for the generic-stream penalty (leave-one-out per ticket).
-    counts, total = _base_rate_counts(docs) if args.generic_penalty > 0 else ({}, 0)
-
-    jobs = []
+    base_jobs = []
     skipped = 0
     for i, doc in enumerate(docs, start=1):
         gt = _gt_ids(doc.get("properties", {}))
         if len(gt) < args.min_gt:  # drop tickets with too few GT VS (e.g. single-label)
             skipped += 1
             continue
-        rates = _loo_base_rates(counts, total, gt) if args.generic_penalty > 0 else None
-        jobs.append((doc, doc.get("sourceId") or doc.get("id") or f"row{i}", gt, rates))
+        base_jobs.append((doc, doc.get("sourceId") or doc.get("id") or f"row{i}", gt))
 
-    sem = asyncio.Semaphore(args.concurrency)
+    # Build the per-ticket penalty prior (leave-one-out) from the chosen signal.
+    #   gt_freq = corpus tag frequency (broad = often a GT). fp_rate = false-positive rate
+    #   (broad = often predicted-but-wrong; the correct attractor signal, needs a pass 1).
+    rate_for: dict[str, dict[str, float] | None] = {t: None for _, t, _ in base_jobs}
+    if args.generic_penalty > 0:
+        if args.penalty_signal == "fp_rate":
+            gt_by = {t: g for _, t, g in base_jobs}
+            preds = await _collect_predictions(service, args, [(d, t, g, None) for d, t, g in base_jobs], sem)
+            pred_count, fp_count = _fp_rate_stats(preds, gt_by)
+            for _, t, g in base_jobs:
+                rate_for[t] = _loo_fp_rates(pred_count, fp_count, preds.get(t, []), g)
+        else:
+            counts, total = _base_rate_counts(docs)
+            for _, t, g in base_jobs:
+                rate_for[t] = _loo_base_rates(counts, total, g)
+
+    jobs = [(d, t, g, rate_for[t]) for d, t, g in base_jobs]
     progress = {"done": 0, "total": len(jobs)}
     print(f"evaluating {len(jobs)} tickets (concurrency={args.concurrency}; "
-          f"skipped {skipped} with < {args.min_gt} GT value streams)")
+          f"skipped {skipped} with < {args.min_gt} GT value streams; "
+          f"penalty={args.generic_penalty} signal={args.penalty_signal})")
     try:
         results = await asyncio.gather(
             *(_eval_one(service, llm, args, d, t, g, r, sem, progress) for d, t, g, r in jobs)
@@ -237,7 +298,7 @@ async def main(args) -> None:
     print(f"tickets evaluated: {n}   "
           f"(count_mode={args.count_mode}, classification={'OFF' if args.no_classification else 'ON'}, "
           f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18}, "
-          f"generic_penalty={args.generic_penalty})")
+          f"generic_penalty={args.generic_penalty}/{args.penalty_signal if args.generic_penalty else '-'})")
     print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}")
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}")
     for k in args.k:
@@ -289,8 +350,11 @@ if __name__ == "__main__":
                         help="override the LLM review-pool size (how many candidates the LLM sees; "
                              "default config=18). Decoupled from output count, so count=gt stays honest.")
     parser.add_argument("--generic-penalty", type=float, default=0.0,
-                        help="broad-stream rank penalty scale (penalty = scale * corpus_base_rate, "
-                             "unless earned by history). Try 0.5. 0 = off. Base rate is leave-one-out.")
+                        help="broad-stream rank penalty scale (penalty = scale * signal, unless earned "
+                             "by history). Try 0.5-1.0. 0 = off. Signal is leave-one-out.")
+    parser.add_argument("--penalty-signal", choices=["fp_rate", "gt_freq"], default="fp_rate",
+                        help="fp_rate = false-positive rate (correct attractor signal, runs a pass 1); "
+                             "gt_freq = corpus GT frequency (penalizes common-true streams - usually wrong).")
     parser.add_argument("--explain-drops", action="store_true",
                         help="post-hoc LLM probe: classify why each llm_dropped GT was left out (extra calls)")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
