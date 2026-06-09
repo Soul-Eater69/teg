@@ -34,34 +34,10 @@ class ThemeGenerationRequest(_Camel):
     approved_value_streams: list[ApprovedValueStream]
 
 
-class ProductAvailability(_Camel):
-    """Organised strictly from the extracted generation signals (never invented)."""
-
-    go_live: str | None = None
-    plans: list[str] = Field(default_factory=list)
-    market_segments: list[str] = Field(default_factory=list)
-    funding_model: list[str] = Field(default_factory=list)
-    networks_impacted: list[str] = Field(default_factory=list)
-    product_structure_and_pairing_matrix: str | None = None
-    product_pairing_exclusions: list[str] = Field(default_factory=list)
-
-
-class ThemeDescription(_Camel):
-    theme_overview: str  # LLM-written prose
-    product_availability: ProductAvailability = Field(default_factory=ProductAvailability)
-    initiative_overview: str  # LLM-written prose
-    key_features: list[str] = Field(default_factory=list)
-    digital_experience: list[str] = Field(default_factory=list)
-    integration_operational_capabilities: list[str] = Field(default_factory=list)
-
-
 class SelectedStage(_Camel):
     stage_id: str
     stage_name: str
-    rank: int
-    reason: str
-    evidence: str
-    validation_status: str = "unknown"
+    reason: str = ""
 
 
 class BusinessProductFeature(_Camel):
@@ -97,7 +73,7 @@ class ThemePackage(_Camel):
     value_stream_id: str
     value_stream_name: str
     theme_title: str
-    theme_description: ThemeDescription
+    theme_description: str  # the final consolidated Jira theme-description text
     selected_stages: list[SelectedStage] = Field(default_factory=list)
     business_needs: list[BusinessNeed] = Field(default_factory=list)
     l2_capabilities: list[StageCapabilities] = Field(default_factory=list)

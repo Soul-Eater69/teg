@@ -22,23 +22,17 @@ from teg.theme.stage_catalogue import render_candidate_stages
 
 StageScope = Literal["specific_stages", "entire_value_stream", "broad_or_unclear"]
 
-# Generation signals fed to the stage selection prompt (Contract C, section 3.2).
-_STAGE_SIGNALS = [
-    "businessSolutionObjectives",
-    "dependencies",
-    "digitalExperienceSignals",
-    "operationalSignals",
-    "reportingSignals",
-    "businessRules",
-    "notes",
-]
+# Stage selection is about matching the idea-card ACTION to a stage; that lives in the
+# summary fields. Most generation signals (plans, funding, networks, operational, reporting)
+# are about availability/needs and add noise here - only the solution objectives (the
+# concrete feature list) genuinely help map work to stages.
+_STAGE_SIGNALS = ["businessSolutionObjectives"]
 
 
 class StageSelectionItem(CamelModel):
     stage_id: str
     stage_name: str = ""
     reason: str = ""
-    evidence: str = ""
 
 
 class StageSelectionResult(CamelModel):
@@ -76,10 +70,10 @@ def _resolve(result: StageSelectionResult, stages: list[CatalogueStage]) -> list
     by_id = {s.stage_id: s for s in stages}
 
     if result.stage_scope == "entire_value_stream":
-        chosen = [(s.stage_id, "", "") for s in stages]  # the whole lifecycle
+        chosen = [(s.stage_id, "") for s in stages]  # the whole lifecycle
     elif result.stage_scope == "specific_stages":
         chosen = [
-            (item.stage_id, item.reason, item.evidence)
+            (item.stage_id, item.reason)
             for item in result.selected_stages
             if item.stage_id in by_id  # only governed stages; no invented ids
         ]
@@ -88,17 +82,11 @@ def _resolve(result: StageSelectionResult, stages: list[CatalogueStage]) -> list
 
     out: list[SelectedStage] = []
     seen: set[str] = set()
-    for rank, (stage_id, reason, evidence) in enumerate(chosen, start=1):
+    for stage_id, reason in chosen:
         if stage_id in seen:
             continue
         seen.add(stage_id)
         out.append(
-            SelectedStage(
-                stage_id=stage_id,
-                stage_name=by_id[stage_id].stage_name,  # canonical name
-                rank=rank,
-                reason=reason,
-                evidence=evidence,
-            )
+            SelectedStage(stage_id=stage_id, stage_name=by_id[stage_id].stage_name, reason=reason)
         )
     return out

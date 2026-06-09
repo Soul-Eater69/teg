@@ -5,12 +5,12 @@ from __future__ import annotations
 from teg.contracts.theme_io import (
     ApprovedValueStream,
     CondensedContext,
-    ThemeDescription,
     ThemeGenerationRequest,
 )
 from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
 from teg.services.theme_service import ThemeService
+from teg.theme.description import _GeneratedDescription
 from teg.theme.stage_catalogue import StageCatalogue
 from teg.theme.stage_selection import StageSelectionItem, StageSelectionResult
 
@@ -63,18 +63,20 @@ def _request() -> ThemeGenerationRequest:
 
 
 class RoutingFakeLLM:
-    """Returns the theme description or the stage selection based on the requested schema."""
+    """Returns the description text or the stage selection based on the requested schema."""
+
+    description_text = (
+        "Theme Description and Product Availability:\n"
+        "The scope of this theme covers reporting and analytics.\n\n"
+        "Product Availability:\nPlans: IL, TX, OK"
+    )
 
     async def complete(self, *, system, user, schema):
-        if schema is ThemeDescription:
-            return ThemeDescription(
-                theme_overview="The scope of this theme covers reporting and analytics.",
-                initiative_overview="CareWay+ analytics",
-                key_features=["sales-time analytics", "post-sale savings"],
-            )
+        if schema is _GeneratedDescription:
+            return _GeneratedDescription(text=self.description_text)
         return StageSelectionResult(
             stage_scope="specific_stages",
-            selected_stages=[StageSelectionItem(stage_id="VSS1", reason="card centers on exploring information", evidence="report on member use")],
+            selected_stages=[StageSelectionItem(stage_id="VSS1", reason="card centers on exploring information")],
         )
 
 
@@ -87,19 +89,20 @@ async def test_generate_one_package_description_and_stages() -> None:
     pkg = response.theme_packages[0]
     assert pkg.value_stream_id == "VSR1"
     assert pkg.theme_title == "CP 2027 Guided Health Plans - Discover Business Insights"
-    assert pkg.theme_description.theme_overview.startswith("The scope")
-    assert pkg.theme_description.key_features == ["sales-time analytics", "post-sale savings"]
-    # stage selection resolved to the governed stage, with canonical name + rank
+    # the consolidated description is a single text block
+    assert pkg.theme_description.startswith("Theme Description and Product Availability:")
+    assert "Plans: IL, TX, OK" in pkg.theme_description
+    # stage selection resolved to the governed stage (canonical name), no rank/evidence
     assert [s.stage_id for s in pkg.selected_stages] == ["VSS1"]
     assert pkg.selected_stages[0].stage_name == "Explore Information"
-    assert pkg.selected_stages[0].rank == 1
+    assert pkg.selected_stages[0].reason.startswith("card centers")
 
 
 async def test_invented_stage_id_is_dropped() -> None:
     class InventLLM(RoutingFakeLLM):
         async def complete(self, *, system, user, schema):
-            if schema is ThemeDescription:
-                return ThemeDescription(theme_overview="x", initiative_overview="y")
+            if schema is _GeneratedDescription:
+                return _GeneratedDescription(text="x")
             return StageSelectionResult(
                 stage_scope="specific_stages",
                 selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],

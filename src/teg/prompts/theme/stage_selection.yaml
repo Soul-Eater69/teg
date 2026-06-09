@@ -24,9 +24,8 @@ system: |
     and stakeholders - not just value-stream name similarity. Ignore weak/generic overlap.
   - selected_stages MUST be empty unless stage_scope is specific_stages.
 
-  For each selected stage: a business-facing reason (cite the concrete idea-card phrase that
-  supports it; no scores/ranks/prompt/JSON mentions) and an evidence snippet quoted from the
-  idea card.
+  For each selected stage give a short business-facing reason that cites the concrete
+  idea-card phrase supporting it (no scores/ranks/prompt/JSON mentions).
 
 user: |
   ## Ticket context
