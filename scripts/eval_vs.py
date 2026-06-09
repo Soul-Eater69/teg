@@ -23,6 +23,7 @@ import asyncio
 import csv
 import json
 from pathlib import Path
+from time import perf_counter
 
 from teg.bootstrap import build_value_stream_service
 from teg.config.settings import load_settings
@@ -165,7 +166,9 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
             exclude_ticket_ids=[ticket_id],  # leave-one-out
         )
         try:
+            t0 = perf_counter()
             resp, trace = await service.predict_traced(request, base_rates=base_rates)
+            elapsed = perf_counter() - t0  # prediction latency only (excludes judge/explain probes)
             predicted = [r.value_stream_id for r in resp.recommendations]
         except Exception as exc:  # one bad ticket must not abort the batch
             progress["done"] += 1
@@ -202,9 +205,9 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     tp, fp, fn = _prf(predicted, gt)
     progress["done"] += 1
     print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
-          f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)})")
+          f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)}, {elapsed:.1f}s)")
     return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted,
-            "buckets": buckets, "drop_reasons": drop_reasons, "judged": judged}
+            "buckets": buckets, "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed}
 
 
 def _miss_buckets(gt: set[str], predicted: list[str], trace) -> dict[str, list[str]]:
@@ -310,7 +313,7 @@ async def main(args) -> None:
             r_at[k].append(_div(len(topk & gt), len(gt)))
         rows.append({
             "ticket_id": res["ticket_id"], "gt_count": len(gt), "predicted_count": len(predicted),
-            "tp": tp, "fp": fp, "fn": fn,
+            "tp": tp, "fp": fp, "fn": fn, "seconds": round(res.get("elapsed", 0.0), 2),
             "precision": round(_div(tp, tp + fp), 3), "recall": round(_div(tp, tp + fn), 3),
             "fn_not_retrieved": "; ".join(buckets.get("not_retrieved", [])),
             "fn_gated_pre_llm": "; ".join(buckets.get("gated_pre_llm", [])),
@@ -334,6 +337,16 @@ async def main(args) -> None:
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}  (strict GT)")
     for k in args.k:
         print(f"  @{k:<2}  P@{k}={_div(sum(p_at[k]), n):.3f}   R@{k}={_div(sum(r_at[k]), n):.3f}")
+
+    times = sorted(r["seconds"] for r in rows if r["seconds"] > 0)
+    if times:
+        slow = min(rows, key=lambda r: -r["seconds"])
+        fast = min(rows, key=lambda r: r["seconds"] if r["seconds"] > 0 else 1e9)
+        print(f"\nprediction latency (per ticket, excludes judge/explain):")
+        print(f"  avg={_div(sum(times), len(times)):.1f}s   "
+              f"min={fast['seconds']:.1f}s ({fast['ticket_id']})   "
+              f"max={slow['seconds']:.1f}s ({slow['ticket_id']})   "
+              f"median={times[len(times)//2]:.1f}s")
 
     if judge_pred:
         # Judge precision: predictions the LLM judge calls relevant (credits relevant non-GT picks).
