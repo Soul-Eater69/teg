@@ -104,5 +104,8 @@ def build_index_document(
             "valueStreamName": vs.value_stream_name,
             "valueStreamDescription": vs.value_stream_description,
             "category": vs.category,
+            "trigger": vs.trigger,
+            "valueProposition": vs.value_proposition,
+            "stakeholders": list(vs.stakeholders),
         },
     }

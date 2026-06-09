@@ -49,6 +49,31 @@ def test_render_includes_entity_id_lane_and_historical() -> None:
     assert "evidence: claims savings" in block
 
 
+def test_render_includes_rich_vs_context() -> None:
+    candidate = ValueStreamCandidate(
+        value_stream_id="VS1",
+        value_stream_name="Acquire Asset",
+        value_stream_description="request to delivery",
+        category="Finance",
+        trigger="Asset Requester",
+        value_proposition="faster asset turnaround",
+        stakeholders=["Procurement", "Finance Ops"],
+        from_semantic=True,
+        lane="semantic_only",
+    )
+    block = render_candidate_blocks([candidate])
+    assert "category: Finance" in block
+    assert "trigger: Asset Requester" in block
+    assert "value: faster asset turnaround" in block
+    assert "stakeholders: Procurement, Finance Ops" in block
+
+
+def test_render_omits_rich_context_when_absent() -> None:
+    # A historic-only candidate has no catalogue details - those lines are omitted.
+    block = render_candidate_blocks([_cand("VS3", "historic_only", name="Issue Payment")])
+    assert "category:" not in block and "trigger:" not in block and "value:" not in block
+
+
 def test_render_semantic_only_omits_historical() -> None:
     block = render_candidate_blocks([_cand("VS2", "semantic_only", name="Receive Care")])
     assert "lane: semantic_only" in block

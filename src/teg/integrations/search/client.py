@@ -29,6 +29,10 @@ class ValueStreamHit:
     value_stream_id: str
     value_stream_name: str
     value_stream_description: str = ""
+    category: str = ""
+    trigger: str = ""
+    value_proposition: str = ""
+    stakeholders: list[str] = field(default_factory=list)
     score: float = 0.0
 
 

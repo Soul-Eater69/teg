@@ -110,5 +110,9 @@ def test_index_document_content_and_props(tmp_path) -> None:
     doc = build_index_document(vs, content_vector=[0.1, 0.2])
     assert doc["content"] == content
     assert doc["content_vector"] == [0.1, 0.2]
-    assert doc["properties"]["category"] == "Finance"
-    assert "valueStages" not in doc["properties"]  # index never carries the stage hierarchy
+    props = doc["properties"]
+    assert props["category"] == "Finance"
+    assert props["trigger"] == "Asset Requester"
+    assert props["valueProposition"] == "Faster asset turnaround"
+    assert props["stakeholders"] == ["Supplier", "Procurement", "Asset Requestor"]
+    assert "valueStages" not in props  # index never carries the stage hierarchy

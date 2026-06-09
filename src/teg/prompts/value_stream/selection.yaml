@@ -29,6 +29,15 @@ system: |
 
   HOW TO READ CANDIDATES
   Each candidate block contains:
+  - description: what the value stream does end-to-end.
+  - category: its domain bucket (e.g. Finance, Claims, Sales and Enrollment).
+  - trigger: the event/actor that initiates the value stream.
+  - value: the value/outcome the stream delivers.
+  - stakeholders: the groups that own/participate in the stream. Use as a tie-breaker
+    only - shared stakeholders alone (e.g. both touch "Finance Ops") is NOT a reason to
+    select; require a real workflow link.
+    Use description + trigger + value to judge whether the idea card's workflow
+    plausibly initiates, feeds, or depends on that value stream - not just keyword overlap.
   - Lane: semantic_plus_historical (both retrievers agreed; strongest), historical_only
     (only prior tickets back this), or semantic_only (only name/description match).
   - Semantic score: 0-2 range, higher = closer match to the value-stream catalog.

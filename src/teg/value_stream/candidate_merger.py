@@ -65,6 +65,11 @@ def build_candidates(
         candidate.from_semantic = True
         candidate.semantic_score = hit.score
         candidate.semantic_rank = rank
+        # Rich catalogue context for the selection prompt (semantic lane carries it).
+        candidate.category = hit.category
+        candidate.trigger = hit.trigger
+        candidate.value_proposition = hit.value_proposition
+        candidate.stakeholders = list(hit.stakeholders)
 
     for vs_id, pairs in _group_historical_by_vs(historical_hits).items():
         first_label = pairs[0][1]

@@ -33,6 +33,10 @@ _VS_SELECT = [
     "properties/valueStreamId",
     "properties/valueStreamName",
     "properties/valueStreamDescription",
+    "properties/category",
+    "properties/trigger",
+    "properties/valueProposition",
+    "properties/stakeholders",
 ]
 _HISTORICAL_SELECT = ["id", "sourceId", "properties/summary", "properties/valueStreams"]
 
@@ -92,6 +96,10 @@ def _to_value_stream_hit(doc) -> ValueStreamHit:
         value_stream_id=str(props.get("valueStreamId") or ""),
         value_stream_name=str(props.get("valueStreamName") or ""),
         value_stream_description=str(props.get("valueStreamDescription") or ""),
+        category=str(props.get("category") or ""),
+        trigger=str(props.get("trigger") or ""),
+        value_proposition=str(props.get("valueProposition") or ""),
+        stakeholders=[str(s) for s in (props.get("stakeholders") or []) if s],
         score=float(doc.get("@search.reranker_score") or doc.get("@search.score") or 0.0),
     )
 

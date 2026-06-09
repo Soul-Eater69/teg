@@ -19,6 +19,10 @@ def test_value_stream_hit_mapping() -> None:
             "valueStreamId": "VSR01261896",
             "valueStreamName": "Resolve Privacy Incident",
             "valueStreamDescription": "Ensuring regulatory compliance for select data breaches",
+            "category": "Compliance",
+            "trigger": "Reported breach",
+            "valueProposition": "Limit regulatory exposure",
+            "stakeholders": ["Privacy Office", "Legal"],
         },
         "@search.score": 1.0,
     }
@@ -26,6 +30,10 @@ def test_value_stream_hit_mapping() -> None:
     assert hit.value_stream_id == "VSR01261896"
     assert hit.value_stream_name == "Resolve Privacy Incident"
     assert hit.value_stream_description.startswith("Ensuring")
+    assert hit.category == "Compliance"
+    assert hit.trigger == "Reported breach"
+    assert hit.value_proposition == "Limit regulatory exposure"
+    assert hit.stakeholders == ["Privacy Office", "Legal"]
     assert hit.score == 1.0
 
 
