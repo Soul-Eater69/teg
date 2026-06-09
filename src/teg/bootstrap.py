@@ -19,7 +19,9 @@ from teg.ingestion.extraction.jira_source import build_jira_ingestion_source
 from teg.ingestion.ground_truth.value_stream_match import ValueStreamResolver
 from teg.ingestion.pipeline.idmt_ingestion import IdmtIngestion
 from teg.services.condense_service import CondenseService
+from teg.services.theme_service import ThemeService
 from teg.services.value_stream_service import ValueStreamService
+from teg.theme.stage_catalogue import StageCatalogue
 
 
 def build_condense_service(settings: Settings | None = None) -> CondenseService:
@@ -61,3 +63,10 @@ def build_value_stream_service(settings: Settings | None = None) -> ValueStreamS
         build_llm_client(settings),
         model_name=settings.llm_model,
     )
+
+
+def build_theme_service(settings: Settings | None = None, *, catalogue_path: str) -> ThemeService:
+    settings = settings or load_settings()
+    # Governed stage catalogue from the Sightline map (from Cosmos once that read exists).
+    catalogue = StageCatalogue.from_catalogue(load_value_stream_catalogue(catalogue_path))
+    return ThemeService(catalogue, build_llm_client(settings), model_name=settings.llm_model)

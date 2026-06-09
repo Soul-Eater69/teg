@@ -34,13 +34,25 @@ class ThemeGenerationRequest(_Camel):
     approved_value_streams: list[ApprovedValueStreamDTO]
 
 
+class ProductAvailabilityDTO(_Camel):
+    """Organised strictly from the extracted generation signals (never invented)."""
+
+    go_live: str | None = None
+    plans: list[str] = Field(default_factory=list)
+    market_segments: list[str] = Field(default_factory=list)
+    funding_model: list[str] = Field(default_factory=list)
+    networks_impacted: list[str] = Field(default_factory=list)
+    product_structure_and_pairing_matrix: str | None = None
+    product_pairing_exclusions: list[str] = Field(default_factory=list)
+
+
 class ThemeDescriptionDTO(_Camel):
-    theme_overview: str
-    initiative_overview: str
+    theme_overview: str  # LLM-written prose
+    product_availability: ProductAvailabilityDTO = Field(default_factory=ProductAvailabilityDTO)
+    initiative_overview: str  # LLM-written prose
     key_features: list[str] = Field(default_factory=list)
-    product_availability: str | None = None
-    digital_experience: str | None = None
-    integration_operational_capabilities: str | None = None
+    digital_experience: list[str] = Field(default_factory=list)
+    integration_operational_capabilities: list[str] = Field(default_factory=list)
 
 
 class SelectedStageDTO(_Camel):
