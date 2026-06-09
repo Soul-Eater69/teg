@@ -70,11 +70,13 @@ class AzureSearchClient:
     async def search_historical(self, query: str, *, top_k: int = 6) -> list[HistoricalHit]:
         vector = await self._embeddings.embed(query)
         results = await self._index.search(
-            search_text=None,
+            search_text=query,  # hybrid (BM25 + vector) + semantic rerank, same as the VS lane
             vector_queries=[self._vector_query(vector, top_k)],
             filter=_HISTORICAL_FILTER,
             select=_HISTORICAL_SELECT,
             top=top_k,
+            query_type="semantic",
+            semantic_configuration_name=self._semantic_config,
         )
         return [_to_historical_hit(doc) async for doc in results]
 
@@ -105,10 +107,13 @@ def _to_value_stream_hit(doc) -> ValueStreamHit:
 def _to_historical_hit(doc) -> HistoricalHit:
     props = _props(doc)
     ticket_id = str(doc.get("sourceId") or doc.get("id") or "")
+    # Prefer the semantic reranker score (now that the historical lane is hybrid+semantic),
+    # consistent with the VS lane. NOTE: reranker scores are 0-4, not the 0-1 vector cosine
+    # the merger's support-weight bands / historic gates were tuned to - re-tune via eval.
     return HistoricalHit(
         ticket_id=ticket_id,
         title=ticket_id,
-        score=float(doc.get("@search.score") or 0.0),
+        score=float(doc.get("@search.reranker_score") or doc.get("@search.score") or 0.0),
         snippet=str(props.get("summary") or ""),
         value_streams=_parse_value_streams(props.get("valueStreams")),
     )

@@ -64,6 +64,13 @@ def test_historical_hit_maps_native_value_streams() -> None:
     assert hit.score == 0.82
     label = hit.value_streams[0]
     assert label.value_stream_id == "VSR00074586"
+
+
+def test_historical_hit_prefers_reranker_score() -> None:
+    # historical lane is now hybrid+semantic -> prefer the reranker score
+    doc = {"sourceId": "IDMT-1", "@search.score": 0.03, "@search.reranker_score": 2.7,
+           "properties": {"summary": "s", "valueStreams": []}}
+    assert _to_historical_hit(doc).score == 2.7
     assert label.support_type == "direct"
     assert label.evidence == "Salesforce LGNA quoting"
 
