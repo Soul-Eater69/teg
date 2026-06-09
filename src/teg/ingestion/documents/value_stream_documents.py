@@ -106,6 +106,5 @@ def build_index_document(
             "category": vs.category,
             "trigger": vs.trigger,
             "valueProposition": vs.value_proposition,
-            "stakeholders": list(vs.stakeholders),
         },
     }

@@ -22,7 +22,6 @@ def test_value_stream_hit_mapping() -> None:
             "category": "Compliance",
             "trigger": "Reported breach",
             "valueProposition": "Limit regulatory exposure",
-            "stakeholders": ["Privacy Office", "Legal"],
         },
         "@search.score": 1.0,
     }
@@ -33,7 +32,6 @@ def test_value_stream_hit_mapping() -> None:
     assert hit.category == "Compliance"
     assert hit.trigger == "Reported breach"
     assert hit.value_proposition == "Limit regulatory exposure"
-    assert hit.stakeholders == ["Privacy Office", "Legal"]
     assert hit.score == 1.0
 
 

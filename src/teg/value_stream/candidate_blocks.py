@@ -27,8 +27,6 @@ def _block(c: ValueStreamCandidate) -> str:
         lines.append(f"trigger: {c.trigger}")
     if c.value_proposition:
         lines.append(f"value: {c.value_proposition}")
-    if c.stakeholders:
-        lines.append(f"stakeholders: {', '.join(c.stakeholders)}")
 
     semantic = f"semantic: score={c.semantic_score:.2f}"
     if c.semantic_rank is not None:

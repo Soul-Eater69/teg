@@ -33,9 +33,6 @@ system: |
   - category: its domain bucket (e.g. Finance, Claims, Sales and Enrollment).
   - trigger: the event/actor that initiates the value stream.
   - value: the value/outcome the stream delivers.
-  - stakeholders: the groups that own/participate in the stream. Use as a tie-breaker
-    only - shared stakeholders alone (e.g. both touch "Finance Ops") is NOT a reason to
-    select; require a real workflow link.
     Use description + trigger + value to judge whether the idea card's workflow
     plausibly initiates, feeds, or depends on that value stream - not just keyword overlap.
   - Lane: semantic_plus_historical (both retrievers agreed; strongest), historical_only

@@ -114,5 +114,5 @@ def test_index_document_content_and_props(tmp_path) -> None:
     assert props["category"] == "Finance"
     assert props["trigger"] == "Asset Requester"
     assert props["valueProposition"] == "Faster asset turnaround"
-    assert props["stakeholders"] == ["Supplier", "Procurement", "Asset Requestor"]
+    assert "stakeholders" not in props  # stakeholders stay in Cosmos, not the index/selection
     assert "valueStages" not in props  # index never carries the stage hierarchy

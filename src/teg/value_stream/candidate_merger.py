@@ -69,7 +69,6 @@ def build_candidates(
         candidate.category = hit.category
         candidate.trigger = hit.trigger
         candidate.value_proposition = hit.value_proposition
-        candidate.stakeholders = list(hit.stakeholders)
 
     for vs_id, pairs in _group_historical_by_vs(historical_hits).items():
         first_label = pairs[0][1]

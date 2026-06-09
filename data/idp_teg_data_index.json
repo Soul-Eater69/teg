@@ -24,7 +24,6 @@
         { "name": "category", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
         { "name": "trigger", "type": "Edm.String", "retrievable": true },
         { "name": "valueProposition", "type": "Edm.String", "retrievable": true },
-        { "name": "stakeholders", "type": "Collection(Edm.String)", "retrievable": true },
         { "name": "summary", "type": "Edm.String", "retrievable": true },
         {
           "name": "valueStreams",

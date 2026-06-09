@@ -57,7 +57,6 @@ def test_render_includes_rich_vs_context() -> None:
         category="Finance",
         trigger="Asset Requester",
         value_proposition="faster asset turnaround",
-        stakeholders=["Procurement", "Finance Ops"],
         from_semantic=True,
         lane="semantic_only",
     )
@@ -65,7 +64,7 @@ def test_render_includes_rich_vs_context() -> None:
     assert "category: Finance" in block
     assert "trigger: Asset Requester" in block
     assert "value: faster asset turnaround" in block
-    assert "stakeholders: Procurement, Finance Ops" in block
+    assert "stakeholders" not in block  # stakeholders deliberately not fed to selection
 
 
 def test_render_omits_rich_context_when_absent() -> None:
