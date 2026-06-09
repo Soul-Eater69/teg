@@ -48,7 +48,14 @@ def build_candidates(
     historical_hits: list[HistoricalHit],
     *,
     max_supporting_tickets: int = 2,
+    use_classification: bool = True,
 ) -> list[ValueStreamCandidate]:
+    """Merge the two lanes into candidates.
+
+    ``use_classification=False`` is the ablation: it ignores the historic direct/implied
+    label (direct_count/implied_count stay 0), so the gate, ranking, and candidate block fall
+    back to co-occurrence + frequency + similarity only.
+    """
     by_id: dict[str, ValueStreamCandidate] = {}
 
     for rank, hit in enumerate(value_stream_hits, start=1):
@@ -84,8 +91,9 @@ def build_candidates(
         candidate.from_historical = True
         candidate.supporting_ticket_count = len(ticket_ids)
         candidate.source_ticket_ids = ticket_ids[:max_supporting_tickets]
-        candidate.direct_count = sum(1 for _, label in pairs if label.support_type == "direct")
-        candidate.implied_count = sum(1 for _, label in pairs if label.support_type == "implied")
+        if use_classification:
+            candidate.direct_count = sum(1 for _, label in pairs if label.support_type == "direct")
+            candidate.implied_count = sum(1 for _, label in pairs if label.support_type == "implied")
         candidate.best_support_score = max(scores, default=0.0)
         candidate.avg_support_score = (sum(scores) / len(scores)) if scores else 0.0
         candidate.weighted_support = round(

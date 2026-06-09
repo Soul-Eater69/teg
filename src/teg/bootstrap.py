@@ -22,6 +22,7 @@ from teg.services.condense_service import CondenseService
 from teg.services.theme_service import ThemeService
 from teg.services.value_stream_service import ValueStreamService
 from teg.theme.stage_catalogue import StageCatalogue
+from teg.value_stream.config import ValueStreamConfig
 
 
 def build_condense_service(settings: Settings | None = None) -> CondenseService:
@@ -54,14 +55,17 @@ def build_idmt_ingestion(
     )
 
 
-def build_value_stream_service(settings: Settings | None = None) -> ValueStreamService:
+def build_value_stream_service(
+    settings: Settings | None = None, *, config: ValueStreamConfig | None = None
+) -> ValueStreamService:
     settings = settings or load_settings()
     # Retrieval/window tuning lives in ValueStreamConfig (code default, eval-tuned),
-    # not env - env is for secrets + per-deployment infra only.
+    # not env - env is for secrets + per-deployment infra only. config override is for eval.
     return ValueStreamService(
         build_search_client(settings),
         build_llm_client(settings),
         model_name=settings.llm_model,
+        config=config or ValueStreamConfig(),
     )
 
 

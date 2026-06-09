@@ -25,6 +25,9 @@ class ValueStreamRequest(CamelModel):
     custom_instruction: str | None = None
     # Only the SME-selected analogs; omit to auto-use the retrieved set.
     selected_historical_ticket_ids: list[str] = Field(default_factory=list)
+    # Historic tickets to drop from the analog lane (eval leave-one-out: a ticket must not
+    # see itself as its own evidence; also a sensible guard if the ticket is already indexed).
+    exclude_ticket_ids: list[str] = Field(default_factory=list)
 
 
 class ValueStreamResponse(CamelModel):

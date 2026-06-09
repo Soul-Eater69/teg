@@ -39,17 +39,23 @@ class ValueStreamService:
 
         # Fetch sizes + merge policy adapt to the requested count and the tuning config.
         vs_top_k, historical_top_k, policy = derive_runtime(requested_count, config=self._config)
+        # Over-fetch by the exclude count so dropping self/excluded tickets still leaves a
+        # full analog set.
         result = await retrieve(
             request.summary_fields,
             self._search,
             vs_top_k=vs_top_k,
-            historical_top_k=historical_top_k,
+            historical_top_k=historical_top_k + len(request.exclude_ticket_ids),
         )
+        historical_hits = _excluding(result.historical_hits, request.exclude_ticket_ids)[:historical_top_k]
         # SME-selected analogs become the evidence used for ranking (all retrieved if
         # none selected); the full retrieved set is still returned for the HITL step.
-        evidence = _selected(result.historical_hits, request.selected_historical_ticket_ids)
+        evidence = _selected(historical_hits, request.selected_historical_ticket_ids)
         candidates = build_candidates(
-            result.value_stream_hits, evidence, max_supporting_tickets=policy.max_supporting_tickets
+            result.value_stream_hits,
+            evidence,
+            max_supporting_tickets=policy.max_supporting_tickets,
+            use_classification=self._config.use_historic_classification,
         )
         review_pool = select_review_pool(candidates, policy=policy)
         recommendations = await select_value_streams(
@@ -61,9 +67,16 @@ class ValueStreamService:
         return ValueStreamResponse(
             ticket_id=request.ticket_id,
             recommendations=recommendations,
-            historical_tickets=[_to_ticket(hit) for hit in result.historical_hits],
+            historical_tickets=[_to_ticket(hit) for hit in historical_hits],
             model=self._model_name,
         )
+
+
+def _excluding(hits: list[HistoricalHit], exclude_ids: list[str]) -> list[HistoricalHit]:
+    if not exclude_ids:
+        return hits
+    drop = set(exclude_ids)
+    return [hit for hit in hits if hit.ticket_id not in drop]
 
 
 def _selected(hits: list[HistoricalHit], selected_ids: list[str]) -> list[HistoricalHit]:
