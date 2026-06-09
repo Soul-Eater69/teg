@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from teg.contracts.theme_io import (
     ApprovedValueStream,
-    BusinessNeedItem,
-    BusinessProductFeature,
     CondensedContext,
     ThemeGenerationRequest,
 )
 from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
 from teg.services.theme_service import ThemeService
-from teg.theme.business_needs import _GeneratedBusinessNeed
+from teg.theme.business_needs import _GeneratedBusinessNeeds
 from teg.theme.description import _GeneratedDescription
 from teg.theme.stage_catalogue import StageCatalogue
 from teg.theme.stage_selection import StageSelectionItem, StageSelectionResult
@@ -77,15 +75,9 @@ class RoutingFakeLLM:
     async def complete(self, *, system, user, schema):
         if schema is _GeneratedDescription:
             return _GeneratedDescription(text=self.description_text)
-        if schema is _GeneratedBusinessNeed:
-            return _GeneratedBusinessNeed(
-                business_product_features=[
-                    BusinessProductFeature(
-                        feature_name="Overall Scope",
-                        needs=[BusinessNeedItem(text="define CareWay+ metrics", dependency="EDW ingestion")],
-                    )
-                ],
-                operational_reporting=["track vendor performance post go-live"],
+        if schema is _GeneratedBusinessNeeds:
+            return _GeneratedBusinessNeeds(
+                text="Value Stage: Explore Information\n\nBusiness Product Feature: Overall Scope\n1. define CareWay+ metrics"
             )
         return StageSelectionResult(
             stage_scope="specific_stages",
@@ -109,12 +101,9 @@ async def test_generate_one_package_description_and_stages() -> None:
     assert [s.stage_id for s in pkg.selected_stages] == ["VSS1"]
     assert pkg.selected_stages[0].stage_name == "Explore Information"
     assert pkg.selected_stages[0].reason.startswith("card centers")
-    # business needs generated for the selected stage, grouped by feature, with annotations
-    assert [bn.stage_id for bn in pkg.business_needs] == ["VSS1"]
-    feature = pkg.business_needs[0].business_product_features[0]
-    assert feature.feature_name == "Overall Scope"
-    assert feature.needs[0].dependency == "EDW ingestion"
-    assert pkg.business_needs[0].operational_reporting == ["track vendor performance post go-live"]
+    # business needs is one consolidated text draft (all selected stages)
+    assert pkg.business_needs.startswith("Value Stage: Explore Information")
+    assert "Business Product Feature: Overall Scope" in pkg.business_needs
 
 
 async def test_invented_stage_id_is_dropped() -> None:

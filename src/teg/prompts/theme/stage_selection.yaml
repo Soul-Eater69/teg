@@ -45,6 +45,7 @@ user: |
   ID: {value_stream_id}
   Name: {value_stream_name}
   Description: {value_stream_description}
+  Value proposition: {value_proposition}
 
   ## Candidate stages for this value stream
   {candidate_stages}

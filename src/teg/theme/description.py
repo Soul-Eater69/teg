@@ -46,6 +46,7 @@ async def generate_theme_description(
     value_stream_id: str,
     value_stream_name: str,
     value_stream_description: str,
+    value_proposition: str,
     llm_client: LLMClient,
 ) -> str:
     prompt = load_prompt("theme/description")
@@ -53,6 +54,7 @@ async def generate_theme_description(
         value_stream_id=value_stream_id,
         value_stream_name=value_stream_name,
         value_stream_description=value_stream_description,
+        value_proposition=value_proposition,
         ticket_context=render_ticket_context(condensed),
         generation_signals=render_generation_signals(condensed, _DESCRIPTION_SIGNALS),
     )

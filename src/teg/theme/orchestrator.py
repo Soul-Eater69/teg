@@ -27,6 +27,7 @@ async def generate_theme_package(
 ) -> ThemePackage:
     stages = stage_catalogue.stages_for(approved_vs.value_stream_id)
     vs_description = stage_catalogue.description_for(approved_vs.value_stream_id)
+    vs_proposition = stage_catalogue.value_proposition_for(approved_vs.value_stream_id)
 
     description, selected_stages = await asyncio.gather(
         generate_theme_description(
@@ -34,25 +35,28 @@ async def generate_theme_package(
             value_stream_id=approved_vs.value_stream_id,
             value_stream_name=approved_vs.value_stream_name,
             value_stream_description=vs_description,
+            value_proposition=vs_proposition,
             llm_client=llm_client,
         ),
         select_stages(
             condensed=request.condensed,
             value_stream=approved_vs,
             value_stream_description=vs_description,
+            value_proposition=vs_proposition,
             stages=stages,
             llm_client=llm_client,
         ),
     )
 
     # Business needs depend on the selected stages - resolve those back to their full
-    # catalogue stage (description) and generate needs per stage.
+    # catalogue stage (scope detail) and generate the consolidated needs draft.
     by_id = {s.stage_id: s for s in stages}
     selected_catalogue_stages = [by_id[s.stage_id] for s in selected_stages if s.stage_id in by_id]
     business_needs = await generate_business_needs(
         condensed=request.condensed,
         value_stream=approved_vs,
         value_stream_description=vs_description,
+        value_proposition=vs_proposition,
         selected_stages=selected_catalogue_stages,
         llm_client=llm_client,
     )

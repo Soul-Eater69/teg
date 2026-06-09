@@ -1,23 +1,14 @@
 """Business Needs generation for the selected stages of an approved Value Stream.
 
-Runs after stage selection. Stage-specific: one LLM call per selected stage (in parallel),
-grouped by Business Product Feature, each need carrying optional Note / Dependency /
-Business Rule. Operational Training and Reporting are included only when their signals exist.
-Grounded in the condensed context; no invention, no assumptions (deferred).
+Runs after stage selection. One LLM call over all selected stages produces the final
+consolidated Business Needs text (one draft, grouped by Value Stage -> Business Product
+Feature -> needs, with Operational Training / Reporting where signals exist). Grounded in the
+condensed context; no invention, no assumptions (deferred). Returns the text string.
 """
 
 from __future__ import annotations
 
-import asyncio
-
-from pydantic import Field
-
-from teg.contracts.theme_io import (
-    ApprovedValueStream,
-    BusinessNeed,
-    BusinessProductFeature,
-    CondensedContext,
-)
+from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
 from teg.domain.base import CamelModel
 from teg.ingestion.catalogues.models import CatalogueStage
 from teg.integrations.llm import LLMClient
@@ -39,13 +30,10 @@ _BUSINESS_NEEDS_SIGNALS = [
 ]
 
 
-class _GeneratedBusinessNeed(CamelModel):
-    """LLM structured output for one selected stage (stage id/name added by us)."""
+class _GeneratedBusinessNeeds(CamelModel):
+    """LLM structured output: the consolidated Business Needs text."""
 
-    business_product_features: list[BusinessProductFeature] = Field(default_factory=list)
-    operational_training: list[str] = Field(default_factory=list)
-    operational_reporting: list[str] = Field(default_factory=list)
-    validation_status: str = "valid"
+    text: str
 
 
 async def generate_business_needs(
@@ -53,26 +41,12 @@ async def generate_business_needs(
     condensed: CondensedContext,
     value_stream: ApprovedValueStream,
     value_stream_description: str,
+    value_proposition: str,
     selected_stages: list[CatalogueStage],
     llm_client: LLMClient,
-) -> list[BusinessNeed]:
-    return list(
-        await asyncio.gather(
-            *(
-                _for_stage(condensed, value_stream, value_stream_description, stage, llm_client)
-                for stage in selected_stages
-            )
-        )
-    )
-
-
-async def _for_stage(
-    condensed: CondensedContext,
-    value_stream: ApprovedValueStream,
-    value_stream_description: str,
-    stage: CatalogueStage,
-    llm_client: LLMClient,
-) -> BusinessNeed:
+) -> str:
+    if not selected_stages:
+        return ""
     prompt = load_prompt("theme/business_needs")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
@@ -80,14 +54,8 @@ async def _for_stage(
         value_stream_id=value_stream.value_stream_id,
         value_stream_name=value_stream.value_stream_name,
         value_stream_description=value_stream_description,
-        stage=render_candidate_stages([stage]),  # name, description, entrance/exit, value items
+        value_proposition=value_proposition,
+        selected_stages=render_candidate_stages(selected_stages),
     )
-    result = await llm_client.complete(system=system, user=user, schema=_GeneratedBusinessNeed)
-    return BusinessNeed(
-        stage_id=stage.stage_id,
-        stage_name=stage.stage_name,
-        business_product_features=result.business_product_features,
-        operational_training=result.operational_training,
-        operational_reporting=result.operational_reporting,
-        validation_status=result.validation_status,
-    )
+    result = await llm_client.complete(system=system, user=user, schema=_GeneratedBusinessNeeds)
+    return result.text

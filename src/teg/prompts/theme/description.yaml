@@ -63,6 +63,7 @@ user: |
   - valueStreamId: {value_stream_id}
   - valueStreamName: {value_stream_name}
   - valueStreamDescription: {value_stream_description}
+  - valueProposition: {value_proposition}
 
   Ticket context:
   {ticket_context}

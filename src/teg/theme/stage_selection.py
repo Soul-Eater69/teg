@@ -48,6 +48,7 @@ async def select_stages(
     condensed: CondensedContext,
     value_stream: ApprovedValueStream,
     value_stream_description: str,
+    value_proposition: str,
     stages: list[CatalogueStage],
     llm_client: LLMClient,
 ) -> list[SelectedStage]:
@@ -60,6 +61,7 @@ async def select_stages(
         value_stream_id=value_stream.value_stream_id,
         value_stream_name=value_stream.value_stream_name,
         value_stream_description=value_stream_description,
+        value_proposition=value_proposition,
         candidate_stages=render_candidate_stages(stages),
     )
     result = await llm_client.complete(system=system, user=user, schema=StageSelectionResult)
