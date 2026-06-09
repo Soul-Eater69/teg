@@ -137,6 +137,7 @@ async def main(args) -> None:
     config = ValueStreamConfig(
         use_historic_classification=not args.no_classification,
         use_historic_lane=not args.semantic_only,
+        **({"llm_candidate_window": args.window} if args.window else {}),
     )
     service = build_value_stream_service(config=config)
     llm = build_llm_client(load_settings()) if args.explain_drops else None
@@ -203,7 +204,7 @@ async def main(args) -> None:
     print("\n" + "=" * 60)
     print(f"tickets evaluated: {n}   "
           f"(count_mode={args.count_mode}, classification={'OFF' if args.no_classification else 'ON'}, "
-          f"input={'rawText' if args.raw_text else 'condensed'})")
+          f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18})")
     print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}")
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}")
     for k in args.k:
@@ -251,6 +252,9 @@ if __name__ == "__main__":
     parser.add_argument("--no-classification", action="store_true", help="ablation: ignore direct/implied")
     parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
+    parser.add_argument("--window", type=int, default=0,
+                        help="override the LLM review-pool size (how many candidates the LLM sees; "
+                             "default config=18). Decoupled from output count, so count=gt stays honest.")
     parser.add_argument("--explain-drops", action="store_true",
                         help="post-hoc LLM probe: classify why each llm_dropped GT was left out (extra calls)")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
