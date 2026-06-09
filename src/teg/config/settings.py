@@ -7,6 +7,7 @@ later. Inject a Settings instance; never read os.environ deep in the call tree.
 
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,6 +68,12 @@ class Settings(BaseSettings):
     condense_max_attachments: int = 4  # top-N fallback when no idea card
     condense_max_attachment_bytes: int = 10_000_000  # skip larger fallback files pre-download
     condense_min_doc_chars: int = 200  # drop fallback docs that extract to less than this
+
+    @field_validator("llm_max_output_tokens", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value: object) -> object:
+        # A blank env value (TEG_LLM_MAX_OUTPUT_TOKENS=) means "unset", not "".
+        return None if value == "" else value
 
 
 def load_settings() -> Settings:
