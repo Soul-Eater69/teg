@@ -15,8 +15,9 @@ system: |
   stage's scope. Be selective - pick the capabilities the work actually exercises, not every
   plausible one. Ignore weak or generic overlap.
 
-  For each selected capability give one short business-facing reason citing the concrete
-  idea-card phrase that requires it. Do not mention scores, ranks, prompts, or JSON.
+  For each selected capability return its capability id, its name (exactly as supplied), and
+  one short business-facing reason citing the concrete idea-card phrase that requires it. Do
+  not mention scores, ranks, prompts, or JSON.
 
 user: |
   ## Ticket context

@@ -31,6 +31,7 @@ _CAPABILITY_SIGNALS = ["businessSolutionObjectives"]
 
 class CapabilitySelectionItem(CamelModel):
     capability_id: str
+    capability_name: str = ""  # echoed for anchoring; the catalogue name stays canonical
     reason: str = ""
 
 
@@ -107,6 +108,7 @@ def _render_candidates(capabilities: list[CatalogueCapability]) -> str:
     return "\n".join(
         f"- {c.capability_id} | {c.capability_name}"
         + (f" - {c.capability_description}" if c.capability_description else "")
+        + (f" [tier: {c.tier}]" if c.tier else "")
         + (f" (L2: {c.level_two_name})" if c.level_two_name else "")
         for c in capabilities
     )
