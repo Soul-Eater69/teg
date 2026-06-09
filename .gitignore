@@ -11,9 +11,6 @@ dist/
 .env.*
 !.env.example
 
-# Environment-specific non-secret config (endpoints, ids)
-config/settings.local.yaml
-
 # Tooling
 .venv/
 .pytest_cache/
