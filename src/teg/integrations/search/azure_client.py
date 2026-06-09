@@ -28,6 +28,7 @@ except Exception:  # pragma: no cover - import guarded so the module always load
 
 _VS_FILTER = "entityType eq 'ValueStream'"
 _HISTORICAL_FILTER = "entityType eq 'EngagementRequest'"
+_RERANKER_SCALE = 4.0  # Azure semantic reranker scores are 0-4
 _VS_SELECT = [
     "id",
     "properties/valueStreamId",
@@ -107,16 +108,26 @@ def _to_value_stream_hit(doc) -> ValueStreamHit:
 def _to_historical_hit(doc) -> HistoricalHit:
     props = _props(doc)
     ticket_id = str(doc.get("sourceId") or doc.get("id") or "")
-    # Prefer the semantic reranker score (now that the historical lane is hybrid+semantic),
-    # consistent with the VS lane. NOTE: reranker scores are 0-4, not the 0-1 vector cosine
-    # the merger's support-weight bands / historic gates were tuned to - re-tune via eval.
     return HistoricalHit(
         ticket_id=ticket_id,
         title=ticket_id,
-        score=float(doc.get("@search.reranker_score") or doc.get("@search.score") or 0.0),
+        score=_historical_score(doc),
         snippet=str(props.get("summary") or ""),
         value_streams=_parse_value_streams(props.get("valueStreams")),
     )
+
+
+def _historical_score(doc) -> float:
+    """Historical relevance on a 0-1 scale for the merger's support bands.
+
+    The lane is hybrid+semantic, so prefer the semantic reranker score - but normalize it
+    from its 0-4 range down to 0-1, the scale the merger's support-weight bands and historic
+    gates are tuned to. Falls back to the raw search score (already ~0-1) if no reranker.
+    """
+    reranker = doc.get("@search.reranker_score")
+    if reranker is not None:
+        return min(1.0, float(reranker) / _RERANKER_SCALE)
+    return float(doc.get("@search.score") or 0.0)
 
 
 def _parse_value_streams(raw) -> list[HistoricalValueStreamLabel]:

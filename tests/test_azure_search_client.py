@@ -68,11 +68,16 @@ def test_historical_hit_maps_native_value_streams() -> None:
     assert label.evidence == "Salesforce LGNA quoting"
 
 
-def test_historical_hit_prefers_reranker_score() -> None:
-    # historical lane is now hybrid+semantic -> prefer the reranker score
-    doc = {"sourceId": "IDMT-1", "@search.score": 0.03, "@search.reranker_score": 2.7,
+def test_historical_hit_normalizes_reranker_score() -> None:
+    # historical lane is hybrid+semantic -> use the reranker score, normalized 0-4 -> 0-1
+    doc = {"sourceId": "IDMT-1", "@search.score": 0.03, "@search.reranker_score": 2.8,
            "properties": {"summary": "s", "valueStreams": []}}
-    assert _to_historical_hit(doc).score == 2.7
+    assert _to_historical_hit(doc).score == 0.7  # 2.8 / 4
+
+
+def test_historical_hit_falls_back_to_raw_score() -> None:
+    doc = {"sourceId": "IDMT-1", "@search.score": 0.82, "properties": {"summary": "s", "valueStreams": []}}
+    assert _to_historical_hit(doc).score == 0.82  # no reranker -> raw score (already 0-1)
 
 
 def test_parse_value_streams_tolerates_bad_input() -> None:
