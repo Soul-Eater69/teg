@@ -20,5 +20,5 @@ class ValueStreamConfig:
     max_supporting_tickets: int = 2  # source tickets / evidence kept per candidate
     use_historic_classification: bool = True  # use the direct/implied label (ablation: False)
     use_historic_lane: bool = True  # use the historic ER lane at all (ablation: False = semantic-only)
-    generic_penalty_scale: float = 0.0  # broad-stream rank penalty = scale * base_rate (0 = off)
+    generic_penalty_scale: float = 0.6  # broad-stream rank penalty = scale * attractor_signal (0 = off)
     generic_earned_hits: int = 3  # historical hits that exempt a broad stream from the penalty

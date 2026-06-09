@@ -31,6 +31,7 @@ from teg.domain.condensed import SummaryFields
 from teg.integrations.llm import build_llm_client
 from teg.value_stream.config import ValueStreamConfig
 from teg.value_stream.drop_explainer import explain_drops
+from teg.value_stream.relevance_judge import judge_value_streams
 
 
 def _load(path: str) -> list[dict]:
@@ -54,6 +55,15 @@ def _summary_fields(props: dict, *, raw_text: bool) -> SummaryFields:
 
 def _gt_ids(props: dict) -> set[str]:
     return {t["valueStreamId"] for t in (props.get("themes") or []) if t.get("valueStreamId")}
+
+
+def _vs_name_map(docs: list[dict]) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for doc in docs:
+        for t in doc.get("properties", {}).get("themes") or []:
+            if t.get("valueStreamId"):
+                names[t["valueStreamId"]] = t.get("valueStreamName") or t["valueStreamId"]
+    return names
 
 
 def _base_rate_counts(docs: list[dict]) -> tuple[dict[str, int], int]:
@@ -146,7 +156,7 @@ def _requested_count(args, gt: set[str]) -> int:
     return args.count
 
 
-async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_rates, sem, progress) -> dict:
+async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_rates, vs_names, sem, progress) -> dict:
     async with sem:
         request = ValueStreamRequest(
             ticket_id=ticket_id,
@@ -176,12 +186,25 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
                 drop_reasons = {vs: exp.reason_code for vs, exp in explained.items()}
             except Exception as exc:  # a failed probe must not abort the batch
                 print(f"    explain-drops failed for {ticket_id}: {type(exc).__name__}: {exc}")
+        # LLM-as-judge: is each predicted / missed VS genuinely relevant (independent of GT)?
+        judged: dict[str, bool] = {}
+        if llm is not None and args.judge:
+            try:
+                pool_desc = {c.value_stream_id: c.value_stream_description for c in trace.review_pool}
+                name_of = {**vs_names, **{r.value_stream_id: r.value_stream_name for r in resp.recommendations}}
+                ids = set(predicted) | gt
+                items = [(i, name_of.get(i, i), pool_desc.get(i, "")) for i in ids]
+                judged = await judge_value_streams(
+                    query=request.summary_fields.generated_summary, items=items, llm_client=llm
+                )
+            except Exception as exc:
+                print(f"    judge failed for {ticket_id}: {type(exc).__name__}: {exc}")
     tp, fp, fn = _prf(predicted, gt)
     progress["done"] += 1
     print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
           f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)})")
     return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted,
-            "buckets": buckets, "drop_reasons": drop_reasons}
+            "buckets": buckets, "drop_reasons": drop_reasons, "judged": judged}
 
 
 def _miss_buckets(gt: set[str], predicted: list[str], trace) -> dict[str, list[str]]:
@@ -213,9 +236,10 @@ async def main(args) -> None:
         **({"llm_candidate_window": args.window} if args.window else {}),
     )
     service = build_value_stream_service(config=config)
-    llm = build_llm_client(load_settings()) if args.explain_drops else None
+    llm = build_llm_client(load_settings()) if (args.explain_drops or args.judge) else None
     sem = asyncio.Semaphore(args.concurrency)
 
+    vs_names = _vs_name_map(docs)  # id -> name, for judging GT streams not in the pool
     base_jobs = []
     skipped = 0
     for i, doc in enumerate(docs, start=1):
@@ -248,7 +272,7 @@ async def main(args) -> None:
           f"penalty={args.generic_penalty} signal={args.penalty_signal})")
     try:
         results = await asyncio.gather(
-            *(_eval_one(service, llm, args, d, t, g, r, sem, progress) for d, t, g, r in jobs)
+            *(_eval_one(service, llm, args, d, t, g, r, vs_names, sem, progress) for d, t, g, r in jobs)
         )
     finally:
         await service.aclose()
@@ -259,6 +283,8 @@ async def main(args) -> None:
     micro_tp = micro_fp = micro_fn = 0
     bucket_totals = {"not_retrieved": 0, "gated_pre_llm": 0, "llm_dropped": 0}
     reason_totals: dict[str, int] = {}
+    # Judge-adjusted: predictions judged relevant (even if not GT) + misses judged supported.
+    judge_pred = judge_rel_pred = judge_supported_miss = 0
     p_at = {k: [] for k in args.k}
     r_at = {k: [] for k in args.k}
     for res in results:
@@ -267,6 +293,11 @@ async def main(args) -> None:
         gt, predicted = res["gt"], res["predicted"]
         tp, fp, fn = _prf(predicted, gt)
         micro_tp += tp; micro_fp += fp; micro_fn += fn
+        judged = res.get("judged") or {}
+        if judged:
+            judge_pred += len(predicted)
+            judge_rel_pred += sum(1 for p in predicted if judged.get(p))
+            judge_supported_miss += sum(1 for g in gt if g not in predicted and judged.get(g))
         buckets = res.get("buckets") or {}
         for name in bucket_totals:
             bucket_totals[name] += len(buckets.get(name, []))
@@ -299,10 +330,19 @@ async def main(args) -> None:
           f"(count_mode={args.count_mode}, classification={'OFF' if args.no_classification else 'ON'}, "
           f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18}, "
           f"generic_penalty={args.generic_penalty}/{args.penalty_signal if args.generic_penalty else '-'})")
-    print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}")
-    print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}")
+    print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}  (strict GT)")
+    print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}  (strict GT)")
     for k in args.k:
         print(f"  @{k:<2}  P@{k}={_div(sum(p_at[k]), n):.3f}   R@{k}={_div(sum(r_at[k]), n):.3f}")
+
+    if judge_pred:
+        # Judge precision: predictions the LLM judge calls relevant (credits relevant non-GT picks).
+        # Judge recall: TP / (TP + misses the judge says are genuinely supported) - drops GT label noise.
+        adj_p = _div(judge_rel_pred, judge_pred)
+        adj_r = _div(micro_tp, micro_tp + judge_supported_miss)
+        print(f"judge  P={adj_p:.3f}  R={adj_r:.3f}  F1={_div(2*adj_p*adj_r, adj_p+adj_r):.3f}  "
+              f"(LLM relevance; {judge_rel_pred}/{judge_pred} preds relevant, "
+              f"{judge_supported_miss} of {micro_fn} misses judged supported)")
 
     total_fn = sum(bucket_totals.values())
     print(f"\nmiss buckets (where the {total_fn} missed GT value streams died):")
@@ -349,14 +389,16 @@ if __name__ == "__main__":
     parser.add_argument("--window", type=int, default=0,
                         help="override the LLM review-pool size (how many candidates the LLM sees; "
                              "default config=18). Decoupled from output count, so count=gt stays honest.")
-    parser.add_argument("--generic-penalty", type=float, default=0.0,
+    parser.add_argument("--generic-penalty", type=float, default=0.6,
                         help="broad-stream rank penalty scale (penalty = scale * signal, unless earned "
-                             "by history). Try 0.5-1.0. 0 = off. Signal is leave-one-out.")
+                             "by history). Default 0.6. Pass 0 to disable. Signal is leave-one-out.")
     parser.add_argument("--penalty-signal", choices=["fp_rate", "gt_freq"], default="fp_rate",
                         help="fp_rate = false-positive rate (correct attractor signal, runs a pass 1); "
                              "gt_freq = corpus GT frequency (penalizes common-true streams - usually wrong).")
     parser.add_argument("--explain-drops", action="store_true",
                         help="post-hoc LLM probe: classify why each llm_dropped GT was left out (extra calls)")
+    parser.add_argument("--judge", action="store_true",
+                        help="LLM-as-judge relevance of predictions + misses (GT-independent view; extra calls)")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
     args = parser.parse_args()
     asyncio.run(main(args))
