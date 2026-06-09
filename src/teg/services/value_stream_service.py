@@ -7,6 +7,8 @@ Clients are injected so it can be unit-tested with fakes.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from teg.contracts.value_stream_io import ValueStreamRequest, ValueStreamResponse
 from teg.domain.value_stream import HistoricalTicket
 from teg.integrations.llm import LLMClient
@@ -16,6 +18,14 @@ from teg.value_stream.config import ValueStreamConfig
 from teg.value_stream.custom_instruction import parse_requested_count
 from teg.value_stream.retrieval import retrieve
 from teg.value_stream.selection import select_value_streams
+
+
+@dataclass(frozen=True)
+class PredictionTrace:
+    """What survived each stage, for eval miss-bucketing (not part of the API contract)."""
+
+    retrieved_ids: list[str] = field(default_factory=list)  # all merged candidates
+    review_pool_ids: list[str] = field(default_factory=list)  # subset the LLM actually saw
 
 
 class ValueStreamService:
@@ -33,6 +43,14 @@ class ValueStreamService:
         self._config = config
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
+        response, _ = await self._predict(request)
+        return response
+
+    async def predict_traced(self, request: ValueStreamRequest) -> tuple[ValueStreamResponse, PredictionTrace]:
+        """Same as :meth:`predict` but also returns what reached the LLM (eval diagnostics)."""
+        return await self._predict(request)
+
+    async def _predict(self, request: ValueStreamRequest) -> tuple[ValueStreamResponse, PredictionTrace]:
         # The custom instruction may only set the count: parse it deterministically (the raw
         # text never reaches a prompt); a parsed count overrides requested_count.
         requested_count = parse_requested_count(request.custom_instruction) or request.requested_count
@@ -65,12 +83,17 @@ class ValueStreamService:
             requested_count=requested_count,
             llm_client=self._llm,
         )
-        return ValueStreamResponse(
+        response = ValueStreamResponse(
             ticket_id=request.ticket_id,
             recommendations=recommendations,
             historical_tickets=[_to_ticket(hit) for hit in historical_hits],
             model=self._model_name,
         )
+        trace = PredictionTrace(
+            retrieved_ids=[c.value_stream_id for c in candidates],
+            review_pool_ids=[c.value_stream_id for c in review_pool],
+        )
+        return response, trace
 
     async def aclose(self) -> None:
         """Close the search client's aio sessions (call when done; e.g. scripts)."""

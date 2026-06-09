@@ -80,17 +80,38 @@ async def _eval_one(service, args, doc, ticket_id: str, gt: set[str], sem, progr
             exclude_ticket_ids=[ticket_id],  # leave-one-out
         )
         try:
-            resp = await service.predict(request)
+            resp, trace = await service.predict_traced(request)
             predicted = [r.value_stream_id for r in resp.recommendations]
         except Exception as exc:  # one bad ticket must not abort the batch
             progress["done"] += 1
             print(f"[{progress['done']}/{progress['total']}] {ticket_id}  ERROR {type(exc).__name__}: {exc}")
             return {"ticket_id": ticket_id, "gt": gt, "predicted": [], "error": str(exc)}
     tp, fp, fn = _prf(predicted, gt)
+    buckets = _miss_buckets(gt, predicted, trace)
     progress["done"] += 1
     print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
           f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)})")
-    return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted}
+    return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted, "buckets": buckets}
+
+
+def _miss_buckets(gt: set[str], predicted: list[str], trace) -> dict[str, list[str]]:
+    """Localize each FN: where did the right answer die?
+
+    not_retrieved  -> never made the merged candidate set (retrieval gap)
+    gated_pre_llm  -> retrieved, but the merger dropped it before the LLM saw it
+    llm_dropped    -> the LLM saw it in the review pool and still didn't pick it
+    """
+    retrieved = set(trace.retrieved_ids)
+    pool = set(trace.review_pool_ids)
+    out: dict[str, list[str]] = {"not_retrieved": [], "gated_pre_llm": [], "llm_dropped": []}
+    for vs in gt - set(predicted):
+        if vs not in retrieved:
+            out["not_retrieved"].append(vs)
+        elif vs not in pool:
+            out["gated_pre_llm"].append(vs)
+        else:
+            out["llm_dropped"].append(vs)
+    return out
 
 
 async def main(args) -> None:
@@ -121,6 +142,7 @@ async def main(args) -> None:
 
     rows: list[dict] = []
     micro_tp = micro_fp = micro_fn = 0
+    bucket_totals = {"not_retrieved": 0, "gated_pre_llm": 0, "llm_dropped": 0}
     p_at = {k: [] for k in args.k}
     r_at = {k: [] for k in args.k}
     for res in results:
@@ -129,6 +151,9 @@ async def main(args) -> None:
         gt, predicted = res["gt"], res["predicted"]
         tp, fp, fn = _prf(predicted, gt)
         micro_tp += tp; micro_fp += fp; micro_fn += fn
+        buckets = res.get("buckets") or {}
+        for name in bucket_totals:
+            bucket_totals[name] += len(buckets.get(name, []))
         for k in args.k:
             topk = set(predicted[:k])
             p_at[k].append(_div(len(topk & gt), min(k, len(predicted)) or 1))
@@ -137,6 +162,9 @@ async def main(args) -> None:
             "ticket_id": res["ticket_id"], "gt_count": len(gt), "predicted_count": len(predicted),
             "tp": tp, "fp": fp, "fn": fn,
             "precision": round(_div(tp, tp + fp), 3), "recall": round(_div(tp, tp + fn), 3),
+            "fn_not_retrieved": "; ".join(buckets.get("not_retrieved", [])),
+            "fn_gated_pre_llm": "; ".join(buckets.get("gated_pre_llm", [])),
+            "fn_llm_dropped": "; ".join(buckets.get("llm_dropped", [])),
             "gt": "; ".join(sorted(gt)), "predicted": "; ".join(predicted),
         })
 
@@ -154,6 +182,15 @@ async def main(args) -> None:
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}")
     for k in args.k:
         print(f"  @{k:<2}  P@{k}={_div(sum(p_at[k]), n):.3f}   R@{k}={_div(sum(r_at[k]), n):.3f}")
+
+    total_fn = sum(bucket_totals.values())
+    print(f"\nmiss buckets (where the {total_fn} missed GT value streams died):")
+    print(f"  not_retrieved  {bucket_totals['not_retrieved']:4}  "
+          f"({_div(bucket_totals['not_retrieved'], total_fn):.0%})  - never made the candidate set")
+    print(f"  gated_pre_llm  {bucket_totals['gated_pre_llm']:4}  "
+          f"({_div(bucket_totals['gated_pre_llm'], total_fn):.0%})  - merger dropped before the LLM")
+    print(f"  llm_dropped    {bucket_totals['llm_dropped']:4}  "
+          f"({_div(bucket_totals['llm_dropped'], total_fn):.0%})  - LLM saw it, didn't pick it")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
