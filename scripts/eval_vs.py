@@ -63,51 +63,72 @@ def _div(a: float, b: float) -> float:
     return a / b if b else 0.0
 
 
+def _requested_count(args, gt: set[str]) -> int:
+    if args.count_mode == "gt":
+        return max(1, len(gt))
+    if args.count_mode == "gt_buffer":
+        return max(1, len(gt) + args.buffer)
+    return args.count
+
+
+async def _eval_one(service, args, doc, ticket_id: str, gt: set[str], sem, progress) -> dict:
+    async with sem:
+        request = ValueStreamRequest(
+            ticket_id=ticket_id,
+            summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text),
+            requested_count=_requested_count(args, gt),
+            exclude_ticket_ids=[ticket_id],  # leave-one-out
+        )
+        try:
+            resp = await service.predict(request)
+            predicted = [r.value_stream_id for r in resp.recommendations]
+        except Exception as exc:  # one bad ticket must not abort the batch
+            progress["done"] += 1
+            print(f"[{progress['done']}/{progress['total']}] {ticket_id}  ERROR {type(exc).__name__}: {exc}")
+            return {"ticket_id": ticket_id, "gt": gt, "predicted": [], "error": str(exc)}
+    tp, fp, fn = _prf(predicted, gt)
+    progress["done"] += 1
+    print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
+          f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)})")
+    return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted}
+
+
 async def main(args) -> None:
     docs = _load(args.dataset)
     config = ValueStreamConfig(use_historic_classification=not args.no_classification)
     service = build_value_stream_service(config=config)
 
+    jobs = []
+    for i, doc in enumerate(docs, start=1):
+        gt = _gt_ids(doc.get("properties", {}))
+        if gt:
+            jobs.append((doc, doc.get("sourceId") or doc.get("id") or f"row{i}", gt))
+
+    sem = asyncio.Semaphore(args.concurrency)
+    progress = {"done": 0, "total": len(jobs)}
+    print(f"evaluating {len(jobs)} tickets (concurrency={args.concurrency})")
+    results = await asyncio.gather(*(_eval_one(service, args, d, t, g, sem, progress) for d, t, g in jobs))
+
     rows: list[dict] = []
     micro_tp = micro_fp = micro_fn = 0
     p_at = {k: [] for k in args.k}
     r_at = {k: [] for k in args.k}
-
-    for i, doc in enumerate(docs, start=1):
-        props = doc.get("properties", {})
-        ticket_id = doc.get("sourceId") or doc.get("id") or f"row{i}"
-        gt = _gt_ids(props)
-        if not gt:
+    for res in results:
+        if res.get("error"):
             continue
-        # Count mode: fixed (--count), gt (= |GT|, R-precision), or gt_buffer (|GT| + buffer).
-        if args.count_mode == "gt":
-            requested = max(1, len(gt))
-        elif args.count_mode == "gt_buffer":
-            requested = max(1, len(gt) + args.buffer)
-        else:
-            requested = args.count
-        request = ValueStreamRequest(
-            ticket_id=ticket_id,
-            summary_fields=_summary_fields(props, raw_text=args.raw_text),
-            requested_count=requested,
-            exclude_ticket_ids=[ticket_id],  # leave-one-out
-        )
-        resp = await service.predict(request)
-        predicted = [r.value_stream_id for r in resp.recommendations]  # ranked by confidence
-
+        gt, predicted = res["gt"], res["predicted"]
         tp, fp, fn = _prf(predicted, gt)
         micro_tp += tp; micro_fp += fp; micro_fn += fn
-        prec, rec = _div(tp, tp + fp), _div(tp, tp + fn)
         for k in args.k:
             topk = set(predicted[:k])
             p_at[k].append(_div(len(topk & gt), min(k, len(predicted)) or 1))
             r_at[k].append(_div(len(topk & gt), len(gt)))
         rows.append({
-            "ticket_id": ticket_id, "gt_count": len(gt), "predicted_count": len(predicted),
-            "tp": tp, "fp": fp, "fn": fn, "precision": round(prec, 3), "recall": round(rec, 3),
+            "ticket_id": res["ticket_id"], "gt_count": len(gt), "predicted_count": len(predicted),
+            "tp": tp, "fp": fp, "fn": fn,
+            "precision": round(_div(tp, tp + fp), 3), "recall": round(_div(tp, tp + fn), 3),
             "gt": "; ".join(sorted(gt)), "predicted": "; ".join(predicted),
         })
-        print(f"[{i}/{len(docs)}] {ticket_id}  P={prec:.2f} R={rec:.2f}  (gt={len(gt)}, pred={len(predicted)})")
 
     n = len(rows)
     micro_p = _div(micro_tp, micro_tp + micro_fp)
@@ -140,6 +161,7 @@ if __name__ == "__main__":
                         help="fixed=--count; gt=|GT| per ticket (R-precision); gt_buffer=|GT|+buffer")
     parser.add_argument("--buffer", type=int, default=2, help="added to |GT| in gt_buffer mode")
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 10], help="k values for P@k / R@k")
+    parser.add_argument("--concurrency", type=int, default=6, help="tickets evaluated in parallel")
     parser.add_argument("--no-classification", action="store_true", help="ablation: ignore direct/implied")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
