@@ -102,14 +102,18 @@ async def main(args) -> None:
     service = build_value_stream_service(config=config)
 
     jobs = []
+    skipped = 0
     for i, doc in enumerate(docs, start=1):
         gt = _gt_ids(doc.get("properties", {}))
-        if gt:
-            jobs.append((doc, doc.get("sourceId") or doc.get("id") or f"row{i}", gt))
+        if len(gt) < args.min_gt:  # drop tickets with too few GT VS (e.g. single-label)
+            skipped += 1
+            continue
+        jobs.append((doc, doc.get("sourceId") or doc.get("id") or f"row{i}", gt))
 
     sem = asyncio.Semaphore(args.concurrency)
     progress = {"done": 0, "total": len(jobs)}
-    print(f"evaluating {len(jobs)} tickets (concurrency={args.concurrency})")
+    print(f"evaluating {len(jobs)} tickets (concurrency={args.concurrency}; "
+          f"skipped {skipped} with < {args.min_gt} GT value streams)")
     results = await asyncio.gather(*(_eval_one(service, args, d, t, g, sem, progress) for d, t, g in jobs))
 
     rows: list[dict] = []
@@ -163,6 +167,7 @@ if __name__ == "__main__":
     parser.add_argument("--count-mode", choices=["fixed", "gt", "gt_buffer"], default="fixed",
                         help="fixed=--count; gt=|GT| per ticket (R-precision); gt_buffer=|GT|+buffer")
     parser.add_argument("--buffer", type=int, default=2, help="added to |GT| in gt_buffer mode")
+    parser.add_argument("--min-gt", type=int, default=2, help="skip tickets with fewer than this many GT value streams")
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 10], help="k values for P@k / R@k")
     parser.add_argument("--concurrency", type=int, default=6, help="tickets evaluated in parallel")
     parser.add_argument("--no-classification", action="store_true", help="ablation: ignore direct/implied")
