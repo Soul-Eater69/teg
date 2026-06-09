@@ -52,9 +52,13 @@ async def main(args) -> None:
 
     # 2. VS prediction -> top N (the "approved" set)
     t0 = perf_counter()
-    vs_resp = await build_value_stream_service().predict(
-        ValueStreamRequest(ticket_id="SMOKE", summary_fields=summary_fields, requested_count=args.count)
-    )
+    vs_service = build_value_stream_service()
+    try:
+        vs_resp = await vs_service.predict(
+            ValueStreamRequest(ticket_id="SMOKE", summary_fields=summary_fields, requested_count=args.count)
+        )
+    finally:
+        await vs_service.aclose()
     print(f"\n# {len(vs_resp.recommendations)} value streams predicted in {perf_counter()-t0:.2f}s (treated as approved):")
     for r in vs_resp.recommendations:
         print(f"  {r.confidence:5.1f}  {r.support_type:8} {r.value_stream_name}  ({r.value_stream_id})")

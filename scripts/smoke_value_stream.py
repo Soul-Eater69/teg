@@ -41,7 +41,11 @@ async def main(*, ticket: str | None, summary_text: str | None, count: int) -> N
         ticket_id=ticket_id, summary_fields=summary_fields, requested_count=count
     )
     start = perf_counter()
-    response = await build_value_stream_service().predict(request)
+    service = build_value_stream_service()
+    try:
+        response = await service.predict(request)
+    finally:
+        await service.aclose()
     print(f"\n# {len(response.recommendations)} recommendations in {perf_counter() - start:.2f}s\n")
     for r in response.recommendations:
         print(

@@ -49,11 +49,19 @@ class AzureSearchClient:
         embeddings: EmbeddingsClient,
         vector_field: str = "content_vector",
         semantic_config: str = "teg-semantic",
+        credential=None,
     ) -> None:
         self._index = index_client
         self._embeddings = embeddings
         self._vector_field = vector_field
         self._semantic_config = semantic_config
+        self._credential = credential  # closed alongside the index client
+
+    async def close(self) -> None:
+        """Close the aio index client and credential (both hold aiohttp sessions)."""
+        await self._index.close()
+        if self._credential is not None and hasattr(self._credential, "close"):
+            await self._credential.close()
 
     async def search_value_streams(self, query: str, *, top_k: int = 50) -> list[ValueStreamHit]:
         vector = await self._embeddings.embed(query)
@@ -156,14 +164,16 @@ def _parse_value_streams(raw) -> list[HistoricalValueStreamLabel]:
 def build_search_client(settings: Settings) -> AzureSearchClient:
     if _AzureSearchClient is None:
         raise ImportError("azure-search-documents is required: install the 'search' extra")
+    credential = build_search_credential(settings)
     index_client = _AzureSearchClient(
         endpoint=settings.search_endpoint,
         index_name=settings.search_index,
-        credential=build_search_credential(settings),
+        credential=credential,
     )
     return AzureSearchClient(
         index_client=index_client,
         embeddings=build_embeddings_client(settings),
         vector_field=settings.search_vector_field,
         semantic_config=settings.search_semantic_config,
+        credential=credential,
     )

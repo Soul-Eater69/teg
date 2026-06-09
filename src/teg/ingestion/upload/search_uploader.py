@@ -62,8 +62,9 @@ def _failures(results) -> list[UploadFailure]:
 
 
 class SearchUploader:
-    def __init__(self, index_client) -> None:
+    def __init__(self, index_client, credential=None) -> None:
         self._index = index_client
+        self._credential = credential
 
     async def upload(self, documents: list[dict]) -> UploadReport:
         failures: list[UploadFailure] = []
@@ -74,14 +75,17 @@ class SearchUploader:
 
     async def close(self) -> None:
         await self._index.close()
+        if self._credential is not None and hasattr(self._credential, "close"):
+            await self._credential.close()
 
 
 def build_search_uploader(settings: Settings) -> SearchUploader:
     if _AzureSearchClient is None:
         raise ImportError("azure-search-documents is required: install the 'search' extra")
+    credential = build_search_credential(settings)
     index_client = _AzureSearchClient(
         endpoint=settings.search_endpoint,
         index_name=settings.search_index,
-        credential=build_search_credential(settings),
+        credential=credential,
     )
-    return SearchUploader(index_client)
+    return SearchUploader(index_client, credential)

@@ -72,6 +72,12 @@ class ValueStreamService:
             model=self._model_name,
         )
 
+    async def aclose(self) -> None:
+        """Close the search client's aio sessions (call when done; e.g. scripts)."""
+        close = getattr(self._search, "close", None)
+        if close is not None:
+            await close()
+
 
 def _excluding(hits: list[HistoricalHit], exclude_ids: list[str]) -> list[HistoricalHit]:
     if not exclude_ids:

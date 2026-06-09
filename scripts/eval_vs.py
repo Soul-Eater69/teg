@@ -114,7 +114,10 @@ async def main(args) -> None:
     progress = {"done": 0, "total": len(jobs)}
     print(f"evaluating {len(jobs)} tickets (concurrency={args.concurrency}; "
           f"skipped {skipped} with < {args.min_gt} GT value streams)")
-    results = await asyncio.gather(*(_eval_one(service, args, d, t, g, sem, progress) for d, t, g in jobs))
+    try:
+        results = await asyncio.gather(*(_eval_one(service, args, d, t, g, sem, progress) for d, t, g in jobs))
+    finally:
+        await service.aclose()
 
     rows: list[dict] = []
     micro_tp = micro_fp = micro_fn = 0
