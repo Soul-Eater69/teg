@@ -11,7 +11,11 @@ from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.models import CatalogueCapability, CatalogueStage, CatalogueValueStream
 from teg.services.theme_service import ThemeService
 from teg.theme.business_needs import _GeneratedBusinessNeeds
-from teg.theme.capabilities import CapabilitySelectionItem, CapabilitySelectionResult
+from teg.theme.capabilities import (
+    BatchedCapabilitySelection,
+    CapabilitySelectionItem,
+    StageCapabilitySelection,
+)
 from teg.theme.description import _GeneratedDescription, _VsFraming, _VsFramings
 from teg.theme.stage_catalogue import StageCatalogue
 from teg.theme.stage_selection import BatchedStageSelection, StageSelectionItem, VsStageSelection
@@ -90,10 +94,13 @@ class RoutingFakeLLM:
             return _GeneratedBusinessNeeds(
                 text="Value Stage: Explore Information\n\nBusiness Product Feature: Overall Scope\n1. define CareWay+ metrics"
             )
-        if schema is CapabilitySelectionResult:
-            return CapabilitySelectionResult(
-                capabilities=[CapabilitySelectionItem(capability_id="CAP-L3-1", reason="card needs metrics capture")]
-            )
+        if schema is BatchedCapabilitySelection:
+            return BatchedCapabilitySelection(stages=[
+                StageCapabilitySelection(
+                    stage_id="VSS1",
+                    capabilities=[CapabilitySelectionItem(capability_id="CAP-L3-1", reason="card needs metrics capture")],
+                )
+            ])
         return BatchedStageSelection(value_streams=[
             VsStageSelection(
                 value_stream_id="VSR1",
