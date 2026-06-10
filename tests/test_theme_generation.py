@@ -12,7 +12,7 @@ from teg.ingestion.catalogues.models import CatalogueCapability, CatalogueStage,
 from teg.services.theme_service import ThemeService
 from teg.theme.business_needs import _GeneratedBusinessNeeds
 from teg.theme.capabilities import CapabilitySelectionItem, CapabilitySelectionResult
-from teg.theme.description import _GeneratedDescription
+from teg.theme.description import _GeneratedDescription, _VsFraming, _VsFramings
 from teg.theme.stage_catalogue import StageCatalogue
 from teg.theme.stage_selection import StageSelectionItem, StageSelectionResult
 
@@ -76,17 +76,16 @@ def _request() -> ThemeGenerationRequest:
 
 
 class RoutingFakeLLM:
-    """Returns the description text or the stage selection based on the requested schema."""
+    """Returns the description body/framing/needs/caps/stages based on the requested schema."""
 
-    description_text = (
-        "Theme Description and Product Availability:\n"
-        "The scope of this theme covers reporting and analytics.\n\n"
-        "Product Availability:\nPlans: IL, TX, OK"
-    )
+    body_text = "Product Availability:\nPlans: IL, TX, OK"
+    framing_text = "The scope of this theme covers reporting and analytics."
 
     async def complete(self, *, system, user, schema):
         if schema is _GeneratedDescription:
-            return _GeneratedDescription(text=self.description_text)
+            return _GeneratedDescription(text=self.body_text)
+        if schema is _VsFramings:
+            return _VsFramings(framings=[_VsFraming(value_stream_id="VSR1", text=self.framing_text)])
         if schema is _GeneratedBusinessNeeds:
             return _GeneratedBusinessNeeds(
                 text="Value Stage: Explore Information\n\nBusiness Product Feature: Overall Scope\n1. define CareWay+ metrics"
@@ -110,9 +109,9 @@ async def test_generate_one_package_description_and_stages() -> None:
     pkg = response.theme_packages[0]
     assert pkg.value_stream_id == "VSR1"
     assert pkg.theme_title == "CP 2027 Guided Health Plans - Discover Business Insights"
-    # the consolidated description is a single text block
-    assert pkg.theme_description.startswith("Theme Description and Product Availability:")
-    assert "Plans: IL, TX, OK" in pkg.theme_description
+    # description = VS framing paragraph (batched) then the shared body
+    assert pkg.theme_description.startswith("The scope of this theme covers reporting")
+    assert "Plans: IL, TX, OK" in pkg.theme_description  # shared body appended
     # stage selection resolved to the governed stage (canonical name), no rank/evidence
     assert [s.stage_id for s in pkg.selected_stages] == ["VSS1"]
     assert pkg.selected_stages[0].stage_name == "Explore Information"
@@ -133,6 +132,8 @@ async def test_invented_stage_id_is_dropped() -> None:
         async def complete(self, *, system, user, schema):
             if schema is _GeneratedDescription:
                 return _GeneratedDescription(text="x")
+            if schema is _VsFramings:
+                return _VsFramings(framings=[_VsFraming(value_stream_id="VSR1", text="f")])
             return StageSelectionResult(
                 stage_scope="specific_stages",
                 selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],

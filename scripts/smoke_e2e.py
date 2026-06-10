@@ -27,7 +27,11 @@ from teg.integrations.llm import build_llm_client
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.theme.business_needs import generate_business_needs
 from teg.theme.capabilities import generate_capabilities
-from teg.theme.description import generate_theme_description
+from teg.theme.description import (
+    assemble_description,
+    generate_description_body,
+    generate_vs_framings,
+)
 from teg.theme.stage_catalogue import StageCatalogue
 from teg.theme.stage_selection import select_stages
 
@@ -77,8 +81,10 @@ async def main(args) -> None:
         selected = None
         if args.only in ("description", "core", "all"):
             t0 = perf_counter()
-            text = await generate_theme_description(condensed=condensed, value_stream_id=vs.value_stream_id,
-                value_stream_name=vs.value_stream_name, value_stream_description=desc, value_proposition=prop, llm_client=llm)
+            body, framings = await generate_description_body(condensed=condensed, llm_client=llm), await generate_vs_framings(
+                condensed=condensed, approved_value_streams=[vs],
+                value_stream_details={vs.value_stream_id: (desc, prop)}, llm_client=llm)
+            text = assemble_description(framings.get(vs.value_stream_id, ""), body)
             print(f"--- DESCRIPTION [{perf_counter()-t0:.2f}s] ---\n{text}\n")
 
         if args.only in ("stages", "core", "needs", "caps", "all"):
