@@ -69,7 +69,25 @@ async def main(args) -> None:
     approved = [ApprovedValueStream(value_stream_id=r.value_stream_id, value_stream_name=r.value_stream_name)
                 for r in vs_resp.recommendations]
 
-    # 3. theme generation per approved VS
+    # 3a. descriptions for ALL approved VS in 2 calls total (body ∥ batched framing), as the
+    #     service does it - NOT per VS. This is the real description wall-clock.
+    descriptions: dict[str, str] = {}
+    if args.only in ("description", "core", "all"):
+        t0 = perf_counter()
+        vs_details = {vs.value_stream_id: (catalogue.description_for(vs.value_stream_id),
+                                           catalogue.value_proposition_for(vs.value_stream_id))
+                      for vs in approved}
+        body, framings = await asyncio.gather(
+            generate_description_body(condensed=condensed, llm_client=llm),
+            generate_vs_framings(condensed=condensed, approved_value_streams=approved,
+                                 value_stream_details=vs_details, llm_client=llm),
+        )
+        descriptions = {vs.value_stream_id: assemble_description(framings.get(vs.value_stream_id, ""), body)
+                        for vs in approved}
+        print(f"\n# ALL {len(approved)} descriptions in 2 calls (body ∥ batched framing): "
+              f"{perf_counter()-t0:.2f}s")
+
+    # 3b. the rest per approved VS
     for vs in approved:
         desc = catalogue.description_for(vs.value_stream_id)
         prop = catalogue.value_proposition_for(vs.value_stream_id)
@@ -79,13 +97,8 @@ async def main(args) -> None:
         print(f"THEME TITLE: {title} - {vs.value_stream_name}\n")
 
         selected = None
-        if args.only in ("description", "core", "all"):
-            t0 = perf_counter()
-            body, framings = await generate_description_body(condensed=condensed, llm_client=llm), await generate_vs_framings(
-                condensed=condensed, approved_value_streams=[vs],
-                value_stream_details={vs.value_stream_id: (desc, prop)}, llm_client=llm)
-            text = assemble_description(framings.get(vs.value_stream_id, ""), body)
-            print(f"--- DESCRIPTION [{perf_counter()-t0:.2f}s] ---\n{text}\n")
+        if vs.value_stream_id in descriptions:
+            print(f"--- DESCRIPTION ---\n{descriptions[vs.value_stream_id]}\n")
 
         if args.only in ("stages", "core", "needs", "caps", "all"):
             t0 = perf_counter()
