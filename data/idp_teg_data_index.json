@@ -30,10 +30,7 @@
           "type": "Collection(Edm.ComplexType)",
           "fields": [
             { "name": "valueStreamId", "type": "Edm.String", "retrievable": true },
-            { "name": "valueStreamName", "type": "Edm.String", "retrievable": true },
-            { "name": "supportType", "type": "Edm.String", "retrievable": true },
-            { "name": "reason", "type": "Edm.String", "retrievable": true },
-            { "name": "evidence", "type": "Edm.String", "retrievable": true }
+            { "name": "valueStreamName", "type": "Edm.String", "retrievable": true }
           ]
         }
       ]
