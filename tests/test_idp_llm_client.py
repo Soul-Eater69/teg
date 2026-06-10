@@ -38,8 +38,13 @@ async def test_builds_json_schema_request_and_parses_idp_choice() -> None:
     assert body["messages"][0] == {"role": "system", "content": "sys"}
     assert body["messages"][1] == {"role": "user", "content": "usr"}
     assert body["response_format"]["type"] == "json_schema"
-    assert body["response_format"]["json_schema"]["name"] == "_Out"
-    assert "answer" in body["response_format"]["json_schema"]["schema"]["properties"]
+    js = body["response_format"]["json_schema"]
+    assert js["name"] == "_Out"
+    assert js["strict"] is True  # strict structured output
+    schema = js["schema"]
+    assert "answer" in schema["properties"]
+    assert schema["required"] == ["answer"]  # strict: every property required
+    assert schema["additionalProperties"] is False
 
 
 async def test_parses_standard_choices_shape() -> None:
@@ -48,6 +53,27 @@ async def test_parses_standard_choices_shape() -> None:
 
     out = await _client(handler).complete(system="s", user="u", schema=_Out)
     assert out.answer == "x"
+
+
+def test_strict_schema_makes_nested_defaults_strict_compatible() -> None:
+    from pydantic import Field
+
+    from teg.integrations.llm.idp_gateway import _strict_schema
+
+    class _Item(BaseModel):
+        id: str
+        note: str = ""  # defaulted -> must become required, no default key
+
+    class _Wrap(BaseModel):
+        items: list[_Item] = Field(default_factory=list)
+
+    schema = _strict_schema(_Wrap)
+    assert schema["required"] == ["items"]
+    assert schema["additionalProperties"] is False
+    item = schema["$defs"]["_Item"]
+    assert set(item["required"]) == {"id", "note"}  # defaulted field forced required
+    assert item["additionalProperties"] is False
+    assert "default" not in item["properties"]["note"]  # default key stripped
 
 
 async def test_unwraps_single_key_wrapped_output() -> None:

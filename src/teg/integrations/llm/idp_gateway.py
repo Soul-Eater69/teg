@@ -54,7 +54,8 @@ class IdpLLMClient:
                 "type": "json_schema",
                 "json_schema": {
                     "name": schema.__name__,
-                    "schema": schema.model_json_schema(by_alias=True),
+                    "schema": _strict_schema(schema),
+                    "strict": True,
                 },
             },
             "api_version": self._api_version,
@@ -68,6 +69,32 @@ class IdpLLMClient:
         response.raise_for_status()
         content = _extract_content(response.json())
         return _validate(content, schema)
+
+
+def _strict_schema(schema: type[BaseModel]) -> dict:
+    """Pydantic JSON schema, transformed to satisfy OpenAI structured-output strict mode.
+
+    Strict mode constrains generation so the reply provably matches the schema, but it requires
+    every object to set additionalProperties=false, list every property in `required`, and carry
+    no `default` keys - none of which pydantic emits for fields with defaults. Apply those
+    recursively (including $defs and array items). Defaulted fields become always-emitted; the
+    model fills the empty value (""/[]) where it used to omit them.
+    """
+    return _strictify(schema.model_json_schema(by_alias=True))
+
+
+def _strictify(node):
+    if isinstance(node, dict):
+        node.pop("default", None)  # strict mode rejects default keys
+        if isinstance(node.get("properties"), dict):
+            node["required"] = list(node["properties"].keys())
+            node["additionalProperties"] = False
+        for value in node.values():
+            _strictify(value)
+    elif isinstance(node, list):
+        for item in node:
+            _strictify(item)
+    return node
 
 
 def _validate(content: str, schema: type[ModelT]) -> ModelT:
