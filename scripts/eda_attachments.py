@@ -117,6 +117,7 @@ def to_frames(records: list[dict]):
     per_ticket = att.groupby("ticketId").agg(
         attachmentCount=("filename", "count"),
         supportedCount=("supported", "sum"),
+        attachmentBytes=("sizeBytes", "sum"),
         attachmentTokens=("tokenEst", "sum"),
         attachmentChars=("charCount", "sum"),
         hasIdeaCard=("ideaCard", "max"),
@@ -132,6 +133,7 @@ def to_frames(records: list[dict]):
         extra = pd.DataFrame(index=only_desc)
         extra["attachmentCount"] = 0
         extra["supportedCount"] = 0
+        extra["attachmentBytes"] = 0
         extra["attachmentTokens"] = 0
         extra["attachmentChars"] = 0
         extra["hasIdeaCard"] = False
@@ -160,6 +162,23 @@ def build_charts(att, tickets, charts_dir: Path) -> tuple[dict, dict]:
     stats: dict = {}
     charts: dict = {}
 
+    # 0. attachment presence: tickets WITH vs WITHOUT any attachment
+    n = int(len(tickets))
+    without = int((tickets["attachmentCount"] == 0).sum())
+    with_att = n - without
+    stats["attachment_presence"] = {
+        "tickets_total": n,
+        "tickets_with_attachments": with_att,
+        "tickets_without_attachments": without,
+        "pct_without": round(100.0 * without / max(1, n), 1),
+    }
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.bar(["with attachments", "no attachments"], [with_att, without], color=["#4C78A8", "#E45756"])
+    for i, v in enumerate([with_att, without]):
+        ax.text(i, v, str(v), ha="center", va="bottom")
+    ax.set(title="Tickets with vs without attachments", ylabel="# tickets")
+    charts["attachment_presence"] = _save(fig, charts_dir, "attachment_presence"); plt.close(fig)
+
     # 1. attachments per ticket
     counts = tickets["attachmentCount"]
     stats["attachments_per_ticket"] = {
@@ -181,11 +200,20 @@ def build_charts(att, tickets, charts_dir: Path) -> tuple[dict, dict]:
     ax.set(title="Attachment file types", xlabel="extension", ylabel="# attachments")
     charts["file_types"] = _save(fig, charts_dir, "file_types"); plt.close(fig)
 
-    # 3. attachment sizes (KB)
+    # 3. attachment sizes (KB) — per attachment AND total per ticket
     kb = att["sizeBytes"] / 1024.0
+    per_ticket_kb = tickets["attachmentBytes"] / 1024.0
     stats["attachment_size_kb"] = {
-        "mean": round(float(kb.mean()), 1), "median": round(float(kb.median()), 1),
-        "max": round(float(kb.max()), 1), "p90": round(float(kb.quantile(0.9)), 1),
+        # per single attachment
+        "per_attachment_mean": round(float(kb.mean()), 1),
+        "per_attachment_median": round(float(kb.median()), 1),
+        "per_attachment_p90": round(float(kb.quantile(0.9)), 1),
+        "per_attachment_max": round(float(kb.max()), 1),
+        # total across a ticket's attachments
+        "per_ticket_total_mean": round(float(per_ticket_kb.mean()), 1),
+        "per_ticket_total_median": round(float(per_ticket_kb.median()), 1),
+        "per_ticket_total_max": round(float(per_ticket_kb.max()), 1),
+        "all_attachments_total_mb": round(float(att["sizeBytes"].sum()) / 1_048_576, 1),
     }
     fig, ax = plt.subplots()
     ax.hist(kb.clip(upper=kb.quantile(0.99)), bins=40, color="#54A24B")
@@ -255,6 +283,7 @@ def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int) -> 
     )
 
     sections = [
+        ("0. Tickets with vs without attachments", "attachment_presence"),
         ("1. Attachments per ticket", "attachments_per_ticket"),
         ("2. File types", "file_types"),
         ("3. Attachment size", "attachment_size_kb"),
