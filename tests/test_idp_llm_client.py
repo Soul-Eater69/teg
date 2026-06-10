@@ -50,6 +50,16 @@ async def test_parses_standard_choices_shape() -> None:
     assert out.answer == "x"
 
 
+async def test_unwraps_single_key_wrapped_output() -> None:
+    # Non-strict json_schema: the model sometimes wraps the payload under one key.
+    def handler(request: httpx.Request) -> httpx.Response:
+        wrapped = '{"_Out": {"answer": "42"}}'
+        return httpx.Response(200, json={"choice": {"message": {"content": wrapped}}})
+
+    out = await _client(handler).complete(system="s", user="u", schema=_Out)
+    assert out.answer == "42"  # unwrapped one level
+
+
 async def test_raises_on_error_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"error": "boom"})

@@ -9,6 +9,7 @@ caller's pydantic model and re-validated locally.
 
 from __future__ import annotations
 
+import json
 from typing import TypeVar
 
 import httpx
@@ -66,10 +67,30 @@ class IdpLLMClient:
         response = await self._http.post(self._completion_path, json=body)
         response.raise_for_status()
         content = _extract_content(response.json())
+        return _validate(content, schema)
+
+
+def _validate(content: str, schema: type[ModelT]) -> ModelT:
+    """Validate the model output, tolerating a single-key wrapper.
+
+    response_format json_schema is not strict, so a model occasionally wraps the payload under
+    one key (e.g. {"description": {"text": ...}} instead of {"text": ...}). Try the content as
+    given; on failure, if it is a single-key object, unwrap one level and retry before erroring.
+    """
+    try:
+        return schema.model_validate_json(content)
+    except Exception as exc:  # noqa: BLE001
         try:
-            return schema.model_validate_json(content)
-        except Exception as exc:  # noqa: BLE001
-            raise LLMError(f"LLM output failed {schema.__name__} validation: {exc}") from exc
+            data = json.loads(content)
+        except Exception:
+            data = None
+        if isinstance(data, dict) and len(data) == 1:
+            inner = next(iter(data.values()))
+            try:
+                return schema.model_validate(inner)
+            except Exception:
+                pass
+        raise LLMError(f"LLM output failed {schema.__name__} validation: {exc}") from exc
 
 
 def _extract_content(payload: dict) -> str:
