@@ -58,9 +58,6 @@ def _theme_gt(gt: ThemeGroundTruth) -> dict:
         "groupId": gt.group_key,
         "valueStreamId": gt.value_stream_id,
         "valueStreamName": gt.value_stream_name,
-        "supportType": gt.support_type,
-        "reason": gt.reason,
-        "evidence": gt.evidence,
     }
 
 

@@ -50,15 +50,14 @@ def build_candidates(
     historical_hits: list[HistoricalHit],
     *,
     max_supporting_tickets: int = 2,
-    use_classification: bool = True,
     base_rates: dict[str, float] | None = None,
 ) -> list[ValueStreamCandidate]:
     """Merge the two lanes into candidates.
 
-    ``use_classification=False`` is the ablation: it drops everything the ingestion classifier
-    produced - the direct/implied label (counts stay 0) AND the reason/evidence snippets - so a
-    historic candidate is pure co-occurrence + frequency + similarity, with no LLM labels. The
-    historic lane still contributes candidates; only the classification is removed.
+    A historic candidate is pure co-occurrence + frequency + similarity. The ingestion
+    direct/implied classification and its reason/evidence snippets were removed (an ablation
+    showed they added no relevance and slightly hurt), so the historic lane carries only the
+    VS id/name plus the support scores derived from retrieval.
     """
     by_id: dict[str, ValueStreamCandidate] = {}
 
@@ -95,20 +94,11 @@ def build_candidates(
         candidate.from_historical = True
         candidate.supporting_ticket_count = len(ticket_ids)
         candidate.source_ticket_ids = ticket_ids[:max_supporting_tickets]
-        if use_classification:
-            candidate.direct_count = sum(1 for _, label in pairs if label.support_type == "direct")
-            candidate.implied_count = sum(1 for _, label in pairs if label.support_type == "implied")
         candidate.best_support_score = max(scores, default=0.0)
         candidate.avg_support_score = (sum(scores) / len(scores)) if scores else 0.0
         candidate.weighted_support = round(
             _support_weight(candidate.best_support_score) * candidate.supporting_ticket_count, 4
         )
-        if use_classification:
-            # reason/evidence are ingestion-classifier output - dropped in the ablation, so a
-            # historic candidate is pure co-occurrence + frequency + score (no LLM labels).
-            candidate.evidence = _unique(
-                label.evidence or label.reason for _, label in pairs if (label.evidence or label.reason)
-            )[:max_supporting_tickets]
 
     rates = base_rates or {}
     for candidate in by_id.values():
@@ -188,7 +178,6 @@ def _lane(candidate: ValueStreamCandidate) -> Lane:
 def _is_good_historic_only(c: ValueStreamCandidate, policy: CandidateMergePolicy) -> bool:
     return (
         c.supporting_ticket_count >= policy.historic_min_hits
-        or c.direct_count >= 1
         or c.best_support_score >= policy.historic_min_best
         or c.weighted_support >= policy.historic_min_weighted
     )
@@ -209,7 +198,7 @@ def _generic_penalty(c: ValueStreamCandidate, policy: CandidateMergePolicy) -> f
     """
     if policy.generic_penalty_scale <= 0.0:
         return 0.0
-    if c.supporting_ticket_count >= policy.generic_earned_hits or c.direct_count >= 1:
+    if c.supporting_ticket_count >= policy.generic_earned_hits:
         return 0.0
     return policy.generic_penalty_scale * c.base_rate
 
@@ -237,9 +226,7 @@ def _sort_historic_only(c: ValueStreamCandidate) -> tuple:
     return (
         -c.best_support_score,
         -c.weighted_support,
-        -c.direct_count,
         -c.supporting_ticket_count,
-        -c.implied_count,
         -c.avg_support_score,
         c.value_stream_name.lower(),
     )

@@ -13,13 +13,10 @@ from typing import Protocol, runtime_checkable
 
 @dataclass
 class HistoricalValueStreamLabel:
-    """A Value Stream the historical ER was linked to (its ground truth)."""
+    """A Value Stream the historical ER was linked to (its ground truth: id + name)."""
 
     value_stream_id: str
     value_stream_name: str
-    support_type: str = ""  # direct | implied | weak | unsupported
-    reason: str = ""
-    evidence: str = ""
 
 
 @dataclass

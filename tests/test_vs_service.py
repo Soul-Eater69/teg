@@ -18,7 +18,7 @@ class _FakeSearch:
                 "IDMT-1",
                 "Claims savings",
                 score=0.82,
-                value_streams=[HistoricalValueStreamLabel("VS1", "Adjudicate Claim", "direct")],
+                value_streams=[HistoricalValueStreamLabel("VS1", "Adjudicate Claim")],
             )
         ]
 

@@ -7,8 +7,8 @@ from teg.value_stream.candidate_merger import build_candidates, select_review_po
 from teg.value_stream.models import CandidateMergePolicy, ValueStreamCandidate
 
 
-def _label(vs_id, name, support_type="implied", reason="", evidence=""):
-    return HistoricalValueStreamLabel(vs_id, name, support_type, reason, evidence)
+def _label(vs_id, name, *_ignored, **_kw):  # historic support classification was removed
+    return HistoricalValueStreamLabel(vs_id, name)
 
 
 # ---- T5: build_candidates ------------------------------------------------
@@ -36,11 +36,8 @@ def test_historical_aggregation_counts_and_scores() -> None:
     ]
     candidate = build_candidates([], hist)[0]
     assert candidate.supporting_ticket_count == 2
-    assert candidate.direct_count == 2
-    assert candidate.implied_count == 1
     assert candidate.best_support_score == 0.82
     assert candidate.weighted_support == 2.0
-    assert candidate.evidence == ["claims"]
 
 
 # ---- T6: select_review_pool ----------------------------------------------
@@ -53,7 +50,6 @@ def _cand(vs_id, lane, *, semantic=0.0, hits=0, direct=0, best=0.0, weighted=0.0
         from_historical=lane != "semantic_only",
         semantic_score=semantic,
         supporting_ticket_count=hits,
-        direct_count=direct,
         best_support_score=best,
         weighted_support=weighted,
         lane=lane,

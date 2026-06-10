@@ -35,18 +35,15 @@ def test_render_includes_entity_id_lane_and_historical() -> None:
         semantic_score=1.4,
         semantic_rank=1,
         supporting_ticket_count=2,
-        direct_count=1,
-        implied_count=1,
         best_support_score=0.82,
         source_ticket_ids=["IDMT-1"],
-        evidence=["claims savings"],
         lane="semantic_plus_historic",
     )
     block = render_candidate_blocks([candidate])
     assert "entity_id: VS1" in block
     assert "lane: semantic_plus_historic" in block
     assert "historical: tickets=2" in block
-    assert "evidence: claims savings" in block
+    assert "ids=['IDMT-1']" in block
 
 
 def test_render_includes_rich_vs_context() -> None:

@@ -51,9 +51,6 @@ def test_historical_hit_maps_native_value_streams() -> None:
                 {
                     "valueStreamId": "VSR00074586",
                     "valueStreamName": "Configure, Price, and Quote",
-                    "supportType": "direct",
-                    "reason": "references Salesforce LGNA",
-                    "evidence": "Salesforce LGNA quoting",
                 }
             ],
         },
@@ -64,8 +61,7 @@ def test_historical_hit_maps_native_value_streams() -> None:
     assert hit.score == 0.82
     label = hit.value_streams[0]
     assert label.value_stream_id == "VSR00074586"
-    assert label.support_type == "direct"
-    assert label.evidence == "Salesforce LGNA quoting"
+    assert label.value_stream_name == "Configure, Price, and Quote"
 
 
 def test_historical_hit_normalizes_reranker_score() -> None:
@@ -85,5 +81,5 @@ def test_parse_value_streams_tolerates_bad_input() -> None:
     assert _parse_value_streams("not a list") == []
     assert _parse_value_streams([]) == []
     assert _parse_value_streams([{"valueStreamName": "n"}]) == []  # no id -> skipped
-    parsed = _parse_value_streams([{"valueStreamId": "VS1", "supportType": "implied"}])
-    assert parsed[0].value_stream_id == "VS1" and parsed[0].support_type == "implied"
+    parsed = _parse_value_streams([{"valueStreamId": "VS1", "valueStreamName": "n"}])
+    assert parsed[0].value_stream_id == "VS1" and parsed[0].value_stream_name == "n"

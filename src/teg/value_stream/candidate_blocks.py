@@ -35,11 +35,8 @@ def _block(c: ValueStreamCandidate) -> str:
 
     if c.from_historical:
         lines.append(
-            f"historical: tickets={c.supporting_ticket_count} "
-            f"(direct={c.direct_count}, implied={c.implied_count}), "
+            f"historical: tickets={c.supporting_ticket_count}, "
             f"best={c.best_support_score:.2f}, avg={c.avg_support_score:.2f}, "
             f"weighted={c.weighted_support:.2f}, ids={c.source_ticket_ids}"
         )
-        if c.evidence:
-            lines.append("evidence: " + " | ".join(c.evidence))
     return "\n".join(lines)

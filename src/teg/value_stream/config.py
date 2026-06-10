@@ -17,8 +17,7 @@ class ValueStreamConfig:
     historical_fetch_k: int = 6  # historical analogs to fetch (also the historic-only cap)
     llm_candidate_window: int = 18  # review-pool size for a ~10-stream request
     window_headroom: int = 8  # buffer over the requested count when the window is derived
-    max_supporting_tickets: int = 2  # source tickets / evidence kept per candidate
-    use_historic_classification: bool = True  # use the direct/implied label (ablation: False)
+    max_supporting_tickets: int = 2  # source tickets kept per candidate
     use_historic_lane: bool = True  # use the historic ER lane at all (ablation: False = semantic-only)
     generic_penalty_scale: float = 0.6  # broad-stream rank penalty = scale * attractor_signal (0 = off)
     generic_earned_hits: int = 3  # historical hits that exempt a broad stream from the penalty

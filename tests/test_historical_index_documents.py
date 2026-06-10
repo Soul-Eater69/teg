@@ -39,9 +39,6 @@ def _gt() -> list[ThemeGroundTruth]:
             group_key="GROUP-23618",
             value_stream_id="VSR00074590",
             value_stream_name="Resolve Appeal",
-            support_type="direct",
-            reason="centers on appeals",
-            evidence="processed appeal",
         )
     ]
 
@@ -67,8 +64,8 @@ def test_historical_index_document_shape() -> None:
     assert props["summary"] == "Automate appeals handling"
     label = props["valueStreams"][0]
     assert label["valueStreamId"] == "VSR00074590"
-    assert label["supportType"] == "direct"
-    assert label["evidence"] == "processed appeal"
+    assert label["valueStreamName"] == "Resolve Appeal"
+    assert "supportType" not in label and "evidence" not in label  # classification removed
     assert "content" in doc and "valueStages" not in props  # historical, not catalogue
 
 

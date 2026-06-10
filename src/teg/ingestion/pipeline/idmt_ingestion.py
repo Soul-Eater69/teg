@@ -1,10 +1,10 @@
 """IDMT ingestion pipeline: live Jira -> Cosmos IDMT/ER + Theme + historical index docs.
 
 Per ticket: fetch the ER + its linked themes, condense the idea card, resolve each
-theme's Value Stream against the catalogue, classify it direct/implied, then build the
-ER doc (with themes[] GT), one Theme doc per linked theme, and the historical search-index
-doc (embedded when an embeddings client is provided). Themes whose VS does not resolve to
-an approved value stream are dropped from the GT.
+theme's Value Stream against the catalogue, then build the ER doc (with themes[] GT), one
+Theme doc per linked theme, and the historical search-index doc (embedded when an embeddings
+client is provided). Themes whose VS does not resolve to an approved value stream are dropped
+from the GT.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from teg.ingestion.documents.historical_index_documents import (
 from teg.ingestion.documents.idmt_documents import build_idmt_document, build_theme_document
 from teg.ingestion.extraction.jira_source import JiraIngestionSource
 from teg.ingestion.ground_truth.theme_ground_truth import ThemeGroundTruth
-from teg.ingestion.ground_truth.value_stream_classification import classify_value_streams
 from teg.ingestion.ground_truth.value_stream_match import ValueStreamResolver
 from teg.integrations.embeddings import EmbeddingsClient
 from teg.integrations.llm import LLMClient
@@ -62,13 +61,6 @@ class IdmtIngestion:
         condensed = condense_response.condensed
 
         resolved = await self._resolver.resolve([t.summary for t in er.themes], self._llm)
-        vs_names = [hit[1] for hit in resolved.values() if hit]
-        classification = await classify_value_streams(
-            ticket_id=ticket_id,
-            text=condensed.raw_text,
-            value_stream_names=vs_names,
-            llm_client=self._llm,
-        )
 
         # Only themes that resolve to an approved VS are kept - both as GT and as a
         # Theme doc - so every Theme doc is referenced by a themes[] entry (no orphans).
@@ -79,16 +71,12 @@ class IdmtIngestion:
             if not hit:
                 continue  # VS did not resolve to an approved value stream - drop entirely
             vs_id, vs_name = hit
-            label = classification.get(vs_name)
             theme_gt.append(
                 ThemeGroundTruth(
                     theme_stable_id=theme.stable_id,
                     group_key=theme.group_key,
                     value_stream_id=vs_id,
                     value_stream_name=vs_name,
-                    support_type=label.inference_type if label else "implied",
-                    reason=label.reason if label else "",
-                    evidence=label.evidence if label else "",
                 )
             )
             theme_docs.append(build_theme_document(theme, parent_er_id=er.stable_id))

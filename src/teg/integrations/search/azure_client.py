@@ -153,9 +153,6 @@ def _parse_value_streams(raw) -> list[HistoricalValueStreamLabel]:
             HistoricalValueStreamLabel(
                 value_stream_id=vs_id,
                 value_stream_name=str(item.get("valueStreamName") or ""),
-                support_type=str(item.get("supportType") or ""),
-                reason=str(item.get("reason") or ""),
-                evidence=str(item.get("evidence") or ""),
             )
         )
     return labels

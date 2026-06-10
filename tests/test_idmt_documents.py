@@ -46,9 +46,6 @@ def test_idmt_document_shape() -> None:
             group_key="GROUP-23618",
             value_stream_id="VSR00074590",
             value_stream_name="Resolve Appeal",
-            support_type="direct",
-            reason="ticket centers on appeal resolution",
-            evidence="processed appeal or reconsideration of claim",
         )
     ]
     doc = build_idmt_document(er=_er(), condensed=_condensed(), theme_gt=gt)
@@ -66,8 +63,8 @@ def test_idmt_document_shape() -> None:
     assert theme["key"] == "3966046"  # -> Theme doc id
     assert theme["groupId"] == "GROUP-23618"
     assert theme["valueStreamId"] == "VSR00074590"
-    assert theme["supportType"] == "direct"
-    assert theme["evidence"].startswith("processed appeal")
+    assert theme["valueStreamName"] == "Resolve Appeal"
+    assert "supportType" not in theme and "evidence" not in theme  # classification removed
 
 
 def test_theme_document_shape() -> None:

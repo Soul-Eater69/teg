@@ -28,6 +28,6 @@ def test_records_construct() -> None:
     hit = HistoricalHit(
         ticket_id="IDMT-9",
         title="Claims savings",
-        value_streams=[HistoricalValueStreamLabel("VSR1", "Adjudicate Claim", "implied")],
+        value_streams=[HistoricalValueStreamLabel("VSR1", "Adjudicate Claim")],
     )
-    assert hit.value_streams[0].support_type == "implied"
+    assert hit.value_streams[0].value_stream_id == "VSR1"

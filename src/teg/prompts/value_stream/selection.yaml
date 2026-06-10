@@ -38,9 +38,8 @@ system: |
   - Lane: semantic_plus_historical (both retrievers agreed; strongest), historical_only
     (only prior tickets back this), or semantic_only (only name/description match).
   - Semantic score: 0-2 range, higher = closer match to the value-stream catalog.
-  - Historical: ticket counts (direct = explicitly tagged, implied = inferred from
-    downstream functions), best/avg/weighted support scores, supporting ticket ids.
-  - Evidence: short analog snippets from prior tickets.
+  - Historical: how many prior tickets were linked to this value stream and their
+    best/avg/weighted retrieval-support scores, plus the supporting ticket ids.
 
   Late-ranked candidates are not weaker. Rank does not imply selection order.
 

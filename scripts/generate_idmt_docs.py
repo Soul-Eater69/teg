@@ -34,7 +34,7 @@ async def main(ticket_ids: list[str], catalogue_path: str, out_dir: str, embed: 
         gt = result.idmt_document["properties"]["themes"]
         print(
             f"{ticket_id}: {len(result.theme_documents)} themes, {len(gt)} resolved VS GT "
-            f"({', '.join(t['valueStreamName'] + '=' + t['supportType'] for t in gt) or 'none'})"
+            f"({', '.join(t['valueStreamName'] for t in gt) or 'none'})"
         )
 
     _write(out / "cosmos_idmt.json", idmt_docs)

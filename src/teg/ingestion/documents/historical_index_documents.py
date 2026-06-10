@@ -4,7 +4,7 @@ Turns an ingested ticket into the retrieval doc that powers the historic-evidenc
 of VS prediction: content (embedded) + content_vector + properties.{summary, valueStreams}.
 content is built the SAME way as the prediction query (build_retrieval_text) so a stored
 ticket and a live query share the vector space. value_streams carries the resolved VS GT
-(direct/implied) so a historical hit brings its labels without a Cosmos lookup.
+(id + name) so a historical hit brings its labels without a Cosmos lookup.
 """
 
 from __future__ import annotations
@@ -48,7 +48,4 @@ def _label(gt: ThemeGroundTruth) -> dict:
     return {
         "valueStreamId": gt.value_stream_id,
         "valueStreamName": gt.value_stream_name,
-        "supportType": gt.support_type,
-        "reason": gt.reason,
-        "evidence": gt.evidence,
     }

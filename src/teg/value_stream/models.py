@@ -56,11 +56,8 @@ class ValueStreamCandidate:
     semantic_score: float = 0.0
     semantic_rank: int | None = None
     supporting_ticket_count: int = 0
-    direct_count: int = 0
-    implied_count: int = 0
     best_support_score: float = 0.0
     avg_support_score: float = 0.0
     weighted_support: float = 0.0
     source_ticket_ids: list[str] = field(default_factory=list)
-    evidence: list[str] = field(default_factory=list)
     lane: Lane = "semantic_only"

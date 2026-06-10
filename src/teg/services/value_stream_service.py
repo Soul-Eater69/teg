@@ -90,7 +90,6 @@ class ValueStreamService:
             result.value_stream_hits,
             evidence,
             max_supporting_tickets=policy.max_supporting_tickets,
-            use_classification=self._config.use_historic_classification,
             base_rates=base_rates if base_rates is not None else self._base_rates,
         )
         review_pool = select_review_pool(candidates, policy=policy)

@@ -9,7 +9,6 @@ the GT ids. Reports precision / recall / F1 (micro + macro) and precision@k / re
 
 Experiments:
   (default)            condensed summaryFields, with direct/implied classification
-  --no-classification  ablation: ignore the historic direct/implied label
   --raw-text           feed properties.rawText as the query instead of summaryFields
 
 Usage:
@@ -233,7 +232,6 @@ def _miss_buckets(gt: set[str], predicted: list[str], trace) -> dict[str, list[s
 async def main(args) -> None:
     docs = _load(args.dataset)
     config = ValueStreamConfig(
-        use_historic_classification=not args.no_classification,
         use_historic_lane=not args.semantic_only,
         generic_penalty_scale=args.generic_penalty,
         min_confidence=args.min_confidence,
@@ -331,7 +329,7 @@ async def main(args) -> None:
 
     print("\n" + "=" * 60)
     print(f"tickets evaluated: {n}   "
-          f"(count_mode={args.count_mode}, classification={'OFF' if args.no_classification else 'ON'}, "
+          f"(count_mode={args.count_mode}, "
           f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18}, "
           f"generic_penalty={args.generic_penalty}/{args.penalty_signal if args.generic_penalty else '-'})")
     avg_pred = _div(sum(r["predicted_count"] for r in rows), n)
@@ -401,7 +399,6 @@ if __name__ == "__main__":
     parser.add_argument("--min-gt", type=int, default=2, help="skip tickets with fewer than this many GT value streams")
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 10], help="k values for P@k / R@k")
     parser.add_argument("--concurrency", type=int, default=6, help="tickets evaluated in parallel")
-    parser.add_argument("--no-classification", action="store_true", help="ablation: ignore direct/implied")
     parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
     parser.add_argument("--window", type=int, default=0,
