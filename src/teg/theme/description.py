@@ -104,6 +104,11 @@ async def generate_vs_framings(
 
 
 def assemble_description(framing: str, body: str) -> str:
-    """Final per-VS theme description: the VS framing paragraph, then the shared body."""
-    parts = [part.strip() for part in (framing, body) if part and part.strip()]
+    """Final per-VS theme description: a 'Theme Description:' heading over the VS framing
+    paragraph, then the shared body (which opens with its own Product Availability heading)."""
+    parts: list[str] = []
+    if framing and framing.strip():
+        parts.append("Theme Description:\n" + framing.strip())
+    if body and body.strip():
+        parts.append(body.strip())
     return "\n\n".join(parts)

@@ -109,8 +109,8 @@ async def test_generate_one_package_description_and_stages() -> None:
     pkg = response.theme_packages[0]
     assert pkg.value_stream_id == "VSR1"
     assert pkg.theme_title == "CP 2027 Guided Health Plans - Discover Business Insights"
-    # description = VS framing paragraph (batched) then the shared body
-    assert pkg.theme_description.startswith("The scope of this theme covers reporting")
+    # description = 'Theme Description:' heading + VS framing (batched), then the shared body
+    assert pkg.theme_description.startswith("Theme Description:\nThe scope of this theme covers reporting")
     assert "Plans: IL, TX, OK" in pkg.theme_description  # shared body appended
     # stage selection resolved to the governed stage (canonical name), no rank/evidence
     assert [s.stage_id for s in pkg.selected_stages] == ["VSS1"]
