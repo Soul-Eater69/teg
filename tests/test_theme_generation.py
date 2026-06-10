@@ -14,7 +14,7 @@ from teg.theme.business_needs import _GeneratedBusinessNeeds
 from teg.theme.capabilities import CapabilitySelectionItem, CapabilitySelectionResult
 from teg.theme.description import _GeneratedDescription, _VsFraming, _VsFramings
 from teg.theme.stage_catalogue import StageCatalogue
-from teg.theme.stage_selection import StageSelectionItem, StageSelectionResult
+from teg.theme.stage_selection import BatchedStageSelection, StageSelectionItem, VsStageSelection
 
 
 def _capability(cap_id: str, name: str, l2_id: str, l2_name: str) -> CatalogueCapability:
@@ -94,10 +94,13 @@ class RoutingFakeLLM:
             return CapabilitySelectionResult(
                 capabilities=[CapabilitySelectionItem(capability_id="CAP-L3-1", reason="card needs metrics capture")]
             )
-        return StageSelectionResult(
-            stage_scope="specific_stages",
-            selected_stages=[StageSelectionItem(stage_id="VSS1", reason="card centers on exploring information")],
-        )
+        return BatchedStageSelection(value_streams=[
+            VsStageSelection(
+                value_stream_id="VSR1",
+                stage_scope="specific_stages",
+                selected_stages=[StageSelectionItem(stage_id="VSS1", reason="card centers on exploring information")],
+            )
+        ])
 
 
 async def test_generate_one_package_description_and_stages() -> None:
@@ -134,10 +137,13 @@ async def test_invented_stage_id_is_dropped() -> None:
                 return _GeneratedDescription(text="x")
             if schema is _VsFramings:
                 return _VsFramings(framings=[_VsFraming(value_stream_id="VSR1", text="f")])
-            return StageSelectionResult(
-                stage_scope="specific_stages",
-                selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],
-            )
+            return BatchedStageSelection(value_streams=[
+                VsStageSelection(
+                    value_stream_id="VSR1",
+                    stage_scope="specific_stages",
+                    selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],
+                )
+            ])
 
     service = ThemeService(_catalogue(), InventLLM())
     pkg = (await service.generate(_request())).theme_packages[0]

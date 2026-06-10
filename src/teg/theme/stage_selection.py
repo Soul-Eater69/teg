@@ -1,13 +1,15 @@
-"""Stage selection for an already-selected Value Stream.
+"""Stage selection for the approved value streams of one idea (batched).
 
-The LLM picks lifecycle stages from the VS's governed candidate stages (never invents or
-renames). Output is StageSelectionResult (structured output); we then resolve each pick
-back to the canonical catalogue stage and map to the contract's SelectedStage. Picks
-that don't resolve to an allowed stage are dropped (no invented stages).
+One LLM call picks lifecycle stages for EVERY approved value stream at once - each value
+stream from its own governed candidate stages (never invents or renames). Output is
+BatchedStageSelection (structured output), keyed by valueStreamId; we resolve each value
+stream's picks back to its canonical catalogue stages. Picks that don't resolve to that value
+stream's allowed stages are dropped. ``select_stages`` wraps the batched call for one VS.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import Field
@@ -35,12 +37,55 @@ class StageSelectionItem(CamelModel):
     reason: str = ""
 
 
-class StageSelectionResult(CamelModel):
-    """The selection LLM's structured output."""
+class VsStageSelection(CamelModel):
+    """One value stream's stage selection (a batched-output entry)."""
 
+    value_stream_id: str
     stage_scope: StageScope = "broad_or_unclear"
     selected_stages: list[StageSelectionItem] = Field(default_factory=list)
     reason: str = ""
+
+
+class BatchedStageSelection(CamelModel):
+    """The selection LLM's structured output: one entry per approved value stream."""
+
+    value_streams: list[VsStageSelection] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class StageSelectionInput:
+    """One approved value stream and its governed candidate stages, for batched selection."""
+
+    value_stream: ApprovedValueStream
+    value_stream_description: str
+    value_proposition: str
+    stages: list[CatalogueStage]
+
+
+async def select_stages_for_all(
+    *,
+    condensed: CondensedContext,
+    inputs: list[StageSelectionInput],
+    llm_client: LLMClient,
+) -> dict[str, list[SelectedStage]]:
+    """Pick stages for every approved value stream in one call. Returns {vs_id: stages}."""
+    active = [i for i in inputs if i.stages]  # a VS with no candidate stages has nothing to pick
+    if not active:
+        return {}
+
+    prompt = load_prompt("theme/stage_selection")
+    system, user = prompt.render(
+        ticket_context=render_ticket_context(condensed),
+        generation_signals=render_generation_signals(condensed, _STAGE_SIGNALS),
+        value_streams="\n\n".join(_vs_block(i) for i in active),
+    )
+    result = await llm_client.complete(system=system, user=user, schema=BatchedStageSelection)
+
+    by_vs = {r.value_stream_id: r for r in result.value_streams}
+    return {
+        i.value_stream.value_stream_id: _resolve(by_vs.get(i.value_stream.value_stream_id), i.stages)
+        for i in active
+    }
 
 
 async def select_stages(
@@ -52,23 +97,32 @@ async def select_stages(
     stages: list[CatalogueStage],
     llm_client: LLMClient,
 ) -> list[SelectedStage]:
-    if not stages:
-        return []
-    prompt = load_prompt("theme/stage_selection")
-    system, user = prompt.render(
-        ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _STAGE_SIGNALS),
-        value_stream_id=value_stream.value_stream_id,
-        value_stream_name=value_stream.value_stream_name,
-        value_stream_description=value_stream_description,
-        value_proposition=value_proposition,
-        candidate_stages=render_candidate_stages(stages),
+    """Stages for a single value stream (wraps the batched call with one input)."""
+    results = await select_stages_for_all(
+        condensed=condensed,
+        inputs=[StageSelectionInput(value_stream, value_stream_description, value_proposition, stages)],
+        llm_client=llm_client,
     )
-    result = await llm_client.complete(system=system, user=user, schema=StageSelectionResult)
-    return _resolve(result, stages)
+    return results.get(value_stream.value_stream_id, [])
 
 
-def _resolve(result: StageSelectionResult, stages: list[CatalogueStage]) -> list[SelectedStage]:
+def _vs_block(i: StageSelectionInput) -> str:
+    lines = [
+        f"### Value stream {i.value_stream.value_stream_id}",
+        f"Name: {i.value_stream.value_stream_name}",
+    ]
+    if i.value_stream_description:
+        lines.append(f"Description: {i.value_stream_description}")
+    if i.value_proposition:
+        lines.append(f"Value proposition: {i.value_proposition}")
+    lines.append("Candidate stages:")
+    lines.append(render_candidate_stages(i.stages))
+    return "\n".join(lines)
+
+
+def _resolve(result: VsStageSelection | None, stages: list[CatalogueStage]) -> list[SelectedStage]:
+    if result is None:
+        return []
     by_id = {s.stage_id: s for s in stages}
 
     if result.stage_scope == "entire_value_stream":
@@ -77,7 +131,7 @@ def _resolve(result: StageSelectionResult, stages: list[CatalogueStage]) -> list
         chosen = [
             (item.stage_id, item.reason)
             for item in result.selected_stages
-            if item.stage_id in by_id  # only governed stages; no invented ids
+            if item.stage_id in by_id  # only this VS's governed stages; no invented/foreign ids
         ]
     else:
         chosen = []  # broad_or_unclear -> no specific stages

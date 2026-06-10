@@ -22,6 +22,7 @@ from teg.theme.description import (
 )
 from teg.theme.orchestrator import generate_theme_package
 from teg.theme.stage_catalogue import StageCatalogue
+from teg.theme.stage_selection import StageSelectionInput, select_stages_for_all
 
 
 class ThemeService:
@@ -45,14 +46,27 @@ class ThemeService:
             )
             for vs in approved
         }
-        # Description: one shared body + one batched call for every VS framing (2 calls total).
-        body, framings = await asyncio.gather(
+        stage_inputs = [
+            StageSelectionInput(
+                value_stream=vs,
+                value_stream_description=vs_details[vs.value_stream_id][0],
+                value_proposition=vs_details[vs.value_stream_id][1],
+                stages=self._catalogue.stages_for(vs.value_stream_id),
+            )
+            for vs in approved
+        ]
+        # Ticket-level work done once: shared description body, one batched framing call for
+        # every VS, and one batched stage-selection call for every VS - all in parallel.
+        body, framings, stages_by_vs = await asyncio.gather(
             generate_description_body(condensed=request.condensed, llm_client=self._llm),
             generate_vs_framings(
                 condensed=request.condensed,
                 approved_value_streams=approved,
                 value_stream_details=vs_details,
                 llm_client=self._llm,
+            ),
+            select_stages_for_all(
+                condensed=request.condensed, inputs=stage_inputs, llm_client=self._llm
             ),
         )
 
@@ -66,6 +80,7 @@ class ThemeService:
                     theme_description=assemble_description(
                         framings.get(vs.value_stream_id, ""), body
                     ),
+                    selected_stages=stages_by_vs.get(vs.value_stream_id, []),
                 )
                 for vs in approved
             )
