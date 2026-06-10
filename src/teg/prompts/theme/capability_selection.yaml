@@ -14,14 +14,17 @@ system: |
   stage's candidate list - do not invent, rename, or merge, and never assign a capability from
   one stage to another. Return one result per stage, keyed by its stageId.
 
-  Select a capability only when the idea card describes work that clearly needs it within that
-  stage's scope. Be selective - pick the capabilities the work actually exercises, not every
-  plausible one. Ignore weak or generic overlap. A stage may legitimately have no applicable
-  capability - return an empty list for it then.
+  Be strict: most candidate capabilities will NOT apply to any one idea, so the default is to
+  EXCLUDE. Select a capability only when the idea card describes concrete work that directly
+  exercises it within this stage's scope - typically 1-3 capabilities per stage, occasionally
+  more only when the card clearly spans them. Do NOT select a capability merely because it
+  belongs to the stage, is plausibly related, or could conceivably be touched - require a
+  specific idea-card phrase that needs it. If you are not sure a capability is required, leave
+  it out. A stage may legitimately have no applicable capability - return an empty list then.
 
   For each selected capability return its capability id, its name (exactly as supplied), and
-  one short business-facing reason citing the concrete idea-card phrase that requires it. Do
-  not mention scores, ranks, prompts, or JSON.
+  one short business-facing reason citing the concrete idea-card phrase that requires it. If you
+  cannot cite a specific phrase, do not select it. Do not mention scores, ranks, prompts, or JSON.
 
 user: |
   ## Ticket context
