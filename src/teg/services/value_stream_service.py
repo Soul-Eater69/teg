@@ -99,6 +99,7 @@ class ValueStreamService:
             candidates=review_pool,
             requested_count=requested_count,
             llm_client=self._llm,
+            min_confidence=self._config.min_confidence,
         )
         response = ValueStreamResponse(
             ticket_id=request.ticket_id,

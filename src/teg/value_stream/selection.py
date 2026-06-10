@@ -40,6 +40,7 @@ async def select_value_streams(
     candidates: list[ValueStreamCandidate],
     requested_count: int,
     llm_client: LLMClient,
+    min_confidence: float = 0.0,
 ) -> list[ValueStreamRecommendation]:
     prompt = load_prompt("value_stream/selection")
     system, user = prompt.render(
@@ -50,6 +51,11 @@ async def select_value_streams(
     )
     selection = await llm_client.complete(system=system, user=user, schema=ValueStreamSelection)
     recommendations = _resolve(selection, candidates)
+    if min_confidence > 0.0:
+        # Abstention: honor the prompt's "skip non-matches" - keep only confident picks, cap at
+        # the count, never pad. requested_count is an upper bound, not a quota.
+        floor = min_confidence * 100
+        return [r for r in recommendations if r.confidence >= floor][:requested_count]
     return _enforce_count(recommendations, candidates, requested_count)
 
 

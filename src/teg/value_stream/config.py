@@ -22,3 +22,4 @@ class ValueStreamConfig:
     use_historic_lane: bool = True  # use the historic ER lane at all (ablation: False = semantic-only)
     generic_penalty_scale: float = 0.6  # broad-stream rank penalty = scale * attractor_signal (0 = off)
     generic_earned_hits: int = 3  # historical hits that exempt a broad stream from the penalty
+    min_confidence: float = 0.0  # abstention floor (0-1); >0 keeps only confident picks, no padding

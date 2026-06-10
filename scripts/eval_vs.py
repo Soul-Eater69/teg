@@ -236,6 +236,7 @@ async def main(args) -> None:
         use_historic_classification=not args.no_classification,
         use_historic_lane=not args.semantic_only,
         generic_penalty_scale=args.generic_penalty,
+        min_confidence=args.min_confidence,
         **({"llm_candidate_window": args.window} if args.window else {}),
     )
     service = build_value_stream_service(config=config)
@@ -333,6 +334,10 @@ async def main(args) -> None:
           f"(count_mode={args.count_mode}, classification={'OFF' if args.no_classification else 'ON'}, "
           f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18}, "
           f"generic_penalty={args.generic_penalty}/{args.penalty_signal if args.generic_penalty else '-'})")
+    avg_pred = _div(sum(r["predicted_count"] for r in rows), n)
+    avg_gt = _div(sum(r["gt_count"] for r in rows), n)
+    print(f"avg predicted={avg_pred:.1f}  avg gt={avg_gt:.1f}  "
+          f"(min_confidence={args.min_confidence}{' = abstention on' if args.min_confidence else ''})")
     print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}  (strict GT)")
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}  (strict GT)")
     for k in args.k:
@@ -405,6 +410,9 @@ if __name__ == "__main__":
     parser.add_argument("--generic-penalty", type=float, default=0.6,
                         help="broad-stream rank penalty scale (penalty = scale * signal, unless earned "
                              "by history). Default 0.6. Pass 0 to disable. Signal is leave-one-out.")
+    parser.add_argument("--min-confidence", type=float, default=0.0,
+                        help="abstention floor (0-1): keep only picks at/above this confidence and "
+                             "stop padding to --count. Raises precision. Try 0.45. 0 = pad to count.")
     parser.add_argument("--penalty-signal", choices=["fp_rate", "gt_freq"], default="fp_rate",
                         help="fp_rate = false-positive rate (correct attractor signal, runs a pass 1); "
                              "gt_freq = corpus GT frequency (penalizes common-true streams - usually wrong).")

@@ -145,3 +145,33 @@ async def test_enforce_count_trims_and_pads() -> None:
     )
     assert [r.value_stream_id for r in pad] == ["VS0", "VS1", "VS2"]
     assert pad[1].confidence == 30.0  # filled at the confidence floor
+
+
+async def test_abstention_keeps_only_confident_picks_and_does_not_pad() -> None:
+    candidates = [_cand(f"VS{i}", "semantic_only") for i in range(4)]
+    # LLM emits 3 picks but only 2 clear the 0.45 floor; with min_confidence the weak one is
+    # dropped and the count is NOT padded back up.
+    recs = await select_value_streams(
+        query="q",
+        candidates=candidates,
+        requested_count=4,
+        min_confidence=0.45,
+        llm_client=_FakeLLM({"picks": [
+            {"entityId": "VS0", "confidence": 0.9},
+            {"entityId": "VS1", "confidence": 0.5},
+            {"entityId": "VS2", "confidence": 0.3},  # below floor
+        ]}),
+    )
+    assert [r.value_stream_id for r in recs] == ["VS0", "VS1"]  # VS2 dropped, no padding to 4
+
+
+async def test_abstention_caps_at_requested_count() -> None:
+    candidates = [_cand(f"VS{i}", "semantic_only") for i in range(5)]
+    recs = await select_value_streams(
+        query="q",
+        candidates=candidates,
+        requested_count=2,
+        min_confidence=0.4,
+        llm_client=_FakeLLM({"picks": [{"entityId": f"VS{i}", "confidence": 0.9} for i in range(5)]}),
+    )
+    assert len(recs) == 2  # count is still an upper bound
