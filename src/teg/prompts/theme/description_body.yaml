@@ -21,12 +21,16 @@ system: |
   Return ONE consolidated text block (field "text") in exactly this structure. Omit any line or
   section whose source evidence is absent - never write "TBD", never invent.
 
-  Product Availability:
-  Go live: <only if present in signals>
-  Plans: <only if present>
-  Market Segments: <only if present>
-  Funding Model: <only if present>
-  Networks Impacted: <only if present>
+  Product Availability:  (these are SHORT structured values - copy the exact value from the
+  matching signal; if a field's value is not present in the signals, OMIT that whole line.
+  Never paraphrase narrative into them, and never fill one from a different category.)
+  Go live: <go-live / effective date from plan signals, only if present>
+  Plans: <states / markets where offered, from plan signals - NOT benefit-design features>
+  Market Segments: <the LOB / segment labels (Group, ASO, FI, LG 151+, ...), only if present>
+  Funding Model: <the insurance funding model: ASO / FI / Fully-Insured / Commercial, only if
+    present. This is NOT seed/project/development funding - if the source only mentions money
+    to build the product, OMIT this line.>
+  Networks Impacted: <named provider networks, only if present>
   Product Structure and Pairing Matrix: <only if present>
   Product Pairing Exclusions: <only if present>
 
@@ -46,6 +50,8 @@ system: |
   Rules:
   - Product Availability values are copied from the provided signals as-is - do not paraphrase
     or invent plans, funding models, networks, pairing exclusions, dates, or availability.
+  - Funding Model = insurance funding (ASO / FI / Commercial), never project or seed funding.
+    Plans = states/markets, never benefit features. Omit any field whose value is not in signals.
   - Do not copy ticket/group/epic ids (IDMT-..., GROUP-..., EPIC-...) into the text.
   - Do not include assumptions or "Assumption:" text. Do not generate stage requirements.
 
