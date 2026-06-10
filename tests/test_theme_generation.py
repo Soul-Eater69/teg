@@ -97,7 +97,6 @@ class RoutingFakeLLM:
         return BatchedStageSelection(value_streams=[
             VsStageSelection(
                 value_stream_id="VSR1",
-                stage_scope="specific_stages",
                 selected_stages=[StageSelectionItem(stage_id="VSS1", reason="card centers on exploring information")],
             )
         ])
@@ -139,7 +138,6 @@ async def test_invented_stage_id_falls_back_to_full_lifecycle() -> None:
                 return BatchedStageSelection(value_streams=[
                     VsStageSelection(
                         value_stream_id="VSR1",
-                        stage_scope="specific_stages",
                         selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],
                     )
                 ])
@@ -155,7 +153,7 @@ async def test_broad_or_unclear_falls_back_to_full_lifecycle() -> None:
         async def complete(self, *, system, user, schema):
             if schema is BatchedStageSelection:
                 return BatchedStageSelection(value_streams=[
-                    VsStageSelection(value_stream_id="VSR1", stage_scope="broad_or_unclear")
+                    VsStageSelection(value_stream_id="VSR1")  # no picks -> full-list fallback
                 ])
             return await super().complete(system=system, user=user, schema=schema)
 

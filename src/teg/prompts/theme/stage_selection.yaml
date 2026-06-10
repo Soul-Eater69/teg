@@ -17,18 +17,13 @@ system: |
 
   Each value stream below is ALREADY approved as relevant, so it should receive stages - a
   business architect reviews and trims your picks, so it is better to predict a plausible
-  stage than to leave a value stream empty. Always return your best stages for every value
-  stream; only fall back to the whole lifecycle when you cannot narrow it.
+  stage than to leave a value stream empty.
 
-  For each value stream, decide the stage scope, then return stages accordingly:
-  - specific_stages: you can identify the stages the idea card's work belongs to. List the
-    1-3 most-impacted candidate stages (with a reason each). This is the preferred outcome -
-    when in doubt between two stages, include the more likely one rather than omitting it.
-  - entire_value_stream: the idea card impacts the full lifecycle / spans most stages start
-    to end, OR you genuinely cannot narrow it to specific stages. Leave selectedStages empty;
-    the whole stage list is taken for the architect to trim.
-  - broad_or_unclear: use only as a true last resort when nothing maps. (The system will then
-    fall back to the full stage list anyway, so prefer specific_stages or entire_value_stream.)
+  For each value stream, return the 1-3 candidate stages the idea card's work belongs to, with
+  a short reason each. When in doubt between two stages, include the more likely one rather than
+  omitting it. If the idea card spans the whole lifecycle, or you genuinely cannot narrow it to
+  specific stages, leave selectedStages EMPTY - the full stage list is then taken for the
+  architect to trim. (Never use this empty path just to avoid choosing when stages do map.)
 
   How to match (this is the core of the task):
   - Match the idea card's concrete ACTION to a stage's scope - its description, entrance and

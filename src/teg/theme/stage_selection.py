@@ -10,7 +10,6 @@ stream's allowed stages are dropped. ``select_stages`` wraps the batched call fo
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 from pydantic import Field
 
@@ -21,8 +20,6 @@ from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
 from teg.theme.context import render_generation_signals, render_ticket_context
 from teg.theme.stage_catalogue import render_candidate_stages
-
-StageScope = Literal["specific_stages", "entire_value_stream", "broad_or_unclear"]
 
 # Stage selection is about matching the idea-card ACTION to a stage; that lives in the
 # summary fields. Most generation signals (plans, funding, networks, operational, reporting)
@@ -38,12 +35,15 @@ class StageSelectionItem(CamelModel):
 
 
 class VsStageSelection(CamelModel):
-    """One value stream's stage selection (a batched-output entry)."""
+    """One value stream's stage selection (a batched-output entry).
+
+    selectedStages = the stages the idea card's work belongs to (best guess, lean to include).
+    Leave it empty to take the whole lifecycle - the full stage list is then used for the
+    architect to trim. No scope flag: empty simply means "the full list".
+    """
 
     value_stream_id: str
-    stage_scope: StageScope = "broad_or_unclear"
     selected_stages: list[StageSelectionItem] = Field(default_factory=list)
-    reason: str = ""
 
 
 class BatchedStageSelection(CamelModel):
@@ -124,18 +124,13 @@ def _resolve(result: VsStageSelection | None, stages: list[CatalogueStage]) -> l
     by_id = {s.stage_id: s for s in stages}
     all_stages = [(s.stage_id, "") for s in stages]  # whole lifecycle, for the architect to trim
 
-    if result is not None and result.stage_scope == "specific_stages":
-        chosen = [
-            (item.stage_id, item.reason)
-            for item in result.selected_stages
-            if item.stage_id in by_id  # only this VS's governed stages; no invented/foreign ids
-        ]
-        # Never leave an approved value stream empty: if no pick resolved, give the full list.
-        chosen = chosen or all_stages
-    else:
-        # entire_value_stream, broad_or_unclear, or a missing result -> take the whole lifecycle.
-        # An approved VS always gets stages for the architect to trim, never zero.
-        chosen = all_stages
+    picks = [
+        (item.stage_id, item.reason)
+        for item in (result.selected_stages if result else [])
+        if item.stage_id in by_id  # only this VS's governed stages; no invented/foreign ids
+    ]
+    # Never leave an approved VS empty: an empty / all-invalid pick takes the full stage list.
+    chosen = picks or all_stages
 
     out: list[SelectedStage] = []
     seen: set[str] = set()
