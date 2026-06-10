@@ -121,20 +121,21 @@ def _vs_block(i: StageSelectionInput) -> str:
 
 
 def _resolve(result: VsStageSelection | None, stages: list[CatalogueStage]) -> list[SelectedStage]:
-    if result is None:
-        return []
     by_id = {s.stage_id: s for s in stages}
+    all_stages = [(s.stage_id, "") for s in stages]  # whole lifecycle, for the architect to trim
 
-    if result.stage_scope == "entire_value_stream":
-        chosen = [(s.stage_id, "") for s in stages]  # the whole lifecycle
-    elif result.stage_scope == "specific_stages":
+    if result is not None and result.stage_scope == "specific_stages":
         chosen = [
             (item.stage_id, item.reason)
             for item in result.selected_stages
             if item.stage_id in by_id  # only this VS's governed stages; no invented/foreign ids
         ]
+        # Never leave an approved value stream empty: if no pick resolved, give the full list.
+        chosen = chosen or all_stages
     else:
-        chosen = []  # broad_or_unclear -> no specific stages
+        # entire_value_stream, broad_or_unclear, or a missing result -> take the whole lifecycle.
+        # An approved VS always gets stages for the architect to trim, never zero.
+        chosen = all_stages
 
     out: list[SelectedStage] = []
     seen: set[str] = set()

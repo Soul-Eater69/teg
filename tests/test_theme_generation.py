@@ -130,21 +130,34 @@ async def test_generate_one_package_description_and_stages() -> None:
     assert [(c.capability_id, c.name) for c in l2] == [("CAP-L2-1", "Reporting")]
 
 
-async def test_invented_stage_id_is_dropped() -> None:
+async def test_invented_stage_id_falls_back_to_full_lifecycle() -> None:
+    # An invented id is dropped, but an approved VS must never be left empty -> fall back to
+    # the full governed stage list for the architect to trim.
     class InventLLM(RoutingFakeLLM):
         async def complete(self, *, system, user, schema):
-            if schema is _GeneratedDescription:
-                return _GeneratedDescription(text="x")
-            if schema is _VsFramings:
-                return _VsFramings(framings=[_VsFraming(value_stream_id="VSR1", text="f")])
-            return BatchedStageSelection(value_streams=[
-                VsStageSelection(
-                    value_stream_id="VSR1",
-                    stage_scope="specific_stages",
-                    selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],
-                )
-            ])
+            if schema is BatchedStageSelection:
+                return BatchedStageSelection(value_streams=[
+                    VsStageSelection(
+                        value_stream_id="VSR1",
+                        stage_scope="specific_stages",
+                        selected_stages=[StageSelectionItem(stage_id="NOT-A-STAGE", reason="r")],
+                    )
+                ])
+            return await super().complete(system=system, user=user, schema=schema)
 
     service = ThemeService(_catalogue(), InventLLM())
     pkg = (await service.generate(_request())).theme_packages[0]
-    assert pkg.selected_stages == []  # invented id not in the governed catalogue -> dropped
+    assert [s.stage_id for s in pkg.selected_stages] == ["VSS1", "VSS2"]  # full list, none invented
+
+
+async def test_broad_or_unclear_falls_back_to_full_lifecycle() -> None:
+    class BroadLLM(RoutingFakeLLM):
+        async def complete(self, *, system, user, schema):
+            if schema is BatchedStageSelection:
+                return BatchedStageSelection(value_streams=[
+                    VsStageSelection(value_stream_id="VSR1", stage_scope="broad_or_unclear")
+                ])
+            return await super().complete(system=system, user=user, schema=schema)
+
+    pkg = (await ThemeService(_catalogue(), BroadLLM()).generate(_request())).theme_packages[0]
+    assert [s.stage_id for s in pkg.selected_stages] == ["VSS1", "VSS2"]  # never empty
