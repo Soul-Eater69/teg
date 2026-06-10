@@ -33,7 +33,7 @@ from teg.theme.description import (
     generate_vs_framings,
 )
 from teg.theme.stage_catalogue import StageCatalogue
-from teg.theme.stage_selection import select_stages
+from teg.theme.stage_selection import StageSelectionInput, select_stages_for_all
 
 
 async def main(args) -> None:
@@ -87,7 +87,18 @@ async def main(args) -> None:
         print(f"\n# ALL {len(approved)} descriptions in 2 calls (body ∥ batched framing): "
               f"{perf_counter()-t0:.2f}s")
 
-    # 3b. the rest per approved VS
+    # 3b. stages for ALL approved VS in 1 batched call, as the service does it - NOT per VS.
+    stages_by_vs: dict[str, list] = {}
+    if args.only in ("stages", "core", "needs", "caps", "all"):
+        t0 = perf_counter()
+        stage_inputs = [StageSelectionInput(value_stream=vs,
+            value_stream_description=catalogue.description_for(vs.value_stream_id),
+            value_proposition=catalogue.value_proposition_for(vs.value_stream_id),
+            stages=catalogue.stages_for(vs.value_stream_id)) for vs in approved]
+        stages_by_vs = await select_stages_for_all(condensed=condensed, inputs=stage_inputs, llm_client=llm)
+        print(f"# ALL {len(approved)} stage selections in 1 batched call: {perf_counter()-t0:.2f}s")
+
+    # 3c. per approved VS: display the precomputed description + stages, then needs/caps
     for vs in approved:
         desc = catalogue.description_for(vs.value_stream_id)
         prop = catalogue.value_proposition_for(vs.value_stream_id)
@@ -96,15 +107,12 @@ async def main(args) -> None:
         print(f"VS: {vs.value_stream_name}  ({vs.value_stream_id})  | {len(stages)} governed stages")
         print(f"THEME TITLE: {title} - {vs.value_stream_name}\n")
 
-        selected = None
         if vs.value_stream_id in descriptions:
             print(f"--- DESCRIPTION ---\n{descriptions[vs.value_stream_id]}\n")
 
+        selected = stages_by_vs.get(vs.value_stream_id, [])
         if args.only in ("stages", "core", "needs", "caps", "all"):
-            t0 = perf_counter()
-            selected = await select_stages(condensed=condensed, value_stream=vs,
-                value_stream_description=desc, value_proposition=prop, stages=stages, llm_client=llm)
-            print(f"--- SELECTED STAGES [{perf_counter()-t0:.2f}s] ---")
+            print("--- SELECTED STAGES ---")
             for s in selected:
                 print(f"  {s.stage_id}  {s.stage_name} - {s.reason}")
             if not selected:
