@@ -72,7 +72,7 @@ user: |
 
   REQUESTED VALUE STREAM COUNT (exact):
   {requested_final_output_count}
-
+  {historic_evidence}
   CANDIDATE VALUE STREAMS:
 
   {candidate_blocks}

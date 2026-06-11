@@ -91,20 +91,27 @@ class ValueStreamService:
         # SME-selected analogs become the evidence used for ranking (all retrieved if
         # none selected); the full retrieved set is still returned for the HITL step.
         evidence = _selected(historical_hits, request.selected_historical_ticket_ids)
+        mode = self._config.selection_mode
+        # In all50/topk/evidence the historic lane is NOT merged into candidates (VS-only pool);
+        # in merge it is; in historic_only the pool is built from the historic VS only.
+        hist_for_pool = [] if mode in ("all50", "topk", "evidence") else evidence
         candidates = build_candidates(
-            result.value_stream_hits,
-            evidence,
+            [] if mode == "historic_only" else result.value_stream_hits,
+            evidence if mode == "historic_only" else hist_for_pool,
             max_supporting_tickets=policy.max_supporting_tickets,
             base_rates=base_rates if base_rates is not None else self._base_rates,
             vs_details=self._vs_details,
         )
         review_pool = select_review_pool(candidates, policy=policy)
+        # evidence mode: historic tickets shown as a context block, not merged.
+        historic_evidence = _render_evidence(historical_hits) if mode == "evidence" else ""
         recommendations = await select_value_streams(
             query=request.summary_fields.generated_summary,
             candidates=review_pool,
             requested_count=requested_count,
             llm_client=self._llm,
             min_confidence=self._config.min_confidence,
+            historic_evidence=historic_evidence,
         )
         response = ValueStreamResponse(
             ticket_id=request.ticket_id,
@@ -143,3 +150,14 @@ def _to_ticket(hit: HistoricalHit) -> HistoricalTicket:
     return HistoricalTicket(
         ticket_id=hit.ticket_id, title=hit.title, score=hit.score, snippet=hit.snippet
     )
+
+
+def _render_evidence(hits: list[HistoricalHit]) -> str:
+    """Render the similar past tickets as an evidence block (summary + the VS they were tagged
+    with) for the 'evidence' selection mode - context the LLM weighs when picking from all VS."""
+    lines: list[str] = []
+    for hit in hits:
+        vs = ", ".join(f"{v.value_stream_name} ({v.value_stream_id})" for v in hit.value_streams)
+        snippet = (hit.snippet or "").strip().replace("\n", " ")[:200]
+        lines.append(f"- {hit.ticket_id}: {snippet}\n  -> tagged value streams: {vs or '(none)'}")
+    return "\n".join(lines)

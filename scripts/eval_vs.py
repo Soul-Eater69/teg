@@ -258,11 +258,14 @@ def _miss_buckets(gt: set[str], predicted: list[str], trace) -> dict[str, list[s
 
 async def main(args) -> None:
     docs = _load(args.dataset)
+    # Mode -> window default (all50/evidence see the full catalogue; topk uses --window or 18).
+    window = args.window or {"all50": 50, "evidence": 50}.get(args.mode, 0)
     config = ValueStreamConfig(
         use_historic_lane=not args.semantic_only,
         generic_penalty_scale=args.generic_penalty,
         min_confidence=args.min_confidence,
-        **({"llm_candidate_window": args.window} if args.window else {}),
+        selection_mode=args.mode,
+        **({"llm_candidate_window": window} if window else {}),
     )
     service = build_value_stream_service(config=config)
     llm = build_llm_client(load_settings()) if (args.explain_drops or args.judge) else None
@@ -356,7 +359,7 @@ async def main(args) -> None:
 
     print("\n" + "=" * 60)
     print(f"tickets evaluated: {n}   "
-          f"(count_mode={args.count_mode}, "
+          f"(mode={args.mode}, count_mode={args.count_mode}, "
           f"input={'rawText' if args.raw_text else 'condensed'}, window={args.window or 18}, "
           f"generic_penalty={args.generic_penalty}/{args.penalty_signal if args.generic_penalty else '-'})")
     avg_pred = _div(sum(r["predicted_count"] for r in rows), n)
@@ -391,15 +394,19 @@ async def main(args) -> None:
         if label.startswith("multi-VS"):
             multi_f1 = cf
 
+    cohort_rows = {label: _cohort_prf(crows) for label, crows in cohorts if crows}
+    cohort_n = {label: len(crows) for label, crows in cohorts}
+
     times = sorted(r["seconds"] for r in rows if r["seconds"] > 0)
+    latency = {}
     if times:
         slow = min(rows, key=lambda r: -r["seconds"])
         fast = min(rows, key=lambda r: r["seconds"] if r["seconds"] > 0 else 1e9)
+        latency = {"avg": _div(sum(times), len(times)), "min": fast["seconds"],
+                   "max": slow["seconds"], "median": times[len(times) // 2]}
         print(f"\nprediction latency (per ticket, excludes judge/explain):")
-        print(f"  avg={_div(sum(times), len(times)):.1f}s   "
-              f"min={fast['seconds']:.1f}s ({fast['ticket_id']})   "
-              f"max={slow['seconds']:.1f}s ({slow['ticket_id']})   "
-              f"median={times[len(times)//2]:.1f}s")
+        print(f"  avg={latency['avg']:.1f}s   min={latency['min']:.1f}s ({fast['ticket_id']})   "
+              f"max={latency['max']:.1f}s ({slow['ticket_id']})   median={latency['median']:.1f}s")
 
     if judge_pred:
         # Judge precision: predictions the LLM judge calls relevant (credits relevant non-GT picks).
@@ -439,10 +446,13 @@ async def main(args) -> None:
     print(f"\nper-ticket CSV -> {out}")
 
     return {
-        "micro_p": micro_p, "micro_r": micro_r,
+        "n": n, "micro_p": micro_p, "micro_r": micro_r,
         "micro_f1": _div(2 * micro_p * micro_r, micro_p + micro_r),
         "macro_f1": _div(2 * macro_p * macro_r, macro_p + macro_r),
         "single_recall": single_recall, "multi_f1": multi_f1,
+        "avg_predicted": avg_pred, "avg_gt": avg_gt,
+        "cohorts": cohort_rows, "cohort_n": cohort_n, "latency": latency,
+        "buckets": dict(bucket_totals), "judge_p": _div(judge_rel_pred, judge_pred) if judge_pred else None,
     }
 
 
@@ -452,6 +462,68 @@ def _mean_std(values: list[float]) -> tuple[float, float]:
     mean = sum(values) / len(values)
     var = sum((v - mean) ** 2 for v in values) / len(values)
     return mean, var ** 0.5
+
+
+def build_eval_docx(args, runs: list[dict], out_path: Path) -> None:
+    from datetime import date
+
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt, RGBColor
+
+    def table(doc, headers, rows):
+        t = doc.add_table(rows=1, cols=len(headers)); t.style = "Light Grid Accent 1"
+        for c, h in zip(t.rows[0].cells, headers):
+            c.text = h
+        for r in rows:
+            cells = t.add_row().cells
+            for c, v in zip(cells, r):
+                c.text = str(v)
+        doc.add_paragraph()
+
+    doc = Document()
+    title = doc.add_heading(f"VS Selection Eval — mode: {args.mode}", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sub = doc.add_paragraph(
+        f"{args.repeat} run(s) · input={'rawText' if args.raw_text else 'summary'} · "
+        f"count={args.count} · min_gt={args.min_gt} · {date.today().isoformat()}")
+    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in sub.runs:
+        run.font.size = Pt(11); run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+
+    doc.add_heading("Headline (mean ± std over runs)", level=1)
+    rows = []
+    for key, lbl in [("micro_f1", "micro F1"), ("micro_p", "micro P"), ("micro_r", "micro R"),
+                     ("macro_f1", "macro F1"), ("single_recall", "single-VS recall"),
+                     ("multi_f1", "multi-VS F1")]:
+        m, s = _mean_std([r[key] for r in runs])
+        rows.append([lbl, f"{m:.3f} ± {s:.3f}", str([round(r[key], 3) for r in runs])])
+    table(doc, ["Metric", "Mean ± Std", "Per run"], rows)
+
+    doc.add_heading("Cohorts (run 1)", level=1)
+    doc.add_paragraph("Single-VS: watch recall (precision is count-capped). Multi-VS is the hard half.")
+    crows = []
+    for label, prf in runs[0].get("cohorts", {}).items():
+        p, r, f = prf
+        crows.append([label.strip(), runs[0]["cohort_n"].get(label, "-"), f"{p:.3f}", f"{r:.3f}", f"{f:.3f}"])
+    table(doc, ["Cohort", "n", "P", "R", "F1"], crows)
+
+    doc.add_heading("Latency + pool (run 1)", level=1)
+    lat = runs[0].get("latency", {})
+    b = runs[0].get("buckets", {})
+    table(doc, ["Metric", "Value"], [
+        ["avg latency (s)", f"{lat.get('avg', 0):.1f}"],
+        ["median latency (s)", f"{lat.get('median', 0):.1f}"],
+        ["max latency (s)", f"{lat.get('max', 0):.1f}"],
+        ["avg predicted", f"{runs[0].get('avg_predicted', 0):.1f}"],
+        ["avg gt", f"{runs[0].get('avg_gt', 0):.1f}"],
+        ["judge precision", f"{runs[0]['judge_p']:.3f}" if runs[0].get("judge_p") is not None else "n/a"],
+        ["miss: gated_pre_llm", b.get("gated_pre_llm", 0)],
+        ["miss: llm_dropped", b.get("llm_dropped", 0)],
+        ["miss: not_retrieved", b.get("not_retrieved", 0)],
+    ])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(out_path))
 
 
 async def run_repeats(args) -> None:
@@ -467,6 +539,10 @@ async def run_repeats(args) -> None:
                            ("single_recall", "single-VS R"), ("multi_f1", "multi-VS F1")]:
             m, s = _mean_std([r[key] for r in runs])
             print(f"  {label:12} {m:.3f} ± {s:.3f}   runs={[round(r[key], 3) for r in runs]}")
+    if args.docx:
+        docx_path = Path(args.out).with_name(f"eval_{args.mode}_{'raw' if args.raw_text else 'summary'}.docx")
+        build_eval_docx(args, runs, docx_path)
+        print(f"\ndocx -> {docx_path}")
 
 
 if __name__ == "__main__":
@@ -498,8 +574,14 @@ if __name__ == "__main__":
                         help="post-hoc LLM probe: classify why each llm_dropped GT was left out (extra calls)")
     parser.add_argument("--judge", action="store_true",
                         help="LLM-as-judge relevance of predictions + misses (GT-independent view; extra calls)")
+    parser.add_argument("--mode", choices=["merge", "all50", "topk", "historic_only", "evidence"],
+                        default="merge",
+                        help="candidate-pool strategy: merge (VS+historic), all50 (all VS, no historic), "
+                             "topk (top-K VS only), historic_only (historic VS only), evidence (all VS + "
+                             "historic as an evidence block, no merge)")
     parser.add_argument("--repeat", type=int, default=1,
                         help="run the eval N times and report mean +/- std (captures LLM variance)")
+    parser.add_argument("--docx", action="store_true", help="write a .docx report of the run(s)")
     parser.add_argument("--attachments-cache", default="",
                         help="EDA attachments_raw.json - adds no-attachment cohort rows to the breakdown")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")

@@ -22,3 +22,10 @@ class ValueStreamConfig:
     generic_penalty_scale: float = 0.6  # broad-stream rank penalty = scale * attractor_signal (0 = off)
     generic_earned_hits: int = 3  # historical hits that exempt a broad stream from the penalty
     min_confidence: float = 0.0  # abstention floor (0-1); >0 keeps only confident picks, no padding
+    # Experiment selector for candidate-pool construction:
+    #   merge         - VS + historic merged into the review pool (default, production)
+    #   all50         - all VS candidates, no historic (pool = full catalogue)
+    #   topk          - top-K VS by semantic score only (K = llm_candidate_window)
+    #   historic_only - candidates only from the historic lane's VS
+    #   evidence      - all VS candidates + historic shown as a separate EVIDENCE block (no merge)
+    selection_mode: str = "merge"
