@@ -223,18 +223,22 @@ def to_frames(records: list[dict]):
     att = df[df["kind"] == "attachment"].copy()
     desc = df[df["kind"] == "description"].copy()
 
+    att["selectedTokens"] = att["tokenEst"] * att.get("selected", False).astype(int)
     per_ticket = att.groupby("ticketId").agg(
         attachmentCount=("filename", "count"),
         supportedCount=("supported", "sum"),
         attachmentBytes=("sizeBytes", "sum"),
         attachmentTokens=("tokenEst", "sum"),
+        selectedTokens=("selectedTokens", "sum"),  # only the attachments condense would feed
         attachmentChars=("charCount", "sum"),
         hasIdeaCard=("ideaCard", "max"),
     )
     desc_idx = desc.set_index("ticketId")
     per_ticket["descriptionChars"] = desc_idx["charCount"].reindex(per_ticket.index).fillna(0).astype(int)
     per_ticket["descriptionTokens"] = desc_idx["tokenEst"].reindex(per_ticket.index).fillna(0).astype(int)
+    # All attachments (over-count) vs what condense actually ingests (description + selected only).
     per_ticket["combinedTokens"] = per_ticket["attachmentTokens"] + per_ticket["descriptionTokens"]
+    per_ticket["condenseInputTokens"] = per_ticket["selectedTokens"] + per_ticket["descriptionTokens"]
     # tickets with attachments listed in the issue but none fetched still appear via desc only:
     only_desc = desc_idx.index.difference(per_ticket.index)
     if len(only_desc):
@@ -244,11 +248,13 @@ def to_frames(records: list[dict]):
         extra["supportedCount"] = 0
         extra["attachmentBytes"] = 0
         extra["attachmentTokens"] = 0
+        extra["selectedTokens"] = 0
         extra["attachmentChars"] = 0
         extra["hasIdeaCard"] = False
         extra["descriptionChars"] = desc_idx["charCount"].reindex(only_desc).fillna(0).astype(int)
         extra["descriptionTokens"] = desc_idx["tokenEst"].reindex(only_desc).fillna(0).astype(int)
         extra["combinedTokens"] = extra["descriptionTokens"]
+        extra["condenseInputTokens"] = extra["descriptionTokens"]
         per_ticket = pd.concat([per_ticket, extra])
     # ticket-level theme/usefulness info from the description rows (one per ticket).
     if "themeCount" in desc.columns:
@@ -361,20 +367,28 @@ def build_charts(att, tickets, charts_dir: Path, *, records: list[dict] | None =
     ax.set(title="Jira description length (chars, p99 clip)", xlabel="chars", ylabel="# tickets")
     charts["description_chars"] = _save(fig, charts_dir, "description_chars"); plt.close(fig)
 
-    # 6. combined tokens per ticket vs the budget
+    # 6. condense INPUT tokens vs the budget - what condense actually ingests (description +
+    #    only the SELECTED attachments: idea-card alone, or top-4 supported). The all-attachments
+    #    sum is reported alongside for context, but it over-counts (condense ignores the rest).
+    ci = tickets["condenseInputTokens"]
     ct = tickets["combinedTokens"]
-    over = int((ct > TOKEN_BUDGET).sum())
-    stats["combined_tokens"] = {
-        "budget": TOKEN_BUDGET, "mean": int(ct.mean()), "median": int(ct.median()),
-        "max": int(ct.max()), "over_budget": over,
-        "over_budget_pct": round(100.0 * over / max(1, len(ct)), 1),
+    over = int((ci > TOKEN_BUDGET).sum())
+    stats["condense_input_tokens"] = {
+        "budget": TOKEN_BUDGET,
+        "mean": int(ci.mean()), "median": int(ci.median()), "max": int(ci.max()),
+        "over_budget": over, "over_budget_pct": round(100.0 * over / max(1, len(ci)), 1),
+        "all_attachments_mean_for_context": int(ct.mean()),
+        "all_attachments_over_budget": int((ct > TOKEN_BUDGET).sum()),
     }
     fig, ax = plt.subplots()
-    ax.hist(ct.clip(upper=ct.quantile(0.99)), bins=40, color="#72B7B2")
+    ax.hist(ci.clip(upper=max(ci.quantile(0.99), TOKEN_BUDGET * 1.1)), bins=40, color="#72B7B2",
+            label="condense input (desc + selected)")
+    ax.hist(ct.clip(upper=max(ct.quantile(0.99), TOKEN_BUDGET * 1.1)), bins=40, color="#F58518",
+            alpha=0.35, label="all attachments (context)")
     ax.axvline(TOKEN_BUDGET, color="red", linestyle="--", label=f"{TOKEN_BUDGET:,} budget")
-    ax.set(title="Combined tokens per ticket (description + attachments)", xlabel="tokens", ylabel="# tickets")
+    ax.set(title="Tokens per ticket vs budget — what condense actually ingests", xlabel="tokens", ylabel="# tickets")
     ax.legend()
-    charts["combined_tokens"] = _save(fig, charts_dir, "combined_tokens"); plt.close(fig)
+    charts["condense_input_tokens"] = _save(fig, charts_dir, "condense_input_tokens"); plt.close(fig)
 
     # 7. idea-card / supported coverage + what condense would actually select
     stats["coverage"] = {
@@ -486,7 +500,7 @@ def _highlights(stats: dict, n_tickets: int) -> dict:
     """The headline numbers, pulled from the per-section stats for the summary table."""
     pres = stats.get("attachment_presence", {})
     size = stats.get("attachment_size_kb", {})
-    ct = stats.get("combined_tokens", {})
+    ct = stats.get("condense_input_tokens", {})
     cov = stats.get("coverage", {})
     use = stats.get("usefulness", {})
     vc = stats.get("value_stream_coverage", {})
@@ -500,7 +514,7 @@ def _highlights(stats: dict, n_tickets: int) -> dict:
                                        f"({pres.get('pct_without', '?')}%)",
         "Most common file type": stats.get("most_common_type", "?"),
         "Avg attachment size (KB)": size.get("per_attachment_mean", "?"),
-        "Tickets over token budget": f"{ct.get('over_budget', '?')} ({ct.get('over_budget_pct', '?')}%)",
+        "Tickets over budget (condense input)": f"{ct.get('over_budget', '?')} ({ct.get('over_budget_pct', '?')}%)",
         "Tickets with an idea card": cov.get("tickets_with_idea_card", "?"),
         "Unique Value Streams covered": vc.get("unique_value_streams", "?"),
     }
@@ -552,8 +566,10 @@ def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int,
          "How much text each supported attachment yields after extraction."),
         ("10. Jira description length", "description_chars",
          "Typical Jira description length — the fallback context when no idea card exists."),
-        ("11. Combined tokens per ticket vs budget", "combined_tokens",
-         "How many tickets exceed the token budget once description + all attachment text is combined."),
+        ("11. Condense input tokens vs budget", "condense_input_tokens",
+         "Tokens condense actually ingests = description + only the SELECTED attachments (idea card "
+         "alone, or top-4 supported). The all-attachments sum is shown for context but over-counts, "
+         "since condense never feeds every attachment."),
         ("12. Coverage", "coverage",
          "Idea-card presence, supported vs unsupported attachments, condense selection, extraction failures."),
     ]
