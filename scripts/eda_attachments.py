@@ -23,7 +23,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from teg.condense.attachment_ranker import is_idea_card, is_supported
+from teg.condense.attachment_ranker import is_idea_card, is_supported, select_attachments
 from teg.config.settings import load_settings
 from teg.integrations.files import build_attachment_extractor
 from teg.integrations.jira import build_jira_client
@@ -87,22 +87,31 @@ async def collect(
         out: list[dict] = []
         try:
             ticket = await asyncio.wait_for(jira.fetch_ticket(ticket_id), timeout=ticket_timeout)
-        except Exception as exc:  # a bad/slow ticket must not abort the batch
-            print(f"  {ticket_id}: FETCH ERROR {type(exc).__name__}: {exc}")
-            return out
+        except Exception as exc:  # a bad/slow ticket must not abort the batch - record it
+            reason = f"{type(exc).__name__}: {exc}" or type(exc).__name__
+            print(f"  {ticket_id}: FETCH ERROR {reason}")
+            return [{
+                "ticketId": ticket_id, "kind": "fetch_error", "filename": "(ticket fetch)",
+                "ext": "(error)", "mimeType": "", "sizeBytes": 0, "charCount": 0, "tokenEst": 0,
+                "supported": False, "ideaCard": False, "selected": False, "extractError": reason,
+            }]
         desc = ticket.description or ""
         out.append({
             "ticketId": ticket_id, "kind": "description", "filename": "(description)",
             "ext": "(description)", "mimeType": "", "sizeBytes": len(desc.encode("utf-8")),
             "charCount": len(desc), "tokenEst": estimate_tokens(desc),
-            "supported": True, "ideaCard": False, "extractError": "",
+            "supported": True, "ideaCard": False, "selected": False, "extractError": "",
         })
+        # Which attachments condense would actually use: idea-card-first, else top-4 supported.
+        chosen = select_attachments(ticket.attachments)
+        selected_names = {a.filename for a in ([chosen.idea_card] if chosen.idea_card else chosen.fallback)}
         for att in ticket.attachments:
             rec = {
                 "ticketId": ticket_id, "kind": "attachment", "filename": att.filename,
                 "ext": _ext(att.filename), "mimeType": att.mime_type,
                 "sizeBytes": int(att.size_bytes or 0), "charCount": 0, "tokenEst": 0,
                 "supported": is_supported(att.filename), "ideaCard": is_idea_card(att.filename),
+                "selected": att.filename in selected_names,  # condense would extract this one
                 "extractError": "",
             }
             if rec["supported"]:
@@ -115,7 +124,8 @@ async def collect(
                     rec["charCount"] = len(text or "")
                     rec["tokenEst"] = estimate_tokens(text or "")
                 except Exception as exc:
-                    rec["extractError"] = f"{type(exc).__name__}: {exc}"
+                    rec["extractError"] = f"{type(exc).__name__}: {exc}" or type(exc).__name__
+                    print(f"  {ticket_id} / {att.filename}: EXTRACT ERROR {rec['extractError']}")
             out.append(rec)
         return out
 
@@ -292,14 +302,30 @@ def build_charts(att, tickets, charts_dir: Path) -> tuple[dict, dict]:
     ax.legend()
     charts["combined_tokens"] = _save(fig, charts_dir, "combined_tokens"); plt.close(fig)
 
-    # 7. idea-card / supported coverage
+    # 7. idea-card / supported coverage + what condense would actually select
+    sel = att["selected"] if "selected" in att.columns else att.get("selected", False)
     stats["coverage"] = {
         "tickets_with_idea_card": int(tickets["hasIdeaCard"].sum()),
         "supported_attachments": int(att["supported"].sum()),
         "unsupported_attachments": int((~att["supported"]).sum()),
+        "attachments_condense_selects": int(att["selected"].sum()) if "selected" in att.columns else 0,
+        "attachments_ignored": int((~att["selected"]).sum()) if "selected" in att.columns else 0,
         "extract_failures": int((att["extractError"] != "").sum()),
     }
     return stats, charts
+
+
+def collect_failures(records: list[dict]) -> list[dict]:
+    """Every fetch/extract failure, for debugging: {ticketId, filename, kind, reason}."""
+    out: list[dict] = []
+    for r in records:
+        reason = r.get("extractError") or ""
+        if reason:
+            out.append({
+                "ticketId": r.get("ticketId", ""), "filename": r.get("filename", ""),
+                "kind": r.get("kind", ""), "ext": r.get("ext", ""), "reason": reason,
+            })
+    return out
 
 
 # ---------------------------------------------------------------- docx export
@@ -338,7 +364,8 @@ def _highlights(stats: dict, n_tickets: int) -> dict:
     }
 
 
-def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int) -> None:
+def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int,
+               failures: list[dict] | None = None) -> None:
     from datetime import date
 
     from docx import Document
@@ -389,6 +416,25 @@ def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int) -> 
         if key in stats:
             _metric_table(doc, stats[key])
 
+    # 9. Failures - ticket id + attachment + reason, for debugging
+    doc.add_heading("9. Fetch / extract failures", level=1)
+    if failures:
+        doc.add_paragraph(
+            f"{len(failures)} attachment(s)/ticket(s) failed to fetch or extract (timeout, "
+            "download error, or unparseable file). Listed for debugging."
+        )
+        table = doc.add_table(rows=1, cols=3)
+        table.style = "Light Grid Accent 1"
+        for cell, label in zip(table.rows[0].cells, ("Ticket", "Attachment", "Reason")):
+            cell.text = label
+        for f in failures:
+            cells = table.add_row().cells
+            cells[0].text = str(f.get("ticketId", ""))
+            cells[1].text = str(f.get("filename", ""))
+            cells[2].text = str(f.get("reason", ""))[:200]
+    else:
+        doc.add_paragraph("No fetch or extract failures.")
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_path))
 
@@ -426,9 +472,18 @@ async def _main(args) -> None:
     print(f"\nstats -> {out/'stats.json'}\ncharts -> {out/'charts'}/")
     print(json.dumps(stats, indent=2))
 
+    # Failures (ticket id + attachment + reason) for debugging - own file + console.
+    failures = collect_failures(records)
+    (out / "failures.json").write_text(json.dumps(failures, indent=2), encoding="utf-8")
+    print(f"\n{len(failures)} fetch/extract failures -> {out/'failures.json'}")
+    for f in failures[:30]:
+        print(f"  {f['ticketId']}  {f['filename']}  -> {f['reason']}")
+    if len(failures) > 30:
+        print(f"  ... and {len(failures) - 30} more (see failures.json)")
+
     if args.docx:
         docx_path = out / "attachments_eda.docx"
-        build_docx(stats, charts, docx_path, n_tickets=int(len(tickets)))
+        build_docx(stats, charts, docx_path, n_tickets=int(len(tickets)), failures=failures)
         print(f"docx -> {docx_path}")
 
 
