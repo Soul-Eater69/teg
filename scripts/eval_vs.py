@@ -658,7 +658,11 @@ async def run_repeats(args) -> None:
             print(f"\ndocx -> {docx_path}")
         except ImportError:
             print("\n[!] docx skipped: python-docx not installed. Run: uv sync --extra extract"
-                  f"\n    (run metrics are saved at {stats_path})")
+                  f"\n    (run metrics saved at {stats_path}; rebuild later with --rebuild-docx)")
+        except PermissionError:
+            print(f"\n[!] docx skipped: {docx_path} is locked (open in Word?). Close it, then:"
+                  f"\n    uv run python -m scripts.eval_vs {args.dataset} --mode {args.mode} "
+                  f"--rebuild-docx {stats_path} --out {args.out}")
 
 
 if __name__ == "__main__":
