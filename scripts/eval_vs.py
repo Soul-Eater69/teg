@@ -582,6 +582,14 @@ def build_eval_docx(args, runs: list[dict], out_path: Path) -> None:
 
 async def run_repeats(args) -> None:
     """Run the eval --repeat times and report each run + mean ± std (captures LLM variance)."""
+    if args.rebuild_docx:
+        # Build the docx from a saved <out>.runs.json without re-running the eval.
+        runs = json.loads(Path(args.rebuild_docx).read_text(encoding="utf-8"))
+        args.repeat = len(runs)
+        docx_path = Path(args.out).with_name(f"eval_{args.mode}_{'raw' if args.raw_text else 'summary'}.docx")
+        build_eval_docx(args, runs, docx_path)
+        print(f"rebuilt docx from {args.rebuild_docx} -> {docx_path}")
+        return
     runs = []
     for i in range(1, args.repeat + 1):
         print("\n" + "#" * 60 + f"\n# RUN {i}/{args.repeat}\n" + "#" * 60)
@@ -647,6 +655,8 @@ if __name__ == "__main__":
     parser.add_argument("--repeat", type=int, default=1,
                         help="run the eval N times and report mean +/- std (captures LLM variance)")
     parser.add_argument("--docx", action="store_true", help="write a .docx report of the run(s)")
+    parser.add_argument("--rebuild-docx", default="",
+                        help="build the docx from a saved <out>.runs.json WITHOUT re-running the eval")
     parser.add_argument("--selection-prompt", default="",
                         help="override the mode's selection prompt (A/B prompt variants), "
                              "e.g. value_stream/selection_plain_lean")
