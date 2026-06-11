@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     embedding_api_version: str = "2024-06-01"
 
     # Condense (fallback path only; idea card is always used in full)
-    condense_doc_char_budget: int = 20_000  # total chars across fallback docs (split per doc)
+    condense_doc_char_budget: int = 40_000  # total chars across fallback docs, split per doc (~10k each at 4 docs)
     condense_max_attachments: int = 4  # top-N fallback when no idea card
     condense_max_attachment_bytes: int = 10_000_000  # skip larger fallback files pre-download
     condense_min_doc_chars: int = 200  # drop fallback docs that extract to less than this
