@@ -29,6 +29,12 @@ except Exception:  # pragma: no cover - import guarded so the module always load
 _VS_FILTER = "entityType eq 'ValueStream'"
 _HISTORICAL_FILTER = "entityType eq 'EngagementRequest'"
 _RERANKER_SCALE = 4.0  # Azure semantic reranker scores are 0-4
+# The BM25 keyword query is capped: a long query (e.g. raw ticket text) has thousands of terms,
+# and terms x searchable-fields must stay under Azure's 3000-clause limit. The vector query still
+# uses the full-text embedding, so semantics aren't lost - only the keyword half is trimmed.
+_KEYWORD_CHAR_CAP = 8_000
+_EMBED_CHAR_CAP = 30_000  # ~8k tokens; keep under the embedding model's input limit
+_CONTENT_FIELD = "content"  # scope BM25 to one field so the clause count = terms x 1
 _VS_SELECT = [
     "id",
     "properties/valueStreamId",
@@ -64,9 +70,10 @@ class AzureSearchClient:
             await self._credential.close()
 
     async def search_value_streams(self, query: str, *, top_k: int = 50) -> list[ValueStreamHit]:
-        vector = await self._embeddings.embed(query)
+        vector = await self._embeddings.embed(query[:_EMBED_CHAR_CAP])
         results = await self._index.search(
-            search_text=query,
+            search_text=query[:_KEYWORD_CHAR_CAP],
+            search_fields=[_CONTENT_FIELD],  # keep terms x fields under the 3000-clause limit
             vector_queries=[self._vector_query(vector, top_k)],
             filter=_VS_FILTER,
             select=_VS_SELECT,
@@ -77,9 +84,10 @@ class AzureSearchClient:
         return [_to_value_stream_hit(doc) async for doc in results]
 
     async def search_historical(self, query: str, *, top_k: int = 6) -> list[HistoricalHit]:
-        vector = await self._embeddings.embed(query)
+        vector = await self._embeddings.embed(query[:_EMBED_CHAR_CAP])
         results = await self._index.search(
-            search_text=query,  # hybrid (BM25 + vector) + semantic rerank, same as the VS lane
+            search_text=query[:_KEYWORD_CHAR_CAP],  # hybrid (BM25 + vector) + semantic rerank
+            search_fields=[_CONTENT_FIELD],
             vector_queries=[self._vector_query(vector, top_k)],
             filter=_HISTORICAL_FILTER,
             select=_HISTORICAL_SELECT,
