@@ -6,9 +6,12 @@ for you to ingest into Cosmos, and upserts the historical index docs into idp_te
 This is the nightly-batch entrypoint.
 
 Usage:
-  uv run python scripts/ingest_tickets.py tickets.txt \
-      --catalogue data/value_stream_capability_map.json
-  uv run python scripts/ingest_tickets.py tickets.txt --no-upload   # JSON only, no search write
+  uv run python scripts/ingest_tickets.py data/tickets_eda.txt
+  uv run python scripts/ingest_tickets.py data/tickets_eda.txt --fresh   # rebuild from scratch
+  uv run python scripts/ingest_tickets.py data/tickets_eda.txt --no-upload   # JSON only, no search write
+
+By default this RESUMES from out/idmt and prunes any stale tickets not in the given list.
+--fresh ignores prior output entirely and rebuilds from the ticket list.
 """
 
 from __future__ import annotations
@@ -49,17 +52,31 @@ def _load_json(path: Path) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
-async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: bool, concurrency: int) -> None:
+async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: bool,
+               concurrency: int, fresh: bool) -> None:
     ticket_ids = _read_ticket_ids(tickets_path)
     if not ticket_ids:
         raise SystemExit(f"no ticket ids found in {tickets_path}")
+    wanted = set(ticket_ids)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Resume: keep already-ingested tickets from a prior run, only fetch the missing ones.
-    idmt_docs = _load_json(out / "cosmos_idmt.json")
-    theme_docs = _load_json(out / "cosmos_themes.json")
-    historical_docs = _load_json(out / "index_historical.json")
+    # --fresh: ignore any prior output and rebuild from this ticket list only. Otherwise resume,
+    # but PRUNE docs that aren't in the current list (so stale tickets from earlier runs / a
+    # different list don't linger - the cumulative-resume trap).
+    if fresh:
+        idmt_docs, theme_docs, historical_docs = [], [], []
+        print(f"--fresh: ignoring prior output, ingesting all {len(ticket_ids)} from {tickets_path}")
+    else:
+        idmt_docs = [d for d in _load_json(out / "cosmos_idmt.json") if _ticket_id(d) in wanted]
+        keep_ids = {_ticket_id(d) for d in idmt_docs}
+        theme_docs = [d for d in _load_json(out / "cosmos_themes.json") if d.get("parentRef") in
+                      {d2.get("sourceId") for d2 in idmt_docs}]
+        historical_docs = [d for d in _load_json(out / "index_historical.json")
+                           if (d.get("key") or d.get("sourceId")) in wanted]
+        pruned = len(_load_json(out / "cosmos_idmt.json")) - len(idmt_docs)
+        if pruned:
+            print(f"pruned {pruned} stale doc(s) not in {tickets_path}")
     done = {_ticket_id(d) for d in idmt_docs}
     todo = [t for t in ticket_ids if t not in done]
     if done:
@@ -120,7 +137,10 @@ if __name__ == "__main__":
     parser.add_argument("--out", default="out/idmt")
     parser.add_argument("--no-upload", dest="upload", action="store_false")
     parser.add_argument("--concurrency", type=int, default=3)
+    parser.add_argument("--fresh", action="store_true",
+                        help="ignore prior output and rebuild from this ticket list only "
+                             "(drops stale tickets from earlier runs / a different list)")
     args = parser.parse_args()
     asyncio.run(
-        main(args.tickets_file, args.catalogue, args.out, args.upload, args.concurrency)
+        main(args.tickets_file, args.catalogue, args.out, args.upload, args.concurrency, args.fresh)
     )
