@@ -405,7 +405,8 @@ async def main(args) -> None:
             key = f"vs_lane@{k}"
             if key in retrieval_mean:
                 print(f"  VS lane R@{k:<2} = {retrieval_mean[key]:.3f}  (GT in top-{k} of semantic ranking)")
-        print(f"  historic lane R = {retrieval_mean.get('historic_lane', 0):.3f}  (GT surfaced by historic precedent)")
+        used = "used in pool" if args.mode in ("merge", "historic_only", "evidence") else "DIAGNOSTIC - not used in this mode"
+        print(f"  historic lane R = {retrieval_mean.get('historic_lane', 0):.3f}  (GT surfaced by historic precedent; {used})")
         print(f"  review pool R   = {retrieval_mean.get('pool', 0):.3f}  (GT the LLM actually saw - the ceiling)")
 
     # Cohort breakdown: single-VS (gt==1, the easy half excluded by --min-gt 2) vs multi-VS.
