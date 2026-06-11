@@ -271,37 +271,90 @@ def build_charts(att, tickets, charts_dir: Path) -> tuple[dict, dict]:
 
 # ---------------------------------------------------------------- docx export
 
+def _metric_table(doc, rows: dict) -> None:
+    """A clean 2-column metric/value table with a shaded header."""
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Light Grid Accent 1"
+    hdr = table.rows[0].cells
+    hdr[0].text, hdr[1].text = "Metric", "Value"
+    for k, v in rows.items():
+        cells = table.add_row().cells
+        cells[0].text = str(k).replace("_", " ")
+        cells[1].text = f"{v:,}" if isinstance(v, int) else str(v)
+    doc.add_paragraph()
+
+
+def _highlights(stats: dict, n_tickets: int) -> dict:
+    """The headline numbers, pulled from the per-section stats for the summary table."""
+    pres = stats.get("attachment_presence", {})
+    apt = stats.get("attachments_per_ticket", {})
+    size = stats.get("attachment_size_kb", {})
+    ct = stats.get("combined_tokens", {})
+    cov = stats.get("coverage", {})
+    return {
+        "Tickets analyzed": n_tickets,
+        "Tickets without attachments": f"{pres.get('tickets_without_attachments', '?')} "
+                                       f"({pres.get('pct_without', '?')}%)",
+        "Avg attachments per ticket": apt.get("mean", "?"),
+        "Most common file type": stats.get("most_common_type", "?"),
+        "Avg attachment size (KB)": size.get("per_attachment_mean", "?"),
+        "Avg total attachment size per ticket (KB)": size.get("per_ticket_total_mean", "?"),
+        "Tickets over token budget": f"{ct.get('over_budget', '?')} "
+                                     f"({ct.get('over_budget_pct', '?')}%) of {ct.get('budget', '?'):,}",
+        "Tickets with an idea card": cov.get("tickets_with_idea_card", "?"),
+    }
+
+
 def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int) -> None:
+    from datetime import date
+
     from docx import Document
-    from docx.shared import Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches, Pt, RGBColor
 
     doc = Document()
-    doc.add_heading("Attachments EDA — Phase 1", level=0)
-    doc.add_paragraph(
-        f"Profile of attachments across {n_tickets} historical IDMT tickets. Figures and metrics "
-        "below drive condense/ingestion sizing (attachment selection, char/token budgets)."
-    )
+    title = doc.add_heading("Attachments EDA — Phase 1", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sub = doc.add_paragraph(f"IDMT ingestion · {n_tickets} tickets · {date.today().isoformat()}")
+    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in sub.runs:
+        run.font.size = Pt(11)
+        run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
 
+    doc.add_heading("Highlights", level=1)
+    doc.add_paragraph(
+        "Profile of attachments across the historical IDMT tickets. These numbers drive "
+        "condense/ingestion sizing: how many attachments to pull, and the character/token budgets."
+    )
+    _metric_table(doc, _highlights(stats, n_tickets))
+
+    # title, stat key, one-line explanation of what the chart answers
     sections = [
-        ("0. Tickets with vs without attachments", "attachment_presence"),
-        ("1. Attachments per ticket", "attachments_per_ticket"),
-        ("2. File types", "file_types"),
-        ("3. Attachment size", "attachment_size_kb"),
-        ("4. Extracted characters per attachment", "extracted_chars"),
-        ("5. Jira description length", "description_chars"),
-        ("6. Combined tokens per ticket vs budget", "combined_tokens"),
+        ("1. Tickets with vs without attachments", "attachment_presence",
+         "How many tickets carry no attachment at all — those fall back to the Jira description."),
+        ("2. Attachments per ticket", "attachments_per_ticket",
+         "Distribution of attachment count per ticket; informs the top-N selection cap."),
+        ("3. File types", "file_types",
+         "What attachment formats appear and which dominates (idea cards are usually PPT/PPTX)."),
+        ("4. Attachment size", "attachment_size_kb",
+         "Per-attachment size and the total payload per ticket; informs the pre-download size cap."),
+        ("5. Extracted characters per attachment", "extracted_chars",
+         "How much text each supported attachment yields after extraction."),
+        ("6. Jira description length", "description_chars",
+         "Typical Jira description length — the fallback context when no idea card exists."),
+        ("7. Combined tokens per ticket vs budget", "combined_tokens",
+         "How many tickets exceed the token budget once description + all attachment text is combined."),
+        ("8. Coverage", "coverage",
+         "Idea-card presence, supported vs unsupported attachments, and extraction failures."),
     ]
-    for title, key in sections:
-        doc.add_heading(title, level=1)
-        if key in stats:
-            for k, v in stats[key].items():
-                doc.add_paragraph(f"{k}: {v}", style="List Bullet")
+    doc.add_page_break()
+    for title_text, key, blurb in sections:
+        doc.add_heading(title_text, level=1)
+        doc.add_paragraph(blurb)
         if key in charts and Path(charts[key]).exists():
             doc.add_picture(charts[key], width=Inches(6.0))
-
-    doc.add_heading("7. Coverage", level=1)
-    for k, v in stats.get("coverage", {}).items():
-        doc.add_paragraph(f"{k}: {v}", style="List Bullet")
+        if key in stats:
+            _metric_table(doc, stats[key])
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_path))
