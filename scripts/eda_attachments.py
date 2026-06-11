@@ -1,17 +1,19 @@
-"""Phase 1 EDA — attachments across the historical IDMT tickets.
+"""Phase 1 EDA — historical IDMT tickets: attachments + ticket usefulness, in one pass.
 
-Collects per-attachment metadata + extracted text (live Jira), then computes the attachment
-profile that drives condense/ingestion sizing decisions: attachments per ticket, file types,
-sizes, extracted character counts, description length, and how many tickets exceed a token
-budget when their attachment text is combined.
+For each ticket (one Jira fetch) it captures: attachments (metadata + extracted text), the Jira
+description, and the linked themes (links of ANY type carrying a Business Value Stream value) and
+the Value Streams they map to. From that it profiles both:
+  - attachment sizing for condense (counts, file types, sizes, extracted chars, token budget), and
+  - ticket usefulness (a ticket is useful when it has theme/VS ground truth): the usefulness split,
+    themes-per-ticket distribution, themes among tickets with no attachments, and VS coverage.
 
-Reuses the production clients so the numbers match what ingestion actually sees:
-  build_jira_client(settings).fetch_ticket / download_attachment  +  build_attachment_extractor().
+Reuses the production attachment extractor + condense selection rules so the numbers match what
+ingestion actually sees. The Business Value Stream field id is discovered by name (override with
+--field-id).
 
-Usage (on a box with Jira + IDP creds; install: uv sync --extra eda --extra extract):
+Usage (Jira + IDP creds; install: uv sync --extra eda --extra extract):
   uv run python scripts/eda_attachments.py tickets.txt --out out/eda/attachments --docx
-  # collection is cached to <out>/attachments_raw.json; re-run analysis without re-fetching:
-  uv run python scripts/eda_attachments.py tickets.txt --out out/eda/attachments --use-cache --docx
+  # cached to <out>/attachments_raw.json; re-run resumes; analysis-only with --use-cache.
 
 The notebook notebooks/attachments_eda.ipynb imports these functions for an interactive view.
 """
@@ -23,10 +25,12 @@ import asyncio
 import json
 from pathlib import Path
 
+import httpx
+
 from teg.condense.attachment_ranker import is_idea_card, is_supported, select_attachments
 from teg.config.settings import load_settings
+from teg.ingestion.extraction.value_stream_field import parse_value_stream
 from teg.integrations.files import build_attachment_extractor
-from teg.integrations.jira import build_jira_client
 
 TOKEN_BUDGET = 20_000  # condense's working context budget; we flag tickets above it
 
@@ -55,27 +59,52 @@ def estimate_tokens(text: str) -> int:
         return max(1, len(text) // 4)
 
 
+async def discover_field_id(http: httpx.AsyncClient, api: str, field_name: str) -> str | None:
+    resp = await http.get(f"/rest/api/{api}/field")
+    resp.raise_for_status()
+    wanted = field_name.strip().lower()
+    for f in resp.json() or []:
+        if str(f.get("name") or "").strip().lower() == wanted:
+            return str(f.get("id") or "")
+    return None
+
+
+def _linked_keys(fields: dict) -> list[str]:
+    keys: list[str] = []
+    for link in fields.get("issuelinks") or []:
+        issue = link.get("inwardIssue") or link.get("outwardIssue")
+        if isinstance(issue, dict):
+            key = str(issue.get("key") or "")
+            if key and key not in keys:
+                keys.append(key)
+    return keys
+
+
 async def collect(
     ticket_ids: list[str],
     *,
+    bvs_field: str,
     concurrency: int = 4,
     ticket_timeout: float = 90.0,
     done_records: list[dict] | None = None,
     checkpoint_path: Path | None = None,
     checkpoint_every: int = 10,
 ) -> list[dict]:
-    """One record per (ticket, attachment), plus a synthetic 'description' pseudo-attachment.
+    """One 'description' record per ticket (carrying ticket-level theme/VS info) plus one record
+    per attachment. One Jira fetch per ticket gets summary/description/attachments/issuelinks;
+    each linked issue is then read for its Business Value Stream value to count themes.
 
-    Each record: ticketId, kind (attachment|description), filename, ext, mimeType, sizeBytes,
-    charCount, tokenEst, supported, ideaCard, extractError. Failures are recorded, not fatal.
-
-    Robust to stalls: every fetch/download/extract is bounded by ``ticket_timeout`` (a slow
-    attachment can't hang a worker slot). Resumable: pass ``done_records`` to skip already-collected
-    tickets, and ``checkpoint_path`` to flush progress every ``checkpoint_every`` tickets - so a
-    crash/stop loses at most that many, and re-running continues from where it stopped.
+    Robust to stalls: every fetch/download/extract is bounded by ``ticket_timeout``. Resumable:
+    pass ``done_records`` to skip already-collected tickets and ``checkpoint_path`` to flush every
+    ``checkpoint_every`` tickets, so a stop loses at most that many and re-running continues.
     """
     settings = load_settings()
-    jira = build_jira_client(settings)
+    http = httpx.AsyncClient(
+        base_url=settings.jira_base_url,
+        headers={"Authorization": f"Bearer {settings.jira_token}"},
+        timeout=settings.jira_timeout_seconds, verify=settings.jira_verify_ssl,
+    )
+    api = settings.jira_api_version
     extractor = build_attachment_extractor()
     sem = asyncio.Semaphore(concurrency)
     records: list[dict] = list(done_records or [])
@@ -83,10 +112,23 @@ async def collect(
     todo = [t for t in ticket_ids if t not in done]
     progress = {"n": 0, "total": len(todo)}
 
-    async def _one(ticket_id: str) -> list[dict]:
-        out: list[dict] = []
+    async def _issue(key: str, fields: str) -> dict:
+        resp = await http.get(f"/rest/api/{api}/issue/{key}", params={"fields": fields})
+        resp.raise_for_status()
+        return resp.json() or {}
+
+    async def _theme_vs(key: str):
         try:
-            ticket = await asyncio.wait_for(jira.fetch_ticket(ticket_id), timeout=ticket_timeout)
+            li = await asyncio.wait_for(_issue(key, f"summary,{bvs_field}"), timeout=ticket_timeout)
+        except Exception:
+            return None
+        return parse_value_stream((li.get("fields") or {}).get(bvs_field))
+
+    async def _one(ticket_id: str) -> list[dict]:
+        try:
+            issue = await asyncio.wait_for(
+                _issue(ticket_id, "summary,description,attachment,issuelinks"), timeout=ticket_timeout
+            )
         except Exception as exc:  # a bad/slow ticket must not abort the batch - record it
             reason = f"{type(exc).__name__}: {exc}" or type(exc).__name__
             print(f"  {ticket_id}: FETCH ERROR {reason}")
@@ -94,38 +136,57 @@ async def collect(
                 "ticketId": ticket_id, "kind": "fetch_error", "filename": "(ticket fetch)",
                 "ext": "(error)", "mimeType": "", "sizeBytes": 0, "charCount": 0, "tokenEst": 0,
                 "supported": False, "ideaCard": False, "selected": False, "extractError": reason,
+                "linkCount": 0, "themeCount": 0, "valueStreamIds": [],
             }]
-        desc = ticket.description or ""
-        out.append({
+        f = issue.get("fields") or {}
+        atts = [{"filename": str(a.get("filename") or ""), "content": str(a.get("content") or ""),
+                 "mime": str(a.get("mimeType") or ""), "size": int(a.get("size") or 0)}
+                for a in (f.get("attachment") or [])]
+        linked_keys = _linked_keys(f)
+
+        # Linked themes -> Value Streams (any link type; a theme = a link carrying a VS).
+        vs_parsed = await asyncio.gather(*(_theme_vs(k) for k in linked_keys)) if linked_keys else []
+        vs_ids = [p[1] for p in vs_parsed if p]
+        vs_names = [p[0] for p in vs_parsed if p]
+
+        desc = str(f.get("description") or "")
+        out: list[dict] = [{
             "ticketId": ticket_id, "kind": "description", "filename": "(description)",
             "ext": "(description)", "mimeType": "", "sizeBytes": len(desc.encode("utf-8")),
             "charCount": len(desc), "tokenEst": estimate_tokens(desc),
             "supported": True, "ideaCard": False, "selected": False, "extractError": "",
-        })
+            # ticket-level usefulness info lives on the description row (one per ticket)
+            "linkCount": len(linked_keys), "themeCount": len(vs_ids),
+            "valueStreamIds": vs_ids, "valueStreamNames": vs_names,
+        }]
         # Which attachments condense would actually use: idea-card-first, else top-4 supported.
-        chosen = select_attachments(ticket.attachments)
-        selected_names = {a.filename for a in ([chosen.idea_card] if chosen.idea_card else chosen.fallback)}
-        for att in ticket.attachments:
+        names = [a["filename"] for a in atts]
+        idea = next((n for n in names if is_idea_card(n)), None)
+        if idea is not None:
+            selected_names = {idea}
+        else:
+            supported = [n for n in names if is_supported(n)]
+            selected_names = set(sorted(supported)[:4]) if supported else set()
+        for a in atts:
+            fn = a["filename"]
             rec = {
-                "ticketId": ticket_id, "kind": "attachment", "filename": att.filename,
-                "ext": _ext(att.filename), "mimeType": att.mime_type,
-                "sizeBytes": int(att.size_bytes or 0), "charCount": 0, "tokenEst": 0,
-                "supported": is_supported(att.filename), "ideaCard": is_idea_card(att.filename),
-                "selected": att.filename in selected_names,  # condense would extract this one
-                "extractError": "",
+                "ticketId": ticket_id, "kind": "attachment", "filename": fn, "ext": _ext(fn),
+                "mimeType": a["mime"], "sizeBytes": a["size"], "charCount": 0, "tokenEst": 0,
+                "supported": is_supported(fn), "ideaCard": is_idea_card(fn),
+                "selected": fn in selected_names, "extractError": "",
             }
-            if rec["supported"]:
+            if rec["supported"] and a["content"]:
                 try:
-                    # bound BOTH the download and the (native) extract so a stall can't hang the slot
-                    content = await asyncio.wait_for(jira.download_attachment(att), timeout=ticket_timeout)
+                    dl = await asyncio.wait_for(http.get(a["content"]), timeout=ticket_timeout)
+                    dl.raise_for_status()
                     text = await asyncio.wait_for(
-                        asyncio.to_thread(extractor.extract, att.filename, content), timeout=ticket_timeout
+                        asyncio.to_thread(extractor.extract, fn, dl.content), timeout=ticket_timeout
                     )
                     rec["charCount"] = len(text or "")
                     rec["tokenEst"] = estimate_tokens(text or "")
                 except Exception as exc:
                     rec["extractError"] = f"{type(exc).__name__}: {exc}" or type(exc).__name__
-                    print(f"  {ticket_id} / {att.filename}: EXTRACT ERROR {rec['extractError']}")
+                    print(f"  {ticket_id} / {fn}: EXTRACT ERROR {rec['extractError']}")
             out.append(rec)
         return out
 
@@ -134,14 +195,19 @@ async def collect(
             out = await _one(ticket_id)
         records.extend(out)
         progress["n"] += 1
+        head = next((r for r in out if r["kind"] in ("description", "fetch_error")), {})
         n_att = sum(1 for r in out if r["kind"] == "attachment")
-        print(f"[{progress['n']}/{progress['total']}] {ticket_id}: {n_att} attachments")
+        print(f"[{progress['n']}/{progress['total']}] {ticket_id}: "
+              f"{n_att} attach, {head.get('themeCount', 0)} themes")
         if checkpoint_path is not None and progress["n"] % checkpoint_every == 0:
             checkpoint_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    if done:
-        print(f"resuming: {len(done)} tickets already collected, {len(todo)} to go")
-    await asyncio.gather(*(_guarded(t) for t in todo))
+    try:
+        if done:
+            print(f"resuming: {len(done)} tickets already collected, {len(todo)} to go")
+        await asyncio.gather(*(_guarded(t) for t in todo))
+    finally:
+        await http.aclose()
     if checkpoint_path is not None:  # final flush
         checkpoint_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
     return records
@@ -184,6 +250,14 @@ def to_frames(records: list[dict]):
         extra["descriptionTokens"] = desc_idx["tokenEst"].reindex(only_desc).fillna(0).astype(int)
         extra["combinedTokens"] = extra["descriptionTokens"]
         per_ticket = pd.concat([per_ticket, extra])
+    # ticket-level theme/usefulness info from the description rows (one per ticket).
+    if "themeCount" in desc.columns:
+        per_ticket["themeCount"] = desc_idx["themeCount"].reindex(per_ticket.index).fillna(0).astype(int)
+        per_ticket["valueStreamIds"] = desc_idx["valueStreamIds"].reindex(per_ticket.index)
+        per_ticket["valueStreamIds"] = per_ticket["valueStreamIds"].apply(lambda v: v if isinstance(v, list) else [])
+    else:
+        per_ticket["themeCount"] = 0
+        per_ticket["valueStreamIds"] = [[] for _ in range(len(per_ticket))]
     return att, per_ticket.reset_index().rename(columns={"index": "ticketId"})
 
 
@@ -194,7 +268,7 @@ def _save(fig, charts_dir: Path, name: str) -> str:
     return str(path)
 
 
-def build_charts(att, tickets, charts_dir: Path) -> tuple[dict, dict]:
+def build_charts(att, tickets, charts_dir: Path, *, records: list[dict] | None = None) -> tuple[dict, dict]:
     """Compute the metric tables + render the charts. Returns (stats, chart_paths)."""
     import matplotlib
 
@@ -303,7 +377,6 @@ def build_charts(att, tickets, charts_dir: Path) -> tuple[dict, dict]:
     charts["combined_tokens"] = _save(fig, charts_dir, "combined_tokens"); plt.close(fig)
 
     # 7. idea-card / supported coverage + what condense would actually select
-    sel = att["selected"] if "selected" in att.columns else att.get("selected", False)
     stats["coverage"] = {
         "tickets_with_idea_card": int(tickets["hasIdeaCard"].sum()),
         "supported_attachments": int(att["supported"].sum()),
@@ -312,6 +385,72 @@ def build_charts(att, tickets, charts_dir: Path) -> tuple[dict, dict]:
         "attachments_ignored": int((~att["selected"]).sum()) if "selected" in att.columns else 0,
         "extract_failures": int((att["extractError"] != "").sum()),
     }
+
+    # ---- ticket usefulness (theme/VS ground truth) ----
+    import pandas as pd  # noqa: F811
+
+    n = int(len(tickets))
+    useful = tickets["themeCount"] > 0
+    has_att = tickets["attachmentCount"] > 0
+    uwa, udo, nu = int((useful & has_att).sum()), int((useful & ~has_att).sum()), int((~useful).sum())
+    stats["usefulness"] = {
+        "tickets_total": n, "useful_has_theme_gt": int(useful.sum()),
+        "useful_pct": round(100.0 * int(useful.sum()) / max(1, n), 1),
+        "useful_with_attachments": uwa, "useful_description_only": udo, "not_useful_no_theme": nu,
+    }
+    fig, ax = plt.subplots(figsize=(6, 4))
+    vals = [uwa, udo, nu]
+    ax.bar(["useful +\nattachments", "useful\n(desc only)", "not useful\n(no theme)"], vals,
+           color=["#4C78A8", "#72B7B2", "#E45756"])
+    for i, v in enumerate(vals):
+        ax.text(i, v, str(v), ha="center", va="bottom")
+    ax.set(title="Ticket usefulness (theme/VS ground truth present?)", ylabel="# tickets")
+    charts["usefulness"] = _save(fig, charts_dir, "usefulness"); plt.close(fig)
+
+    # themes per ticket ("2 themes -> N tickets")
+    theme_dist = tickets["themeCount"].value_counts().sort_index()
+    stats["themes_per_ticket"] = {f"{int(k)} themes": int(v) for k, v in theme_dist.items()}
+    stats["themes_per_ticket"]["mean"] = round(float(tickets["themeCount"].mean()), 2)
+    stats["themes_per_ticket"]["max"] = int(tickets["themeCount"].max())
+    fig, ax = plt.subplots()
+    theme_dist.plot(kind="bar", ax=ax, color="#54A24B")
+    ax.set(title="Themes (Value Streams) per ticket", xlabel="# themes", ylabel="# tickets")
+    charts["themes_per_ticket"] = _save(fig, charts_dir, "themes_per_ticket"); plt.close(fig)
+
+    # themes among tickets with NO attachments
+    no_att = tickets[~has_att]
+    stats["no_attachment_tickets"] = {
+        "count": int(len(no_att)),
+        "useful_via_description": int((no_att["themeCount"] > 0).sum()),
+        "dead_no_theme_no_attachment": int((no_att["themeCount"] == 0).sum()),
+        **{f"{int(k)} themes": int(v) for k, v in no_att["themeCount"].value_counts().sort_index().items()},
+    }
+    if len(no_att):
+        fig, ax = plt.subplots()
+        no_att["themeCount"].value_counts().sort_index().plot(kind="bar", ax=ax, color="#B279A2")
+        ax.set(title="Themes per ticket — tickets WITHOUT attachments", xlabel="# themes", ylabel="# tickets")
+        charts["no_attachment_tickets"] = _save(fig, charts_dir, "no_attachment_themes"); plt.close(fig)
+
+    # Value Stream coverage
+    all_vs = [vs for lst in tickets["valueStreamIds"] for vs in (lst or [])]
+    name_by_id: dict[str, str] = {}
+    for r in records or []:
+        for i, vs in enumerate(r.get("valueStreamIds") or []):
+            name_by_id.setdefault(vs, (r.get("valueStreamNames") or [vs])[i] if i < len(r.get("valueStreamNames") or []) else vs)
+    vs_freq = pd.Series(all_vs).value_counts()
+    stats["value_stream_coverage"] = {
+        "total_theme_links": int(len(all_vs)),
+        "unique_value_streams": int(pd.Series(all_vs).nunique()),
+        "value_streams_seen_once": int((vs_freq == 1).sum()),
+        "top_value_streams": {f"{name_by_id.get(k, k)} ({k})": int(v) for k, v in vs_freq.head(15).items()},
+    }
+    if len(vs_freq):
+        fig, ax = plt.subplots(figsize=(8, 6))
+        top = vs_freq.head(15)[::-1]
+        ax.barh([str(name_by_id.get(k, k))[:40] for k in top.index], top.values, color="#4C78A8")
+        ax.set(title="Top 15 Value Streams by ticket frequency", xlabel="# tickets")
+        charts["value_stream_coverage"] = _save(fig, charts_dir, "value_stream_coverage"); plt.close(fig)
+
     return stats, charts
 
 
@@ -346,21 +485,24 @@ def _metric_table(doc, rows: dict) -> None:
 def _highlights(stats: dict, n_tickets: int) -> dict:
     """The headline numbers, pulled from the per-section stats for the summary table."""
     pres = stats.get("attachment_presence", {})
-    apt = stats.get("attachments_per_ticket", {})
     size = stats.get("attachment_size_kb", {})
     ct = stats.get("combined_tokens", {})
     cov = stats.get("coverage", {})
+    use = stats.get("usefulness", {})
+    vc = stats.get("value_stream_coverage", {})
     return {
         "Tickets analyzed": n_tickets,
+        "Useful (has theme/VS GT)": f"{use.get('useful_has_theme_gt', '?')} ({use.get('useful_pct', '?')}%)",
+        "Useful with attachments": use.get("useful_with_attachments", "?"),
+        "Useful (description only)": use.get("useful_description_only", "?"),
+        "Not useful (no theme)": use.get("not_useful_no_theme", "?"),
         "Tickets without attachments": f"{pres.get('tickets_without_attachments', '?')} "
                                        f"({pres.get('pct_without', '?')}%)",
-        "Avg attachments per ticket": apt.get("mean", "?"),
         "Most common file type": stats.get("most_common_type", "?"),
         "Avg attachment size (KB)": size.get("per_attachment_mean", "?"),
-        "Avg total attachment size per ticket (KB)": size.get("per_ticket_total_mean", "?"),
-        "Tickets over token budget": f"{ct.get('over_budget', '?')} "
-                                     f"({ct.get('over_budget_pct', '?')}%) of {ct.get('budget', '?'):,}",
+        "Tickets over token budget": f"{ct.get('over_budget', '?')} ({ct.get('over_budget_pct', '?')}%)",
         "Tickets with an idea card": cov.get("tickets_with_idea_card", "?"),
+        "Unique Value Streams covered": vc.get("unique_value_streams", "?"),
     }
 
 
@@ -373,9 +515,9 @@ def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int,
     from docx.shared import Inches, Pt, RGBColor
 
     doc = Document()
-    title = doc.add_heading("Attachments EDA — Phase 1", level=0)
+    title = doc.add_heading("IDMT Ticket EDA — Phase 1", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    sub = doc.add_paragraph(f"IDMT ingestion · {n_tickets} tickets · {date.today().isoformat()}")
+    sub = doc.add_paragraph(f"Usefulness + attachments · {n_tickets} tickets · {date.today().isoformat()}")
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for run in sub.runs:
         run.font.size = Pt(11)
@@ -383,41 +525,57 @@ def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int,
 
     doc.add_heading("Highlights", level=1)
     doc.add_paragraph(
-        "Profile of attachments across the historical IDMT tickets. These numbers drive "
-        "condense/ingestion sizing: how many attachments to pull, and the character/token budgets."
+        "Profile of the historical IDMT tickets: how usable they are (theme/VS ground truth) and "
+        "their attachment shape, which drives condense/ingestion sizing."
     )
     _metric_table(doc, _highlights(stats, n_tickets))
 
     # title, stat key, one-line explanation of what the chart answers
     sections = [
-        ("1. Tickets with vs without attachments", "attachment_presence",
+        ("1. Ticket usefulness", "usefulness",
+         "Useful = has >=1 theme with a Value Stream (ground truth), split by whether it also has attachments."),
+        ("2. Themes per ticket", "themes_per_ticket",
+         "How many Value Streams each ticket maps to (the '2 themes -> N tickets' distribution)."),
+        ("3. Themes among tickets without attachments", "no_attachment_tickets",
+         "For tickets with no attachment: how many still carry theme ground truth (usable via description)."),
+        ("4. Value Stream coverage", "value_stream_coverage",
+         "Unique Value Streams covered and which dominate; ones seen once are thin evidence."),
+        ("5. Tickets with vs without attachments", "attachment_presence",
          "How many tickets carry no attachment at all — those fall back to the Jira description."),
-        ("2. Attachments per ticket", "attachments_per_ticket",
+        ("6. Attachments per ticket", "attachments_per_ticket",
          "Distribution of attachment count per ticket; informs the top-N selection cap."),
-        ("3. File types", "file_types",
+        ("7. File types", "file_types",
          "What attachment formats appear and which dominates (idea cards are usually PPT/PPTX)."),
-        ("4. Attachment size", "attachment_size_kb",
+        ("8. Attachment size", "attachment_size_kb",
          "Per-attachment size and the total payload per ticket; informs the pre-download size cap."),
-        ("5. Extracted characters per attachment", "extracted_chars",
+        ("9. Extracted characters per attachment", "extracted_chars",
          "How much text each supported attachment yields after extraction."),
-        ("6. Jira description length", "description_chars",
+        ("10. Jira description length", "description_chars",
          "Typical Jira description length — the fallback context when no idea card exists."),
-        ("7. Combined tokens per ticket vs budget", "combined_tokens",
+        ("11. Combined tokens per ticket vs budget", "combined_tokens",
          "How many tickets exceed the token budget once description + all attachment text is combined."),
-        ("8. Coverage", "coverage",
-         "Idea-card presence, supported vs unsupported attachments, and extraction failures."),
+        ("12. Coverage", "coverage",
+         "Idea-card presence, supported vs unsupported attachments, condense selection, extraction failures."),
     ]
     doc.add_page_break()
     for title_text, key, blurb in sections:
+        if key not in stats and key not in charts:
+            continue
         doc.add_heading(title_text, level=1)
         doc.add_paragraph(blurb)
         if key in charts and Path(charts[key]).exists():
             doc.add_picture(charts[key], width=Inches(6.0))
-        if key in stats:
-            _metric_table(doc, stats[key])
+        if key in stats and isinstance(stats[key], dict):
+            flat = {k: v for k, v in stats[key].items() if not isinstance(v, (dict, list))}
+            if flat:
+                _metric_table(doc, flat)
+            for sub_name, sub_rows in stats[key].items():
+                if isinstance(sub_rows, dict) and sub_rows:
+                    doc.add_paragraph(sub_name.replace("_", " ") + ":")
+                    _metric_table(doc, sub_rows)
 
     # 9. Failures - ticket id + attachment + reason, for debugging
-    doc.add_heading("9. Fetch / extract failures", level=1)
+    doc.add_heading("13. Fetch / extract failures", level=1)
     if failures:
         doc.add_paragraph(
             f"{len(failures)} attachment(s)/ticket(s) failed to fetch or extract (timeout, "
@@ -455,19 +613,30 @@ async def _main(args) -> None:
         records = have
         print(f"loaded {len(records)} cached records ({len(collected_ids)} tickets) from {cache}")
     else:
+        # Discover the Business Value Stream field id (for theme/usefulness counting).
+        settings = load_settings()
+        async with httpx.AsyncClient(
+            base_url=settings.jira_base_url,
+            headers={"Authorization": f"Bearer {settings.jira_token}"},
+            timeout=settings.jira_timeout_seconds, verify=settings.jira_verify_ssl,
+        ) as http:
+            bvs_field = args.field_id or await discover_field_id(http, settings.jira_api_version, args.field_name)
+        if not bvs_field:
+            raise SystemExit(f"could not find '{args.field_name}' field; pass --field-id customfield_#####")
+        print(f"Business Value Stream field id: {bvs_field}")
         # Always resume from whatever is already cached, checkpointing as we go, so a stall/stop
         # never loses progress - re-run the same command to continue from where it stopped.
         print(f"collecting {len(remaining)}/{len(ticket_ids)} tickets "
               f"(concurrency={args.concurrency}, timeout={args.ticket_timeout}s, "
               f"checkpoint every {args.checkpoint_every}); cache: {cache}")
         records = await collect(
-            ticket_ids, concurrency=args.concurrency, ticket_timeout=args.ticket_timeout,
+            ticket_ids, bvs_field=bvs_field, concurrency=args.concurrency, ticket_timeout=args.ticket_timeout,
             done_records=have, checkpoint_path=cache, checkpoint_every=args.checkpoint_every,
         )
         print(f"collected {len({r['ticketId'] for r in records})} tickets -> {cache}")
 
     att, tickets = to_frames(records)
-    stats, charts = build_charts(att, tickets, out / "charts")
+    stats, charts = build_charts(att, tickets, out / "charts", records=records)
     (out / "stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
     print(f"\nstats -> {out/'stats.json'}\ncharts -> {out/'charts'}/")
     print(json.dumps(stats, indent=2))
@@ -491,6 +660,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("tickets", help="text file with one IDMT id per line")
     parser.add_argument("--out", default="out/eda/attachments")
+    parser.add_argument("--field-name", default="Business Value Stream",
+                        help="display name of the theme Value Stream field (for usefulness)")
+    parser.add_argument("--field-id", default="", help="explicit customfield_##### (skips discovery)")
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--ticket-timeout", type=float, default=90.0,
                         help="seconds before a slow fetch/download/extract is abandoned (per call)")
