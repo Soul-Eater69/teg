@@ -51,6 +51,7 @@ def build_candidates(
     *,
     max_supporting_tickets: int = 2,
     base_rates: dict[str, float] | None = None,
+    vs_details: dict[str, dict] | None = None,
 ) -> list[ValueStreamCandidate]:
     """Merge the two lanes into candidates.
 
@@ -61,24 +62,27 @@ def build_candidates(
     """
     by_id: dict[str, ValueStreamCandidate] = {}
 
+    details = vs_details or {}
     for rank, hit in enumerate(value_stream_hits, start=1):
         if not hit.value_stream_id:
             continue
+        # Selection-prompt context (description/category/trigger/value) comes from the governed
+        # catalogue when provided (the lean index carries only id+name); else from the hit.
+        d = details.get(hit.value_stream_id, {})
         candidate = by_id.setdefault(
             hit.value_stream_id,
             ValueStreamCandidate(
                 value_stream_id=hit.value_stream_id,
                 value_stream_name=hit.value_stream_name,
-                value_stream_description=hit.value_stream_description,
+                value_stream_description=d.get("description") or hit.value_stream_description,
             ),
         )
         candidate.from_semantic = True
         candidate.semantic_score = hit.score
         candidate.semantic_rank = rank
-        # Rich catalogue context for the selection prompt (semantic lane carries it).
-        candidate.category = hit.category
-        candidate.trigger = hit.trigger
-        candidate.value_proposition = hit.value_proposition
+        candidate.category = d.get("category") or hit.category
+        candidate.trigger = d.get("trigger") or hit.trigger
+        candidate.value_proposition = d.get("valueProposition") or hit.value_proposition
 
     for vs_id, pairs in _group_historical_by_vs(historical_hits).items():
         first_label = pairs[0][1]

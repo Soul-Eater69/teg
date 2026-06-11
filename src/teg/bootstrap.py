@@ -55,9 +55,22 @@ def build_idmt_ingestion(
 
 
 def build_value_stream_service(
-    settings: Settings | None = None, *, config: ValueStreamConfig | None = None
+    settings: Settings | None = None,
+    *,
+    config: ValueStreamConfig | None = None,
+    catalogue_path: str = "data/value_stream_capability_map.json",
 ) -> ValueStreamService:
     settings = settings or load_settings()
+    # Per-VS selection context from the governed catalogue (the lean index has only id+name).
+    vs_details = {
+        vs.value_stream_id: {
+            "description": vs.value_stream_description,
+            "category": vs.category,
+            "trigger": vs.trigger,
+            "valueProposition": vs.value_proposition,
+        }
+        for vs in _load_vs_catalogue(catalogue_path)
+    }
     # Retrieval/window tuning lives in ValueStreamConfig (code default, eval-tuned),
     # not env - env is for secrets + per-deployment infra only. config override is for eval.
     return ValueStreamService(
@@ -65,7 +78,15 @@ def build_value_stream_service(
         build_llm_client(settings),
         model_name=settings.llm_model,
         config=config or ValueStreamConfig(),
+        vs_details=vs_details,
     )
+
+
+def _load_vs_catalogue(path: str):
+    try:
+        return load_value_stream_catalogue(path)
+    except Exception:
+        return []  # catalogue optional for tests / fakes; index id+name still works
 
 
 def build_theme_service(settings: Settings | None = None, *, catalogue_path: str) -> ThemeService:

@@ -105,12 +105,8 @@ def build_index_document(
         "status": None,  # value streams have no ticket status
         "searchText": build_catalogue_content(vs),
         "content_vector": content_vector,
-        "properties": {
+        "properties": {  # lean: only the VS identity; full data is in the governed catalogue
             "valueStreamId": vs.value_stream_id,
             "valueStreamName": vs.value_stream_name,
-            "valueStreamDescription": vs.value_stream_description,
-            "category": vs.category,
-            "trigger": vs.trigger,
-            "valueProposition": vs.value_proposition,
         },
     }

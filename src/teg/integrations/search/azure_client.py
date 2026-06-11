@@ -39,11 +39,7 @@ _VS_SELECT = [
     "key",
     "properties/valueStreamId",
     "properties/valueStreamName",
-    "properties/valueStreamDescription",
-    "properties/category",
-    "properties/trigger",
-    "properties/valueProposition",
-]
+]  # lean index: description/category/trigger/value come from the catalogue at selection time
 # key (IDMT-####) is the leave-one-out / display id; searchText is the hit snippet.
 _HISTORICAL_SELECT = ["key", "sourceId", "searchText", "properties/valueStreams"]
 
@@ -111,13 +107,11 @@ def _props(doc) -> dict:
 
 def _to_value_stream_hit(doc) -> ValueStreamHit:
     props = _props(doc)
+    # Lean index: only id + name + score. description/category/trigger/value are enriched from
+    # the governed catalogue by VS id during candidate building.
     return ValueStreamHit(
         value_stream_id=str(props.get("valueStreamId") or ""),
         value_stream_name=str(props.get("valueStreamName") or ""),
-        value_stream_description=str(props.get("valueStreamDescription") or ""),
-        category=str(props.get("category") or ""),
-        trigger=str(props.get("trigger") or ""),
-        value_proposition=str(props.get("valueProposition") or ""),
         score=float(doc.get("@search.reranker_score") or doc.get("@search.score") or 0.0),
     )
 

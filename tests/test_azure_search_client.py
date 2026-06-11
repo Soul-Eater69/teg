@@ -13,26 +13,20 @@ from teg.integrations.search.azure_client import (
 
 
 def test_value_stream_hit_mapping() -> None:
+    # lean index: the VS hit carries only id + name + score; the rest is enriched from the catalogue.
     doc = {
-        "id": "VSR01261896",
+        "key": "Resolve Privacy Incident",
         "properties": {
             "valueStreamId": "VSR01261896",
             "valueStreamName": "Resolve Privacy Incident",
-            "valueStreamDescription": "Ensuring regulatory compliance for select data breaches",
-            "category": "Compliance",
-            "trigger": "Reported breach",
-            "valueProposition": "Limit regulatory exposure",
         },
         "@search.score": 1.0,
     }
     hit = _to_value_stream_hit(doc)
     assert hit.value_stream_id == "VSR01261896"
     assert hit.value_stream_name == "Resolve Privacy Incident"
-    assert hit.value_stream_description.startswith("Ensuring")
-    assert hit.category == "Compliance"
-    assert hit.trigger == "Reported breach"
-    assert hit.value_proposition == "Limit regulatory exposure"
     assert hit.score == 1.0
+    assert hit.category == "" and hit.trigger == ""  # not in the index anymore
 
 
 def test_value_stream_hit_prefers_reranker_score() -> None:

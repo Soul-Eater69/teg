@@ -116,8 +116,6 @@ def test_index_document_content_and_props(tmp_path) -> None:
     assert doc["searchText"] == content  # was 'content'
     assert doc["content_vector"] == [0.1, 0.2]
     props = doc["properties"]
-    assert props["category"] == "Finance"
-    assert props["trigger"] == "Asset Requester"
-    assert props["valueProposition"] == "Faster asset turnaround"
-    assert "stakeholders" not in props  # stakeholders stay in Cosmos, not the index/selection
-    assert "valueStages" not in props  # index never carries the stage hierarchy
+    # lean index: only the VS identity; description/category/trigger/value come from the catalogue
+    assert set(props) == {"valueStreamId", "valueStreamName"}
+    assert props["valueStreamId"] == "VSR00074583"

@@ -41,6 +41,7 @@ class ValueStreamService:
         model_name: str = "",
         config: ValueStreamConfig = ValueStreamConfig(),
         base_rates: dict[str, float] | None = None,
+        vs_details: dict[str, dict] | None = None,
     ) -> None:
         self._search = search_client
         self._llm = llm_client
@@ -49,6 +50,10 @@ class ValueStreamService:
         # Corpus tag-frequency prior per VS (broad-stream penalty). Global default; the eval
         # passes a per-ticket leave-one-out override via predict_traced.
         self._base_rates = base_rates or {}
+        # Per-VS selection context from the governed catalogue (the lean index carries only
+        # id+name); used to enrich candidate blocks: {vs_id: {description, category, trigger,
+        # valueProposition}}.
+        self._vs_details = vs_details or {}
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
         response, _ = await self._predict(request)
@@ -91,6 +96,7 @@ class ValueStreamService:
             evidence,
             max_supporting_tickets=policy.max_supporting_tickets,
             base_rates=base_rates if base_rates is not None else self._base_rates,
+            vs_details=self._vs_details,
         )
         review_pool = select_review_pool(candidates, policy=policy)
         recommendations = await select_value_streams(
