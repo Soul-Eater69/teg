@@ -586,12 +586,21 @@ async def run_repeats(args) -> None:
                            ("single_recall", "single-VS R"), ("multi_f1", "multi-VS F1")]:
             m, s = _mean_std([r[key] for r in runs])
             print(f"  {label:12} {m:.3f} ± {s:.3f}   runs={[round(r[key], 3) for r in runs]}")
+    # Always dump the run metrics so the docx can be rebuilt without re-running the eval.
+    stats_path = Path(args.out).with_suffix(".runs.json")
+    stats_path.write_text(json.dumps([{k: v for k, v in r.items() if k != "cohorts" or True}
+                                      for r in runs], indent=2, default=list), encoding="utf-8")
+    print(f"run metrics -> {stats_path}")
     if args.docx:
         tag = "_" + args.selection_prompt.split("/")[-1] if args.selection_prompt else ""
         docx_path = Path(args.out).with_name(
             f"eval_{args.mode}{tag}_{'raw' if args.raw_text else 'summary'}.docx")
-        build_eval_docx(args, runs, docx_path)
-        print(f"\ndocx -> {docx_path}")
+        try:
+            build_eval_docx(args, runs, docx_path)
+            print(f"\ndocx -> {docx_path}")
+        except ImportError:
+            print("\n[!] docx skipped: python-docx not installed. Run: uv sync --extra extract"
+                  f"\n    (run metrics are saved at {stats_path})")
 
 
 if __name__ == "__main__":
