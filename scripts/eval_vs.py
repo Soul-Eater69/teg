@@ -57,6 +57,30 @@ def _gt_ids(props: dict) -> set[str]:
     return {t["valueStreamId"] for t in (props.get("themes") or []) if t.get("valueStreamId")}
 
 
+def _cohort_prf(rows: list[dict]) -> tuple[float, float, float]:
+    """Micro P/R/F1 over a cohort of per-ticket rows (each has tp/fp/fn)."""
+    tp = sum(r["tp"] for r in rows)
+    fp = sum(r["fp"] for r in rows)
+    fn = sum(r["fn"] for r in rows)
+    p, r = _div(tp, tp + fp), _div(tp, tp + fn)
+    return p, r, _div(2 * p * r, p + r)
+
+
+def _load_no_attachment_ids(cache_path: str) -> set[str]:
+    """Ticket ids with zero attachments, from an EDA attachments_raw.json cache (optional)."""
+    try:
+        records = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    has_att: set[str] = set()
+    seen: set[str] = set()
+    for r in records:
+        seen.add(r.get("ticketId", ""))
+        if r.get("kind") == "attachment":
+            has_att.add(r.get("ticketId", ""))
+    return {t for t in seen if t and t not in has_att}
+
+
 def _vs_name_map(docs: list[dict]) -> dict[str, str]:
     names: dict[str, str] = {}
     for doc in docs:
@@ -341,6 +365,29 @@ async def main(args) -> None:
     for k in args.k:
         print(f"  @{k:<2}  P@{k}={_div(sum(p_at[k]), n):.3f}   R@{k}={_div(sum(r_at[k]), n):.3f}")
 
+    # Cohort breakdown: single-VS (gt==1, the easy half excluded by --min-gt 2) vs multi-VS.
+    no_att = _load_no_attachment_ids(args.attachments_cache) if args.attachments_cache else set()
+    cohorts = [
+        ("single-VS (gt==1)", [r for r in rows if r["gt_count"] == 1]),
+        ("multi-VS  (gt>=2)", [r for r in rows if r["gt_count"] >= 2]),
+    ]
+    if no_att:
+        cohorts.append(("no-attachment   ", [r for r in rows if r["ticket_id"] in no_att]))
+        cohorts.append(("no-att + single ", [r for r in rows if r["ticket_id"] in no_att and r["gt_count"] == 1]))
+    print("\ncohorts (P/R/F1 micro; single-VS -> watch RECALL, precision is count-capped):")
+    single_recall = 0.0
+    multi_f1 = _div(2 * micro_p * micro_r, micro_p + micro_r)
+    for label, crows in cohorts:
+        if not crows:
+            print(f"  {label}  n=0  (none in this run - use --min-gt 1 to include single-VS)")
+            continue
+        cp, cr, cf = _cohort_prf(crows)
+        print(f"  {label}  n={len(crows):3}  P={cp:.3f} R={cr:.3f} F1={cf:.3f}")
+        if label.startswith("single-VS"):
+            single_recall = cr
+        if label.startswith("multi-VS"):
+            multi_f1 = cf
+
     times = sorted(r["seconds"] for r in rows if r["seconds"] > 0)
     if times:
         slow = min(rows, key=lambda r: -r["seconds"])
@@ -392,6 +439,7 @@ async def main(args) -> None:
         "micro_p": micro_p, "micro_r": micro_r,
         "micro_f1": _div(2 * micro_p * micro_r, micro_p + micro_r),
         "macro_f1": _div(2 * macro_p * macro_r, macro_p + macro_r),
+        "single_recall": single_recall, "multi_f1": multi_f1,
     }
 
 
@@ -412,9 +460,10 @@ async def run_repeats(args) -> None:
     if args.repeat > 1:
         print("\n" + "=" * 60 + f"\nSUMMARY over {args.repeat} runs (mean ± std):")
         for key, label in [("micro_p", "micro P"), ("micro_r", "micro R"),
-                           ("micro_f1", "micro F1"), ("macro_f1", "macro F1")]:
+                           ("micro_f1", "micro F1"), ("macro_f1", "macro F1"),
+                           ("single_recall", "single-VS R"), ("multi_f1", "multi-VS F1")]:
             m, s = _mean_std([r[key] for r in runs])
-            print(f"  {label:9} {m:.3f} ± {s:.3f}   runs={[round(r[key], 3) for r in runs]}")
+            print(f"  {label:12} {m:.3f} ± {s:.3f}   runs={[round(r[key], 3) for r in runs]}")
 
 
 if __name__ == "__main__":
@@ -447,6 +496,8 @@ if __name__ == "__main__":
                         help="LLM-as-judge relevance of predictions + misses (GT-independent view; extra calls)")
     parser.add_argument("--repeat", type=int, default=1,
                         help="run the eval N times and report mean +/- std (captures LLM variance)")
+    parser.add_argument("--attachments-cache", default="",
+                        help="EDA attachments_raw.json - adds no-attachment cohort rows to the breakdown")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
     args = parser.parse_args()
     asyncio.run(run_repeats(args))
