@@ -98,6 +98,7 @@ async def extract_ticket(http, api, ticket_id, bvs_field, sem) -> dict:
             lf = linked.get("fields") or {}
             vs = parse_value_stream(lf.get(bvs_field))
             return {
+                "themeStableId": str(linked.get("id") or ""),  # 7-digit internal Jira id
                 "key": t["key"], "summary": str(lf.get("summary") or ""),
                 "linkType": t["linkType"], "linkLabel": t["linkLabel"],
                 "direction": t["direction"], "issueType": t["issueType"],
@@ -106,11 +107,17 @@ async def extract_ticket(http, api, ticket_id, bvs_field, sem) -> dict:
                 "rawBvs": lf.get(bvs_field),
             }
 
+        ticket_stable_id = str(issue.get("id") or "")  # 7-digit internal Jira id of the ER
         themes = await asyncio.gather(*(_theme(t) for t in targets)) if targets else []
         with_vs = sum(1 for th in themes if th.get("valueStreamId"))
-        print(f"{ticket_id}: {len(themes)} links, {with_vs} with a Value Stream")
+        print(f"{ticket_id} (id={ticket_stable_id}): {len(themes)} links, {with_vs} with a Value Stream")
+        for th in themes:
+            if th.get("valueStreamId"):
+                print(f"    theme {th['key']} (id={th['themeStableId']}) -> "
+                      f"{th['valueStreamName']} {{{th['valueStreamId']}}}")
         return {
-            "ticketId": ticket_id, "title": str(fields.get("summary") or ""),
+            "ticketId": ticket_id, "ticketStableId": ticket_stable_id,
+            "title": str(fields.get("summary") or ""),
             "issueType": str((fields.get("issuetype") or {}).get("name") or ""),
             "themes": themes,
         }
