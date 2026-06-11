@@ -211,8 +211,8 @@ async def collect(
             checkpoint_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
 
     try:
-        if done:
-            print(f"resuming: {len(done)} tickets already collected, {len(todo)} to go")
+        if complete:
+            print(f"resuming: {len(complete)} tickets already collected, {len(todo)} to go")
         await asyncio.gather(*(_guarded(t) for t in todo))
     finally:
         await http.aclose()
