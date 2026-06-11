@@ -28,11 +28,13 @@ from pathlib import Path
 import httpx
 
 from teg.condense.attachment_ranker import is_idea_card, is_supported, select_attachments
+from teg.condense.config import CondenseConfig
 from teg.config.settings import load_settings
 from teg.ingestion.extraction.value_stream_field import parse_value_stream
 from teg.integrations.files import build_attachment_extractor
 
-TOKEN_BUDGET = 20_000  # condense's working context budget; we flag tickets above it
+TOKEN_BUDGET = 20_000  # context-headroom flag for the EDA (gpt-5-mini has far more)
+DOC_CHAR_BUDGET = CondenseConfig().doc_char_budget  # the real fallback cap (chars), kept in sync
 
 
 # ---------------------------------------------------------------- collection
@@ -267,6 +269,45 @@ def to_frames(records: list[dict]):
     return att, per_ticket.reset_index().rename(columns={"index": "ticketId"})
 
 
+def budget_applied_input(records: list[dict], *, budget: int = DOC_CHAR_BUDGET) -> dict[str, dict]:
+    """The TRUE condense input per ticket, applying the real budget (not the full extracted text).
+
+    Mirrors condense: idea-card path = description + idea card in full (uncapped); fallback path =
+    description (full) + each selected top-N doc capped at budget/N chars. Returns
+    {ticketId: {chars, tokens, path}}; tokens scale each doc's tiktoken estimate to its capped chars.
+    """
+    by_ticket: dict[str, list[dict]] = {}
+    desc: dict[str, dict] = {}
+    for r in records:
+        if r.get("kind") == "attachment":
+            by_ticket.setdefault(r["ticketId"], []).append(r)
+        elif r.get("kind") == "description":
+            desc[r["ticketId"]] = r
+
+    out: dict[str, dict] = {}
+    for tid, d in desc.items():
+        atts = by_ticket.get(tid, [])
+        selected = [a for a in atts if a.get("selected")]
+        idea = next((a for a in selected if a.get("ideaCard")), None)
+        chars = int(d.get("charCount", 0))
+        tokens = int(d.get("tokenEst", 0))
+        if idea is not None:  # idea-card path: full, uncapped
+            chars += int(idea.get("charCount", 0))
+            tokens += int(idea.get("tokenEst", 0))
+            path = "idea_card"
+        else:  # fallback: each selected doc capped at budget/N chars
+            n = len(selected)
+            per_doc = (budget // n) if n else 0
+            for a in selected:
+                c = int(a.get("charCount", 0))
+                capped = min(c, per_doc)
+                chars += capped
+                tokens += round(int(a.get("tokenEst", 0)) * (capped / c)) if c else 0
+            path = "fallback" if n else "description_only"
+        out[tid] = {"chars": chars, "tokens": tokens, "path": path}
+    return out
+
+
 def _save(fig, charts_dir: Path, name: str) -> str:
     charts_dir.mkdir(parents=True, exist_ok=True)
     path = charts_dir / f"{name}.png"
@@ -277,6 +318,7 @@ def _save(fig, charts_dir: Path, name: str) -> str:
 def build_charts(att, tickets, charts_dir: Path, *, records: list[dict] | None = None) -> tuple[dict, dict]:
     """Compute the metric tables + render the charts. Returns (stats, chart_paths)."""
     import matplotlib
+    import pandas as pd
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -390,6 +432,28 @@ def build_charts(att, tickets, charts_dir: Path, *, records: list[dict] | None =
     ax.legend()
     charts["condense_input_tokens"] = _save(fig, charts_dir, "condense_input_tokens"); plt.close(fig)
 
+    # 6b. BUDGET-APPLIED condense input - the real thing: apply the 40k/N char cap per fallback
+    #     doc (idea card uncapped). This is what the LLM actually receives; tests the token thesis.
+    if records:
+        applied = budget_applied_input(records, budget=DOC_CHAR_BUDGET)
+        ap_tokens = pd.Series([v["tokens"] for v in applied.values()])
+        ap_chars = pd.Series([v["chars"] for v in applied.values()])
+        paths = pd.Series([v["path"] for v in applied.values()]).value_counts()
+        stats["condense_input_budget_applied"] = {
+            "doc_char_budget": DOC_CHAR_BUDGET,
+            "input_tokens_mean": int(ap_tokens.mean()), "input_tokens_median": int(ap_tokens.median()),
+            "input_tokens_p90": int(ap_tokens.quantile(0.9)), "input_tokens_max": int(ap_tokens.max()),
+            "input_chars_mean": int(ap_chars.mean()), "input_chars_max": int(ap_chars.max()),
+            "tickets_over_20k_tokens": int((ap_tokens > 20_000).sum()),
+            "tickets_over_30k_tokens": int((ap_tokens > 30_000).sum()),
+            "by_path": {k: int(v) for k, v in paths.items()},
+        }
+        fig, ax = plt.subplots()
+        ax.hist(ap_tokens.clip(upper=max(ap_tokens.quantile(0.99), 1)), bins=40, color="#4C78A8")
+        ax.set(title=f"Condense input tokens AFTER the {DOC_CHAR_BUDGET:,}-char budget is applied",
+               xlabel="tokens (input to the LLM)", ylabel="# tickets")
+        charts["condense_input_budget_applied"] = _save(fig, charts_dir, "condense_input_budget_applied"); plt.close(fig)
+
     # 7. idea-card / supported coverage + what condense would actually select
     stats["coverage"] = {
         "tickets_with_idea_card": int(tickets["hasIdeaCard"].sum()),
@@ -401,7 +465,6 @@ def build_charts(att, tickets, charts_dir: Path, *, records: list[dict] | None =
     }
 
     # ---- ticket usefulness (theme/VS ground truth) ----
-    import pandas as pd  # noqa: F811
 
     n = int(len(tickets))
     useful = tickets["themeCount"] > 0
@@ -569,7 +632,11 @@ def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int,
         ("11. Condense input tokens vs budget", "condense_input_tokens",
          "Tokens condense actually ingests = description + only the SELECTED attachments (idea card "
          "alone, or top-4 supported). The all-attachments sum is shown for context but over-counts, "
-         "since condense never feeds every attachment."),
+         "since condense never feeds every attachment. NOTE: this uses full extracted text - the next "
+         "section applies the real per-doc char cap."),
+        ("11b. Condense input AFTER the char budget", "condense_input_budget_applied",
+         "The true input to the LLM: idea-card path uncapped, fallback path caps each selected doc at "
+         "doc_char_budget/N chars. This is the number that tests the token threshold thesis."),
         ("12. Coverage", "coverage",
          "Idea-card presence, supported vs unsupported attachments, condense selection, extraction failures."),
     ]
