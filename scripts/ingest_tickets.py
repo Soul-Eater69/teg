@@ -31,10 +31,22 @@ def _read_ticket_ids(path: str) -> list[str]:
     return [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
 
 
-async def _ingest_one(ingestion, ticket_id: str, sem: asyncio.Semaphore, failed: dict):
+def _project(key: str) -> str:
+    return key.split("-", 1)[0].upper() if "-" in key else key.upper()
+
+
+async def _ingest_one(ingestion, ticket_id: str, sem: asyncio.Semaphore, failed: dict, moved: dict):
     async with sem:
         try:
             result = await ingestion.ingest(ticket_id)
+            fetched_key = result.idmt_document.get("key") or ""
+            # Jira redirects a MOVED issue: fetching the old key returns the new key. A ticket that
+            # was valid (IDMT) at audit time but later moved to another project is no longer in the
+            # cohort - skip it (e.g. IDMT-#### -> CBCCA-####).
+            if fetched_key and _project(fetched_key) != _project(ticket_id):
+                moved[ticket_id] = fetched_key
+                print(f"{ticket_id}: SKIPPED - moved to {fetched_key} (different project)")
+                return None
             gt = result.idmt_document["properties"]["themes"]
             print(f"{ticket_id}: {len(result.theme_documents)} themes, {len(gt)} VS GT")
             return result
@@ -85,10 +97,11 @@ async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: boo
 
     settings = load_settings()
     failed: dict[str, str] = {}
+    moved: dict[str, str] = {}
     if todo:
         ingestion = build_idmt_ingestion(settings, catalogue_path=catalogue_path, embed=True)
         sem = asyncio.Semaphore(concurrency)
-        results = await asyncio.gather(*(_ingest_one(ingestion, t, sem, failed) for t in todo))
+        results = await asyncio.gather(*(_ingest_one(ingestion, t, sem, failed, moved) for t in todo))
         for result in results:
             if result is None:
                 continue
@@ -103,10 +116,12 @@ async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: boo
     if failed:
         (out / "failed_tickets.txt").write_text("\n".join(failed) + "\n", encoding="utf-8")
         (out / "failed_tickets.json").write_text(json.dumps(failed, indent=2), encoding="utf-8")
-    print(f"ok={len(idmt_docs)} fail={len(failed)}; wrote cosmos_idmt.json + cosmos_themes.json + "
-          f"index_historical.json to {out}/"
-          + (f"  ({len(failed)} failures -> failed_tickets.txt; re-run the same command to retry them)"
-             if failed else ""))
+    if moved:
+        (out / "moved_tickets.json").write_text(json.dumps(moved, indent=2), encoding="utf-8")
+    print(f"ok={len(idmt_docs)} fail={len(failed)} moved={len(moved)}; wrote cosmos_idmt.json + "
+          f"cosmos_themes.json + index_historical.json to {out}/"
+          + (f"  ({len(failed)} failures -> failed_tickets.txt; re-run to retry)" if failed else "")
+          + (f"  ({len(moved)} moved out of project -> moved_tickets.json, skipped)" if moved else ""))
 
     if not upload:
         print("--no-upload: skipped search upload (run scripts/upload_index.py on index_historical.json)")
