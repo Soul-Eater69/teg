@@ -508,6 +508,34 @@ def build_charts(att, tickets, charts_dir: Path, *, records: list[dict] | None =
         ax.set(title="Themes per ticket — tickets WITHOUT attachments", xlabel="# themes", ylabel="# tickets")
         charts["no_attachment_tickets"] = _save(fig, charts_dir, "no_attachment_themes"); plt.close(fig)
 
+    # 4b. For description-only tickets (no attachments): is the fallback description enough?
+    #     Their entire context is the Jira description, so its length decides whether condense
+    #     has anything to work with. Bucket by thinness.
+    if len(no_att):
+        d = no_att["descriptionChars"]
+        useful_no_att = no_att[no_att["themeCount"] > 0]["descriptionChars"]  # the ones we'd train on
+        buckets = {
+            "near_empty (<200)": int((d < 200).sum()),
+            "thin (200-500)": int(((d >= 200) & (d < 500)).sum()),
+            "ok (500-1500)": int(((d >= 500) & (d < 1500)).sum()),
+            "rich (1500+)": int((d >= 1500).sum()),
+        }
+        stats["description_only_tickets"] = {
+            "count": int(len(no_att)),
+            "description_chars_mean": int(d.mean()), "description_chars_median": int(d.median()),
+            "description_chars_min": int(d.min()), "description_chars_max": int(d.max()),
+            "useful_and_thin_under_500": int((useful_no_att < 500).sum()),  # useful but weak context
+            **buckets,
+        }
+        fig, ax = plt.subplots()
+        ax.hist(d.clip(upper=max(d.quantile(0.99), 1)), bins=30, color="#9D755D")
+        ax.axvline(500, color="orange", linestyle="--", label="thin < 500")
+        ax.axvline(1500, color="green", linestyle="--", label="rich >= 1500")
+        ax.set(title="Description length — tickets with NO attachments (the only context they have)",
+               xlabel="description chars", ylabel="# tickets")
+        ax.legend()
+        charts["description_only_tickets"] = _save(fig, charts_dir, "description_only_length"); plt.close(fig)
+
     # Value Stream coverage
     all_vs = [vs for lst in tickets["valueStreamIds"] for vs in (lst or [])]
     name_by_id: dict[str, str] = {}
@@ -615,6 +643,10 @@ def build_docx(stats: dict, charts: dict, out_path: Path, *, n_tickets: int,
          "How many Value Streams each ticket maps to (the '2 themes -> N tickets' distribution)."),
         ("3. Themes among tickets without attachments", "no_attachment_tickets",
          "For tickets with no attachment: how many still carry theme ground truth (usable via description)."),
+        ("3b. Description-only context — is the fallback enough?", "description_only_tickets",
+         "Tickets with no attachments fall back to the Jira description alone. This shows how thin that "
+         "context is (near_empty/thin/ok/rich), and how many useful tickets have a weak (<500 char) "
+         "description - the cases where description-only may not be enough for prediction/generation."),
         ("4. Value Stream coverage", "value_stream_coverage",
          "Unique Value Streams covered and which dominate; ones seen once are thin evidence."),
         ("5. Tickets with vs without attachments", "attachment_presence",
