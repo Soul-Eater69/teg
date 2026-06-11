@@ -24,7 +24,7 @@ from teg.value_stream.selection import select_value_streams
 # plain = pure VS list; evidence = pure VS list + a similar-past-tickets evidence block).
 _PROMPT_BY_MODE = {
     "merge": "value_stream/selection",
-    "historic_only": "value_stream/selection",  # candidates carry historical fields
+    "historic_only": "value_stream/selection_historic",  # precedent-derived pool
     "all50": "value_stream/selection_plain",
     "topk": "value_stream/selection_plain",
     "evidence": "value_stream/selection_evidence",
