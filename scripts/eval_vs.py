@@ -40,11 +40,14 @@ def _load(path: str) -> list[dict]:
 
 
 def _summary_fields(props: dict, *, raw_text: bool) -> SummaryFields:
+    # New schema: the LLM summary is businessSummary (properties.summary is the ticket title).
+    # Fall back to summary for any pre-rename file.
+    llm_summary = props.get("businessSummary") or props.get("summary", "")
     if raw_text:
-        text = props.get("rawText", "") or props.get("summary", "")
+        text = props.get("rawText", "") or llm_summary
         return SummaryFields(generated_summary=text, business_problem="", business_capability="")
     return SummaryFields(
-        generated_summary=props.get("summary", ""),
+        generated_summary=llm_summary,
         business_problem=props.get("businessProblem", ""),
         business_capability=props.get("businessCapability", ""),
         key_terms=props.get("keyTerms", []) or [],
