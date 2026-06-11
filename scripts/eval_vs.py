@@ -201,6 +201,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
             print(f"[{progress['done']}/{progress['total']}] {ticket_id}  ERROR {type(exc).__name__}: {exc}")
             return {"ticket_id": ticket_id, "gt": gt, "predicted": [], "error": str(exc)}
         buckets = _miss_buckets(gt, predicted, trace)
+        retrieval = _retrieval_recall(gt, trace, args.k)
         # Post-hoc: ask why the LLM dropped GT it actually saw (never changes the metrics).
         drop_reasons: dict[str, str] = {}
         if llm is not None and buckets["llm_dropped"]:
@@ -232,8 +233,22 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     progress["done"] += 1
     print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
           f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)}, {elapsed:.1f}s)")
-    return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted,
-            "buckets": buckets, "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed}
+    return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted, "buckets": buckets,
+            "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed, "retrieval": retrieval}
+
+
+def _retrieval_recall(gt: set[str], trace, ks: list[int]) -> dict:
+    """Per-lane retrieval recall (the ceiling, independent of the LLM):
+      vs_lane@k     - GT in the top-k of the semantic VS ranking
+      historic_lane - GT surfaced by the historic lane's candidates
+      pool          - GT that made it into the review pool the LLM saw
+    """
+    n = max(1, len(gt))
+    vs_ranked = trace.vs_lane_ranked
+    out = {f"vs_lane@{k}": len(gt & set(vs_ranked[:k])) / n for k in ks}
+    out["historic_lane"] = len(gt & set(trace.historic_lane_ids)) / n
+    out["pool"] = len(gt & set(trace.review_pool_ids)) / n
+    return out
 
 
 def _miss_buckets(gt: set[str], predicted: list[str], trace) -> dict[str, list[str]]:
@@ -326,11 +341,14 @@ async def main(args) -> None:
     reason_totals: dict[str, int] = {}
     # Judge-adjusted: predictions judged relevant (even if not GT) + misses judged supported.
     judge_pred = judge_rel_pred = judge_supported_miss = 0
+    retrieval_acc: dict[str, list] = {}
     p_at = {k: [] for k in args.k}
     r_at = {k: [] for k in args.k}
     for res in results:
         if res.get("error"):
             continue
+        for key, val in (res.get("retrieval") or {}).items():
+            retrieval_acc.setdefault(key, []).append(val)
         gt, predicted = res["gt"], res["predicted"]
         tp, fp, fn = _prf(predicted, gt)
         micro_tp += tp; micro_fp += fp; micro_fn += fn
@@ -379,6 +397,16 @@ async def main(args) -> None:
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}  (strict GT)")
     for k in args.k:
         print(f"  @{k:<2}  P@{k}={_div(sum(p_at[k]), n):.3f}   R@{k}={_div(sum(r_at[k]), n):.3f}")
+
+    retrieval_mean = {k: _div(sum(v), len(v)) for k, v in retrieval_acc.items()}
+    if retrieval_mean:
+        print("\nretrieval recall (the ceiling - did retrieval put GT in front of the LLM?):")
+        for k in args.k:
+            key = f"vs_lane@{k}"
+            if key in retrieval_mean:
+                print(f"  VS lane R@{k:<2} = {retrieval_mean[key]:.3f}  (GT in top-{k} of semantic ranking)")
+        print(f"  historic lane R = {retrieval_mean.get('historic_lane', 0):.3f}  (GT surfaced by historic precedent)")
+        print(f"  review pool R   = {retrieval_mean.get('pool', 0):.3f}  (GT the LLM actually saw - the ceiling)")
 
     # Cohort breakdown: single-VS (gt==1, the easy half excluded by --min-gt 2) vs multi-VS.
     no_att = _load_no_attachment_ids(args.attachments_cache) if args.attachments_cache else set()
@@ -462,6 +490,7 @@ async def main(args) -> None:
         "avg_predicted": avg_pred, "avg_gt": avg_gt,
         "cohorts": cohort_rows, "cohort_n": cohort_n, "latency": latency,
         "buckets": dict(bucket_totals), "judge_p": _div(judge_rel_pred, judge_pred) if judge_pred else None,
+        "retrieval": retrieval_mean,
     }
 
 
@@ -516,6 +545,14 @@ def build_eval_docx(args, runs: list[dict], out_path: Path) -> None:
         p, r, f = prf
         crows.append([label.strip(), runs[0]["cohort_n"].get(label, "-"), f"{p:.3f}", f"{r:.3f}", f"{f:.3f}"])
     table(doc, ["Cohort", "n", "P", "R", "F1"], crows)
+
+    doc.add_heading("Retrieval recall (ceiling, run 1)", level=1)
+    doc.add_paragraph("Did retrieval put the GT value streams in front of the LLM? The selection "
+                      "recall cannot exceed the review-pool recall.")
+    rec = runs[0].get("retrieval", {})
+    rrows = [[k.replace("vs_lane@", "VS lane R@").replace("historic_lane", "historic lane R")
+              .replace("pool", "review pool R (ceiling)"), f"{v:.3f}"] for k, v in rec.items()]
+    table(doc, ["Lane / stage", "Recall"], rrows)
 
     doc.add_heading("Latency + pool (run 1)", level=1)
     lat = runs[0].get("latency", {})

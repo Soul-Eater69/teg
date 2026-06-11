@@ -37,6 +37,8 @@ class PredictionTrace:
 
     retrieved_ids: list[str] = field(default_factory=list)  # all merged candidate ids
     review_pool: list = field(default_factory=list)  # ValueStreamCandidate objects the LLM saw
+    vs_lane_ranked: list[str] = field(default_factory=list)  # VS ids in semantic-rank order (VS lane)
+    historic_lane_ids: list[str] = field(default_factory=list)  # VS surfaced by the historic lane
 
     @property
     def review_pool_ids(self) -> list[str]:
@@ -132,9 +134,16 @@ class ValueStreamService:
             historical_tickets=[_to_ticket(hit) for hit in historical_hits],
             model=self._model_name,
         )
+        # Per-lane retrieval, for retrieval-recall metrics (separate from selection).
+        vs_lane_ranked = [h.value_stream_id for h in result.value_stream_hits if h.value_stream_id]
+        historic_lane_ids = _unique([
+            v.value_stream_id for h in historical_hits for v in h.value_streams if v.value_stream_id
+        ])
         trace = PredictionTrace(
             retrieved_ids=[c.value_stream_id for c in candidates],
             review_pool=review_pool,
+            vs_lane_ranked=vs_lane_ranked,
+            historic_lane_ids=historic_lane_ids,
         )
         return response, trace
 
@@ -163,6 +172,16 @@ def _to_ticket(hit: HistoricalHit) -> HistoricalTicket:
     return HistoricalTicket(
         ticket_id=hit.ticket_id, title=hit.title, score=hit.score, snippet=hit.snippet
     )
+
+
+def _unique(ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
 
 
 def _render_evidence(hits: list[HistoricalHit]) -> str:
