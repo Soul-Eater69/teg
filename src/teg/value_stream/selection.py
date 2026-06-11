@@ -42,6 +42,7 @@ async def select_value_streams(
     llm_client: LLMClient,
     min_confidence: float = 0.0,
     historic_evidence: str = "",
+    prompt_name: str = "value_stream/selection",
 ) -> list[ValueStreamRecommendation]:
     # In evidence mode the historic tickets are shown as a separate context block (not merged
     # into candidates); empty string keeps the section out of the prompt.
@@ -49,7 +50,7 @@ async def select_value_streams(
         f"\nSIMILAR PAST TICKETS (evidence - the value streams these were tagged with):\n"
         f"{historic_evidence}\n" if historic_evidence else ""
     )
-    prompt = load_prompt("value_stream/selection")
+    prompt = load_prompt(prompt_name)
     system, user = prompt.render(
         max_select=requested_count,
         requested_final_output_count=requested_count,

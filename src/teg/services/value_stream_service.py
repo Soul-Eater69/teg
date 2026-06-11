@@ -20,6 +20,17 @@ from teg.value_stream.retrieval import retrieve
 from teg.value_stream.selection import select_value_streams
 
 
+# Each candidate-structure gets its own selection prompt (merge = lane-aware/historical-in-blocks;
+# plain = pure VS list; evidence = pure VS list + a similar-past-tickets evidence block).
+_PROMPT_BY_MODE = {
+    "merge": "value_stream/selection",
+    "historic_only": "value_stream/selection",  # candidates carry historical fields
+    "all50": "value_stream/selection_plain",
+    "topk": "value_stream/selection_plain",
+    "evidence": "value_stream/selection_evidence",
+}
+
+
 @dataclass(frozen=True)
 class PredictionTrace:
     """What survived each stage, for eval miss-bucketing (not part of the API contract)."""
@@ -112,6 +123,7 @@ class ValueStreamService:
             llm_client=self._llm,
             min_confidence=self._config.min_confidence,
             historic_evidence=historic_evidence,
+            prompt_name=_PROMPT_BY_MODE.get(mode, "value_stream/selection"),
         )
         response = ValueStreamResponse(
             ticket_id=request.ticket_id,
