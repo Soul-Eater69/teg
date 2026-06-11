@@ -55,52 +55,85 @@ def estimate_tokens(text: str) -> int:
         return max(1, len(text) // 4)
 
 
-async def collect(ticket_ids: list[str], *, concurrency: int = 4) -> list[dict]:
+async def collect(
+    ticket_ids: list[str],
+    *,
+    concurrency: int = 4,
+    ticket_timeout: float = 90.0,
+    done_records: list[dict] | None = None,
+    checkpoint_path: Path | None = None,
+    checkpoint_every: int = 10,
+) -> list[dict]:
     """One record per (ticket, attachment), plus a synthetic 'description' pseudo-attachment.
 
     Each record: ticketId, kind (attachment|description), filename, ext, mimeType, sizeBytes,
     charCount, tokenEst, supported, ideaCard, extractError. Failures are recorded, not fatal.
+
+    Robust to stalls: every fetch/download/extract is bounded by ``ticket_timeout`` (a slow
+    attachment can't hang a worker slot). Resumable: pass ``done_records`` to skip already-collected
+    tickets, and ``checkpoint_path`` to flush progress every ``checkpoint_every`` tickets - so a
+    crash/stop loses at most that many, and re-running continues from where it stopped.
     """
     settings = load_settings()
     jira = build_jira_client(settings)
     extractor = build_attachment_extractor()
     sem = asyncio.Semaphore(concurrency)
-    records: list[dict] = []
+    records: list[dict] = list(done_records or [])
+    done = {r["ticketId"] for r in records}
+    todo = [t for t in ticket_ids if t not in done]
+    progress = {"n": 0, "total": len(todo)}
 
-    async def _one(ticket_id: str) -> None:
+    async def _one(ticket_id: str) -> list[dict]:
+        out: list[dict] = []
+        try:
+            ticket = await asyncio.wait_for(jira.fetch_ticket(ticket_id), timeout=ticket_timeout)
+        except Exception as exc:  # a bad/slow ticket must not abort the batch
+            print(f"  {ticket_id}: FETCH ERROR {type(exc).__name__}: {exc}")
+            return out
+        desc = ticket.description or ""
+        out.append({
+            "ticketId": ticket_id, "kind": "description", "filename": "(description)",
+            "ext": "(description)", "mimeType": "", "sizeBytes": len(desc.encode("utf-8")),
+            "charCount": len(desc), "tokenEst": estimate_tokens(desc),
+            "supported": True, "ideaCard": False, "extractError": "",
+        })
+        for att in ticket.attachments:
+            rec = {
+                "ticketId": ticket_id, "kind": "attachment", "filename": att.filename,
+                "ext": _ext(att.filename), "mimeType": att.mime_type,
+                "sizeBytes": int(att.size_bytes or 0), "charCount": 0, "tokenEst": 0,
+                "supported": is_supported(att.filename), "ideaCard": is_idea_card(att.filename),
+                "extractError": "",
+            }
+            if rec["supported"]:
+                try:
+                    # bound BOTH the download and the (native) extract so a stall can't hang the slot
+                    content = await asyncio.wait_for(jira.download_attachment(att), timeout=ticket_timeout)
+                    text = await asyncio.wait_for(
+                        asyncio.to_thread(extractor.extract, att.filename, content), timeout=ticket_timeout
+                    )
+                    rec["charCount"] = len(text or "")
+                    rec["tokenEst"] = estimate_tokens(text or "")
+                except Exception as exc:
+                    rec["extractError"] = f"{type(exc).__name__}: {exc}"
+            out.append(rec)
+        return out
+
+    async def _guarded(ticket_id: str) -> None:
         async with sem:
-            try:
-                ticket = await jira.fetch_ticket(ticket_id)
-            except Exception as exc:  # a bad ticket must not abort the batch
-                print(f"{ticket_id}: FETCH ERROR {type(exc).__name__}: {exc}")
-                return
-            desc = ticket.description or ""
-            records.append({
-                "ticketId": ticket_id, "kind": "description", "filename": "(description)",
-                "ext": "(description)", "mimeType": "", "sizeBytes": len(desc.encode("utf-8")),
-                "charCount": len(desc), "tokenEst": estimate_tokens(desc),
-                "supported": True, "ideaCard": False, "extractError": "",
-            })
-            for att in ticket.attachments:
-                rec = {
-                    "ticketId": ticket_id, "kind": "attachment", "filename": att.filename,
-                    "ext": _ext(att.filename), "mimeType": att.mime_type,
-                    "sizeBytes": int(att.size_bytes or 0), "charCount": 0, "tokenEst": 0,
-                    "supported": is_supported(att.filename), "ideaCard": is_idea_card(att.filename),
-                    "extractError": "",
-                }
-                if rec["supported"]:
-                    try:
-                        content = await jira.download_attachment(att)
-                        text = await asyncio.to_thread(extractor.extract, att.filename, content)
-                        rec["charCount"] = len(text or "")
-                        rec["tokenEst"] = estimate_tokens(text or "")
-                    except Exception as exc:
-                        rec["extractError"] = f"{type(exc).__name__}: {exc}"
-                records.append(rec)
-            print(f"{ticket_id}: {len(ticket.attachments)} attachments")
+            out = await _one(ticket_id)
+        records.extend(out)
+        progress["n"] += 1
+        n_att = sum(1 for r in out if r["kind"] == "attachment")
+        print(f"[{progress['n']}/{progress['total']}] {ticket_id}: {n_att} attachments")
+        if checkpoint_path is not None and progress["n"] % checkpoint_every == 0:
+            checkpoint_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    await asyncio.gather(*(_one(t) for t in ticket_ids))
+    if done:
+        print(f"resuming: {len(done)} tickets already collected, {len(todo)} to go")
+    await asyncio.gather(*(_guarded(t) for t in todo))
+    if checkpoint_path is not None:  # final flush
+        checkpoint_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
     return records
 
 
@@ -367,15 +400,25 @@ async def _main(args) -> None:
     out.mkdir(parents=True, exist_ok=True)
     cache = out / "attachments_raw.json"
 
-    if args.use_cache and cache.exists():
-        records = json.loads(cache.read_text(encoding="utf-8"))
-        print(f"loaded {len(records)} cached records from {cache}")
+    ticket_ids = load_ticket_ids(args.tickets)
+    have = json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else []
+    collected_ids = {r["ticketId"] for r in have}
+    remaining = [t for t in ticket_ids if t not in collected_ids]
+
+    if args.use_cache and not remaining:
+        records = have
+        print(f"loaded {len(records)} cached records ({len(collected_ids)} tickets) from {cache}")
     else:
-        ticket_ids = load_ticket_ids(args.tickets)
-        print(f"collecting attachments for {len(ticket_ids)} tickets (concurrency={args.concurrency})")
-        records = await collect(ticket_ids, concurrency=args.concurrency)
-        cache.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"wrote {len(records)} records -> {cache}")
+        # Always resume from whatever is already cached, checkpointing as we go, so a stall/stop
+        # never loses progress - re-run the same command to continue from where it stopped.
+        print(f"collecting {len(remaining)}/{len(ticket_ids)} tickets "
+              f"(concurrency={args.concurrency}, timeout={args.ticket_timeout}s, "
+              f"checkpoint every {args.checkpoint_every}); cache: {cache}")
+        records = await collect(
+            ticket_ids, concurrency=args.concurrency, ticket_timeout=args.ticket_timeout,
+            done_records=have, checkpoint_path=cache, checkpoint_every=args.checkpoint_every,
+        )
+        print(f"collected {len({r['ticketId'] for r in records})} tickets -> {cache}")
 
     att, tickets = to_frames(records)
     stats, charts = build_charts(att, tickets, out / "charts")
@@ -394,6 +437,11 @@ if __name__ == "__main__":
     parser.add_argument("tickets", help="text file with one IDMT id per line")
     parser.add_argument("--out", default="out/eda/attachments")
     parser.add_argument("--concurrency", type=int, default=4)
-    parser.add_argument("--use-cache", action="store_true", help="reuse <out>/attachments_raw.json")
+    parser.add_argument("--ticket-timeout", type=float, default=90.0,
+                        help="seconds before a slow fetch/download/extract is abandoned (per call)")
+    parser.add_argument("--checkpoint-every", type=int, default=10,
+                        help="flush the cache every N tickets so a stop never loses progress")
+    parser.add_argument("--use-cache", action="store_true",
+                        help="if every ticket is already cached, skip collection; otherwise resume")
     parser.add_argument("--docx", action="store_true", help="also write the .docx report")
     asyncio.run(_main(parser.parse_args()))
