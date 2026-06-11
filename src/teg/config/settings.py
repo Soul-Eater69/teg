@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     llm_api_version: str = "2024-04-01-preview"
     llm_reasoning_effort: str = "low"
     llm_max_output_tokens: int | None = None
+    llm_max_retries: int = 5  # retry 429/5xx/transient-network with exponential backoff + jitter
     llm_timeout_seconds: float = 60.0
     llm_verify_ssl: bool = False
 

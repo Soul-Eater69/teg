@@ -100,3 +100,44 @@ async def test_raises_on_unparseable_content() -> None:
 
     with pytest.raises(LLMError):
         await _client(handler).complete(system="s", user="u", schema=_Out)
+
+
+async def test_retries_on_429_then_succeeds() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 3:  # fail twice, then succeed
+            return httpx.Response(429, headers={"retry-after": "0"}, json={"error": "rate"})
+        return httpx.Response(200, json={"choice": {"message": {"content": '{"answer": "ok"}'}}})
+
+    client = _client(handler, max_retries=5, retry_base_delay=0.0)
+    out = await client.complete(system="s", user="u", schema=_Out)
+    assert out.answer == "ok"
+    assert calls["n"] == 3  # two retries then success
+
+
+async def test_gives_up_after_max_retries() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503, json={"error": "down"})
+
+    client = _client(handler, max_retries=2, retry_base_delay=0.0)
+    with pytest.raises(Exception):
+        await client.complete(system="s", user="u", schema=_Out)
+    assert calls["n"] == 3  # initial + 2 retries
+
+
+async def test_does_not_retry_on_400() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(400, json={"error": "bad request"})
+
+    client = _client(handler, max_retries=5, retry_base_delay=0.0)
+    with pytest.raises(Exception):
+        await client.complete(system="s", user="u", schema=_Out)
+    assert calls["n"] == 1  # 4xx fails fast, no retry
