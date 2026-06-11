@@ -42,7 +42,7 @@ async def _ingest_one(ingestion, ticket_id: str, sem: asyncio.Semaphore, failed:
 
 
 def _ticket_id(doc: dict) -> str:
-    return doc.get("sourceId") or doc.get("id") or ""
+    return doc.get("ticketId") or doc.get("sourceId") or doc.get("id") or ""
 
 
 def _load_json(path: Path) -> list[dict]:

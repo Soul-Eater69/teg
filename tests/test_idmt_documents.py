@@ -49,12 +49,16 @@ def test_idmt_document_shape() -> None:
         )
     ]
     doc = build_idmt_document(er=_er(), condensed=_condensed(), theme_gt=gt)
-    assert doc["id"] == "3364549"  # stable Jira id, not the IDMT key
-    assert doc["sourceId"] == "IDMT-19761"  # mutable Jira key
+    assert doc["id"] == "3364549"  # stable Jira id = the ticket's unique id
+    assert doc["ticketId"] == "IDMT-19761"  # mutable business key (was sourceId)
     assert doc["entityType"] == "EngagementRequest"
-    assert doc["createdBy"] == "U133178"
-    assert "ingestedAt" not in doc and "parentId" not in doc  # ER is a root
+    assert doc["ingestedDate"]  # level-1 Cosmos lifecycle timestamp present
+    assert "parentId" not in doc  # ER is a root
     props = doc["properties"]
+    # source ticket audit moved into properties (level-1 is Cosmos lifecycle)
+    assert props["createdBy"] == "U133178"
+    assert "createdDate" in props and "modifiedDate" in props
+    assert "createdBy" not in doc  # no longer at top level
     assert props["summary"] == "Automate appeals handling"
     assert props["businessProblem"] == "Manual appeals are slow"
     assert props["keyTerms"] == ["appeals", "Medicare"]
@@ -83,6 +87,8 @@ def test_theme_document_shape() -> None:
     assert doc["entityType"] == "Theme"
     assert doc["parentId"] == "3364549"  # links to its ER
     assert doc["parentEntityType"] == "EngagementRequest"
-    assert doc["createdBy"] == "U447949"
+    assert doc["ingestedDate"]  # level-1 Cosmos lifecycle
+    assert doc["properties"]["createdBy"] == "U447949"  # source audit moved into properties
+    assert "createdBy" not in doc
     assert doc["properties"]["title"] == "CP 2027 Guided Health Plans : Appeal Decision"
     assert doc["properties"]["description"].startswith("This theme")
