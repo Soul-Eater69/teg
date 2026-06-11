@@ -202,6 +202,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
             return {"ticket_id": ticket_id, "gt": gt, "predicted": [], "error": str(exc)}
         buckets = _miss_buckets(gt, predicted, trace)
         retrieval = _retrieval_recall(gt, trace, args.k)
+        boost = _historic_boost(gt, predicted, trace)
         # Post-hoc: ask why the LLM dropped GT it actually saw (never changes the metrics).
         drop_reasons: dict[str, str] = {}
         if llm is not None and buckets["llm_dropped"]:
@@ -234,7 +235,25 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     print(f"[{progress['done']}/{progress['total']}] {ticket_id}  "
           f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)}, {elapsed:.1f}s)")
     return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted, "buckets": buckets,
-            "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed, "retrieval": retrieval}
+            "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed,
+            "retrieval": retrieval, "boost": boost}
+
+
+def _historic_boost(gt: set[str], predicted: list[str], trace) -> dict:
+    """Did appearing in the historic evidence make a GT value stream more likely to be picked?
+
+    Splits this ticket's GT into 'backed by historic' (the VS appeared in the 6 similar tickets'
+    evidence) vs 'not backed', and counts recall on each. Aggregated, the gap between the two recalls
+    is the lift the historic evidence adds to selection (most meaningful in evidence/merge modes).
+    """
+    hist = set(trace.historic_lane_ids)
+    pred = set(predicted)
+    backed = gt & hist
+    not_backed = gt - hist
+    return {
+        "backed_total": len(backed), "backed_hit": len(backed & pred),
+        "notbacked_total": len(not_backed), "notbacked_hit": len(not_backed & pred),
+    }
 
 
 def _retrieval_recall(gt: set[str], trace, ks: list[int]) -> dict:
@@ -342,6 +361,7 @@ async def main(args) -> None:
     # Judge-adjusted: predictions judged relevant (even if not GT) + misses judged supported.
     judge_pred = judge_rel_pred = judge_supported_miss = 0
     retrieval_acc: dict[str, list] = {}
+    boost_acc = {"backed_total": 0, "backed_hit": 0, "notbacked_total": 0, "notbacked_hit": 0}
     p_at = {k: [] for k in args.k}
     r_at = {k: [] for k in args.k}
     for res in results:
@@ -349,6 +369,8 @@ async def main(args) -> None:
             continue
         for key, val in (res.get("retrieval") or {}).items():
             retrieval_acc.setdefault(key, []).append(val)
+        for key in boost_acc:
+            boost_acc[key] += (res.get("boost") or {}).get(key, 0)
         gt, predicted = res["gt"], res["predicted"]
         tp, fp, fn = _prf(predicted, gt)
         micro_tp += tp; micro_fp += fp; micro_fn += fn
@@ -408,6 +430,15 @@ async def main(args) -> None:
         used = "used in pool" if args.mode in ("merge", "historic_only", "evidence") else "DIAGNOSTIC - not used in this mode"
         print(f"  historic lane R = {retrieval_mean.get('historic_lane', 0):.3f}  (GT surfaced by historic precedent; {used})")
         print(f"  review pool R   = {retrieval_mean.get('pool', 0):.3f}  (GT the LLM actually saw - the ceiling)")
+
+    # Historic boost: recall on GT that the historic evidence surfaced vs GT it didn't. The gap is
+    # how much the historic signal lifts selection (most meaningful in evidence/merge).
+    br = _div(boost_acc["backed_hit"], boost_acc["backed_total"])
+    nr_ = _div(boost_acc["notbacked_hit"], boost_acc["notbacked_total"])
+    print("\nhistoric boost (recall split by whether the GT appeared in the historic evidence):")
+    print(f"  GT backed by historic:     {boost_acc['backed_hit']}/{boost_acc['backed_total']} = {br:.3f} recall")
+    print(f"  GT NOT in historic:        {boost_acc['notbacked_hit']}/{boost_acc['notbacked_total']} = {nr_:.3f} recall")
+    print(f"  -> lift from historic = {br - nr_:+.3f}  (higher recall when the GT is in the evidence)")
 
     # Cohort breakdown: single-VS (gt==1, the easy half excluded by --min-gt 2) vs multi-VS.
     no_att = _load_no_attachment_ids(args.attachments_cache) if args.attachments_cache else set()
@@ -492,6 +523,7 @@ async def main(args) -> None:
         "cohorts": cohort_rows, "cohort_n": cohort_n, "latency": latency,
         "buckets": dict(bucket_totals), "judge_p": _div(judge_rel_pred, judge_pred) if judge_pred else None,
         "retrieval": retrieval_mean,
+        "boost": {"backed_recall": br, "notbacked_recall": nr_, "lift": br - nr_},
     }
 
 
@@ -561,6 +593,17 @@ def build_eval_docx(args, runs: list[dict], out_path: Path) -> None:
               .replace("pool", "review pool R (ceiling)"),
               f"{sum(r['retrieval'].get(k, 0) for r in runs) / nr:.3f}"] for k in keys]
     table(doc, ["Lane / stage", "Recall (mean)"], rrows)
+
+    if any(r.get("boost") for r in runs):
+        doc.add_heading(f"Historic boost (mean of {nr} runs)", level=1)
+        doc.add_paragraph("Recall on GT that the historic evidence surfaced vs GT it didn't. The "
+                          "lift is how much the historic signal improves selection.")
+        b0 = lambda k: sum((r.get("boost") or {}).get(k, 0) for r in runs) / nr  # noqa: E731
+        table(doc, ["Metric", "Recall"], [
+            ["GT backed by historic", f"{b0('backed_recall'):.3f}"],
+            ["GT not in historic", f"{b0('notbacked_recall'):.3f}"],
+            ["lift from historic", f"{b0('lift'):+.3f}"],
+        ])
 
     doc.add_heading(f"Latency + pool (mean of {nr} runs)", level=1)
     bk = lambda k: sum((r.get("buckets") or {}).get(k, 0) for r in runs) / nr  # noqa: E731
