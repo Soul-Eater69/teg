@@ -1,11 +1,11 @@
 {
   "name": "idp_teg_data",
   "fields": [
-    { "name": "id", "type": "Edm.String", "key": true, "filterable": true, "retrievable": true },
-    { "name": "source", "type": "Edm.String", "filterable": true, "retrievable": true },
-    { "name": "sourceId", "type": "Edm.String", "filterable": true, "retrievable": true },
-    { "name": "entityType", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
-    { "name": "content", "type": "Edm.String", "searchable": true, "retrievable": true, "analyzer": "standard.lucene" },
+    { "name": "id", "type": "Edm.String", "key": true, "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "source", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "sourceId", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "entityType", "type": "Edm.String", "searchable": false, "filterable": true, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true, "filterable": false, "sortable": false, "facetable": false, "retrievable": true, "analyzer": "standard.lucene" },
     {
       "name": "content_vector",
       "type": "Collection(Edm.Single)",
@@ -18,19 +18,19 @@
       "name": "properties",
       "type": "Edm.ComplexType",
       "fields": [
-        { "name": "valueStreamId", "type": "Edm.String", "filterable": true, "retrievable": true },
-        { "name": "valueStreamName", "type": "Edm.String", "retrievable": true },
-        { "name": "valueStreamDescription", "type": "Edm.String", "retrievable": true },
-        { "name": "category", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
-        { "name": "trigger", "type": "Edm.String", "retrievable": true },
-        { "name": "valueProposition", "type": "Edm.String", "retrievable": true },
-        { "name": "summary", "type": "Edm.String", "retrievable": true },
+        { "name": "valueStreamId", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+        { "name": "valueStreamName", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+        { "name": "valueStreamDescription", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+        { "name": "category", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+        { "name": "trigger", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+        { "name": "valueProposition", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+        { "name": "summary", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
         {
           "name": "valueStreams",
           "type": "Collection(Edm.ComplexType)",
           "fields": [
-            { "name": "valueStreamId", "type": "Edm.String", "retrievable": true },
-            { "name": "valueStreamName", "type": "Edm.String", "retrievable": true }
+            { "name": "valueStreamId", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+            { "name": "valueStreamName", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true }
           ]
         }
       ]
