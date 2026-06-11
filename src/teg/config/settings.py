@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     jira_api_version: str = "2"
     jira_verify_ssl: bool = False
     jira_timeout_seconds: float = 30.0
+    jira_value_stream_field: str = ""  # Business Value Stream customfield_#####; discovered if empty
+    jira_value_stream_field_name: str = "Business Value Stream"  # display name used for discovery
 
     # Azure AI Search (one unified index; lane = entityType filter)
     search_endpoint: str = ""

@@ -2,8 +2,9 @@
 
 The doc `id` is the STABLE Jira internal issue id; the mutable Jira key (IDMT-####,
 GROUP-####) is kept separately. A linked Theme's stable id + content come from fetching
-the GROUP issue (the issuelink only gives the key), so we build the Theme doc from the
-same fetch.
+the linked issue (the issuelink only gives the key). The Value Stream is read straight from
+the linked issue's Business Value Stream field (no catalogue match), so the Theme carries its
+resolved value_stream_id + name.
 """
 
 from __future__ import annotations
@@ -13,11 +14,13 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class ExtractedTheme:
-    """A linked Theme / GROUP issue."""
+    """A linked Theme issue and the Value Stream read from its Business Value Stream field."""
 
     stable_id: str  # Jira internal issue id (e.g. 3966046)
-    group_key: str  # GROUP-#### (mutable)
-    summary: str  # GROUP summary - the Theme title; also encodes the value stream name
+    group_key: str  # linked issue key, e.g. GROUP-#### (mutable)
+    summary: str  # linked-issue summary - the Theme title
+    value_stream_id: str = ""  # from the Business Value Stream field "<name> {<id>}"
+    value_stream_name: str = ""
     description: str = ""
     created_date: str = ""
     modified_date: str = ""

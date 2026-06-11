@@ -24,15 +24,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
 from pathlib import Path
 
 import httpx
 
 from teg.config.settings import load_settings
+from teg.ingestion.extraction.value_stream_field import parse_value_stream
 
-# "<name> {<id>}" — name is everything before the last {...}; id is inside the braces.
-_VS_PATTERN = re.compile(r"^\s*(?P<name>.*?)\s*\{\s*(?P<id>[^{}]+?)\s*\}\s*$")
 _DEFAULT_FIELD_NAME = "Business Value Stream"
 
 
@@ -43,28 +41,6 @@ def _read_ids(arg: str) -> list[str]:
         lines = path.read_text(encoding="utf-8").splitlines()
         return [s.strip() for s in lines if s.strip() and not s.strip().startswith("#")]
     return [arg.strip()]
-
-
-def parse_value_stream(raw) -> tuple[str, str] | None:
-    """Parse a Business Value Stream field value into (name, id), or None.
-
-    Tolerates a plain string, a Jira select object ({value: ...} / {name: ...}), or a list of
-    those (takes the first that parses).
-    """
-    if raw is None:
-        return None
-    if isinstance(raw, list):
-        for item in raw:
-            parsed = parse_value_stream(item)
-            if parsed:
-                return parsed
-        return None
-    if isinstance(raw, dict):
-        raw = raw.get("value") or raw.get("name") or ""
-    match = _VS_PATTERN.match(str(raw))
-    if not match:
-        return None
-    return match.group("name").strip(), match.group("id").strip()
 
 
 def _link_targets(issuelinks: list) -> list[dict]:

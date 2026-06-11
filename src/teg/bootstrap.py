@@ -16,7 +16,6 @@ from teg.integrations.llm import build_llm_client
 from teg.integrations.search import build_search_client
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.ingestion.extraction.jira_source import build_jira_ingestion_source
-from teg.ingestion.ground_truth.value_stream_match import ValueStreamResolver
 from teg.ingestion.pipeline.idmt_ingestion import IdmtIngestion
 from teg.services.condense_service import CondenseService
 from teg.services.theme_service import ThemeService
@@ -43,14 +42,14 @@ def build_condense_service(settings: Settings | None = None) -> CondenseService:
 
 
 def build_idmt_ingestion(
-    settings: Settings | None = None, *, catalogue_path: str, embed: bool = False
+    settings: Settings | None = None, *, catalogue_path: str | None = None, embed: bool = False
 ) -> IdmtIngestion:
+    # catalogue_path is no longer needed (VS comes from each theme's Business Value Stream
+    # field, not a catalogue match); kept optional for backward-compatible callers.
     settings = settings or load_settings()
     return IdmtIngestion(
         jira_source=build_jira_ingestion_source(settings),
         condense_service=build_condense_service(settings),
-        resolver=ValueStreamResolver(load_value_stream_catalogue(catalogue_path)),
-        llm_client=build_llm_client(settings),
         embeddings_client=build_embeddings_client(settings) if embed else None,
     )
 
