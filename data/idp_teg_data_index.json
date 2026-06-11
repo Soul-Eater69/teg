@@ -2,10 +2,12 @@
   "name": "idp_teg_data",
   "fields": [
     { "name": "id", "type": "Edm.String", "key": true, "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
-    { "name": "source", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "key", "type": "Edm.String", "searchable": false, "filterable": true, "sortable": false, "facetable": false, "retrievable": true },
     { "name": "sourceId", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "source", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
     { "name": "entityType", "type": "Edm.String", "searchable": false, "filterable": true, "sortable": false, "facetable": false, "retrievable": true },
-    { "name": "content", "type": "Edm.String", "searchable": true, "filterable": false, "sortable": false, "facetable": false, "retrievable": true, "analyzer": "standard.lucene" },
+    { "name": "status", "type": "Edm.String", "searchable": false, "filterable": true, "sortable": false, "facetable": false, "retrievable": true },
+    { "name": "searchText", "type": "Edm.String", "searchable": true, "filterable": false, "sortable": false, "facetable": false, "retrievable": true, "analyzer": "standard.lucene" },
     {
       "name": "content_vector",
       "type": "Collection(Edm.Single)",
@@ -24,7 +26,6 @@
         { "name": "category", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
         { "name": "trigger", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
         { "name": "valueProposition", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
-        { "name": "summary", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
         {
           "name": "valueStreams",
           "type": "Collection(Edm.ComplexType)",
@@ -49,7 +50,7 @@
       {
         "name": "teg-semantic",
         "prioritizedFields": {
-          "prioritizedContentFields": [ { "fieldName": "content" } ]
+          "prioritizedContentFields": [ { "fieldName": "searchText" } ]
         }
       }
     ]

@@ -9,6 +9,7 @@ filter fields.
 
 from __future__ import annotations
 
+from teg.ingestion.documents.idmt_documents import doc_id
 from teg.ingestion.catalogues.models import (
     CatalogueCapability,
     CatalogueStage,
@@ -92,12 +93,17 @@ def build_catalogue_content(vs: CatalogueValueStream) -> str:
 def build_index_document(
     vs: CatalogueValueStream, content_vector: list[float] | None = None
 ) -> dict:
-    """VS search-index document: retrieval text + vector + display/filter fields only."""
+    """VS search-index document: retrieval text + vector + display fields. Identity matches the
+    historic doc: id=uuid (deterministic), key=VS name, sourceId=VS id. status is null (VS has none).
+    The properties are read by the selection candidate blocks, so they stay."""
     return {
-        "id": vs.value_stream_id,
+        "id": doc_id(ENTITY_TYPE, vs.value_stream_id),  # uuid (deterministic)
+        "key": vs.value_stream_name,  # VS name (business key)
+        "sourceId": vs.value_stream_id,  # VS id (e.g. VSR00074590)
         "source": CATALOGUE_SOURCE,
         "entityType": ENTITY_TYPE,
-        "content": build_catalogue_content(vs),
+        "status": None,  # value streams have no ticket status
+        "searchText": build_catalogue_content(vs),
         "content_vector": content_vector,
         "properties": {
             "valueStreamId": vs.value_stream_id,

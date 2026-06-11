@@ -273,7 +273,7 @@ async def main(args) -> None:
         if len(gt) < args.min_gt:  # drop tickets with too few GT VS (e.g. single-label)
             skipped += 1
             continue
-        base_jobs.append((doc, doc.get("ticketId") or doc.get("sourceId") or doc.get("id") or f"row{i}", gt))
+        base_jobs.append((doc, doc.get("key") or doc.get("ticketId") or doc.get("sourceId") or f"row{i}", gt))
 
     # Build the per-ticket penalty prior (leave-one-out) from the chosen signal.
     #   gt_freq = corpus tag frequency (broad = often a GT). fp_rate = false-positive rate

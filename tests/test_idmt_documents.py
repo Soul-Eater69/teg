@@ -49,9 +49,11 @@ def test_idmt_document_shape() -> None:
         )
     ]
     doc = build_idmt_document(er=_er(), condensed=_condensed(), theme_gt=gt)
-    assert doc["id"] == "3364549"  # Cosmos doc id = stable Jira id
+    assert len(doc["id"]) == 36 and doc["id"].count("-") == 4  # uuid doc id
     assert doc["key"] == "IDMT-19761"  # business key
     assert doc["sourceId"] == "3364549"  # stable Jira id
+    # deterministic: same source id -> same uuid (idempotent upsert)
+    assert doc["id"] == build_idmt_document(er=_er(), condensed=_condensed(), theme_gt=gt)["id"]
     assert doc["entityType"] == "EngagementRequest"  # PascalCase
     assert doc["createdAt"] and doc["createdBy"] == "teg-ingestion"  # Cosmos lifecycle, level 1
     assert doc["lastModifiedAt"] and doc["parentRef"] is None  # ER is a root
@@ -81,7 +83,7 @@ def test_theme_document_shape() -> None:
         created_by="U447949",
     )
     doc = build_theme_document(theme, parent_er_id="3364549")
-    assert doc["id"] == "3966046"  # Cosmos doc id = stable Jira id
+    assert len(doc["id"]) == 36  # uuid doc id
     assert doc["key"] == "GROUP-23618"  # business key
     assert doc["sourceId"] == "3966046"  # stable Jira id
     assert doc["entityType"] == "Theme"

@@ -9,6 +9,7 @@ ticketId is the mutable business key (IDMT-####).
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
 from teg.domain.condensed import CondensedTicket
@@ -19,10 +20,18 @@ ER_SOURCE = "Jira"
 ER_ENTITY_TYPE = "EngagementRequest"  # PascalCase (consistent with ValueStream)
 THEME_ENTITY_TYPE = "Theme"
 INGEST_ACTOR = "teg-ingestion"  # the Cosmos createdBy/lastModifiedBy actor
+# Fixed namespace so doc_id is a UUID that is DETERMINISTIC from the stable source id - the
+# same ticket always gets the same id, so re-ingest upserts (no duplicates), unlike a random uuid4.
+_DOC_NS = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def doc_id(entity_type: str, source_id: str) -> str:
+    """A UUID doc id, deterministic from entity + stable source id (idempotent upsert key)."""
+    return str(uuid.uuid5(_DOC_NS, f"{entity_type}:{source_id}"))
 
 
 def build_idmt_document(
@@ -36,9 +45,9 @@ def build_idmt_document(
     fields = condensed.summary_fields
     now = _now()
     return {
-        "id": er.stable_id,  # Cosmos doc id = the stable Jira internal id
-        "key": er.key or None,  # IDMT-#### (mutable business key)
-        "sourceId": er.stable_id,  # stable Jira internal id (== id)
+        "id": doc_id(ER_ENTITY_TYPE, er.stable_id),  # uuid doc id (deterministic from sourceId)
+        "key": er.key or None,  # IDMT-#### (business key)
+        "sourceId": er.stable_id,  # stable Jira internal id (e.g. 3364549)
         "source": ER_SOURCE,
         "entityType": ER_ENTITY_TYPE,
         "createdAt": now,  # Cosmos lifecycle
@@ -77,9 +86,9 @@ def build_theme_document(theme: ExtractedTheme, *, parent_er_id: str) -> dict:
     """Cosmos Theme document (TDD 4.1.2): the Jira GROUP artifact, linked to its ER via parentRef."""
     now = _now()
     return {
-        "id": theme.stable_id,  # Cosmos doc id = stable Jira internal id
-        "key": theme.group_key or None,  # GROUP-#### (mutable business key)
-        "sourceId": theme.stable_id,  # stable Jira internal id (== id)
+        "id": doc_id(THEME_ENTITY_TYPE, theme.stable_id),  # uuid doc id (deterministic)
+        "key": theme.group_key or None,  # GROUP-#### (business key)
+        "sourceId": theme.stable_id,  # stable Jira internal id
         "source": ER_SOURCE,
         "entityType": THEME_ENTITY_TYPE,
         "createdAt": now,  # Cosmos lifecycle

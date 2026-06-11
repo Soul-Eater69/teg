@@ -20,7 +20,7 @@ from teg.ingestion.extraction.jira_records import ExtractedEngagementRequest, Ex
 from teg.ingestion.extraction.value_stream_field import parse_value_stream
 
 # Jira issue fields we request (the REST `fields` param is a comma-joined list).
-_COMMON_FIELDS = ("summary", "description", "created", "updated", "reporter")
+_COMMON_FIELDS = ("summary", "description", "created", "updated", "reporter", "status")
 _ER_FIELDS = (*_COMMON_FIELDS, "issuelinks")  # the ER also needs its linked issues
 
 
@@ -33,6 +33,11 @@ def _actor(fields: dict) -> str:
     if isinstance(reporter, dict):
         return _text(reporter.get("name") or reporter.get("key") or reporter.get("displayName"))
     return ""
+
+
+def _status(fields: dict) -> str:
+    status = fields.get("status")
+    return _text(status.get("name")) if isinstance(status, dict) else ""
 
 
 def _linked_issue_keys(fields: dict) -> list[str]:
@@ -61,6 +66,7 @@ def parse_engagement_request(issue: dict) -> tuple[ExtractedEngagementRequest, l
         key=_text(issue.get("key")),
         title=_text(fields.get("summary")),
         description=_text(fields.get("description")),
+        status=_status(fields),
         created_date=_text(fields.get("created")),
         modified_date=_text(fields.get("updated")),
         created_by=_actor(fields),

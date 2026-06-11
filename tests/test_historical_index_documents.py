@@ -56,17 +56,16 @@ def test_historical_index_document_shape() -> None:
     doc = build_historical_index_document(
         er=_er(), condensed=_condensed(), theme_gt=_gt(), content_vector=[0.1, 0.2]
     )
-    assert doc["id"] == "3364549"
-    assert doc["sourceId"] == "IDMT-19761"
+    assert len(doc["id"]) == 36  # uuid doc id
+    assert doc["key"] == "IDMT-19761"  # leave-one-out / match key
+    assert doc["sourceId"] == "3364549"  # stable Jira id
     assert doc["entityType"] == "EngagementRequest"
     assert doc["content_vector"] == [0.1, 0.2]
-    props = doc["properties"]
-    assert props["summary"] == "Automate appeals handling"
-    label = props["valueStreams"][0]
+    assert doc["searchText"]  # was 'content'
+    assert "summary" not in doc["properties"]  # summary dropped from the index
+    label = doc["properties"]["valueStreams"][0]
     assert label["valueStreamId"] == "VSR00074590"
     assert label["valueStreamName"] == "Resolve Appeal"
-    assert "supportType" not in label and "evidence" not in label  # classification removed
-    assert "content" in doc and "valueStages" not in props  # historical, not catalogue
 
 
 def test_no_vector_when_not_embedded() -> None:

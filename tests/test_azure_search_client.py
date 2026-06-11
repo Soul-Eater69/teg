@@ -42,11 +42,11 @@ def test_value_stream_hit_prefers_reranker_score() -> None:
 
 def test_historical_hit_maps_native_value_streams() -> None:
     doc = {
-        "id": "3364549",
-        "sourceId": "IDMT-8280",
+        "key": "IDMT-8280",
+        "sourceId": "3364549",
         "@search.score": 0.82,
+        "searchText": "BH enhancements initiative adds suicide prevention",
         "properties": {
-            "summary": "BH enhancements initiative adds suicide prevention",
             "valueStreams": [
                 {
                     "valueStreamId": "VSR00074586",
@@ -56,7 +56,7 @@ def test_historical_hit_maps_native_value_streams() -> None:
         },
     }
     hit = _to_historical_hit(doc)
-    assert hit.ticket_id == "IDMT-8280"  # sourceId preferred over stable id
+    assert hit.ticket_id == "IDMT-8280"  # key (IDMT-####) = the leave-one-out match key
     assert hit.snippet.startswith("BH enhancements")
     assert hit.score == 0.82
     label = hit.value_streams[0]

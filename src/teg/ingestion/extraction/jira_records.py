@@ -35,6 +35,7 @@ class ExtractedEngagementRequest:
     key: str  # IDMT-#### (mutable)
     title: str  # Jira summary
     description: str = ""
+    status: str = ""  # Jira issue status (e.g. To Do / In Progress / Cancelled)
     created_date: str = ""
     modified_date: str = ""
     created_by: str = ""

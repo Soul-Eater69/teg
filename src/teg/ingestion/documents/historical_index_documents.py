@@ -1,21 +1,23 @@
 """Build the historical IDMT search-index document (idp_teg_data).
 
-Turns an ingested ticket into the retrieval doc that powers the historic-evidence lane
-of VS prediction: content (embedded) + content_vector + properties.{summary, valueStreams}.
-content is built the SAME way as the prediction query (build_retrieval_text) so a stored
-ticket and a live query share the vector space. value_streams carries the resolved VS GT
-(id + name) so a historical hit brings its labels without a Cosmos lookup.
+Turns an ingested ticket into the retrieval doc that powers the historic-evidence lane of VS
+prediction: searchText (embedded) + content_vector + properties.valueStreams. searchText is built
+the SAME way as the prediction query (build_retrieval_text) so a stored ticket and a live query
+share the vector space. valueStreams carries the resolved VS GT (id + name) so a historical hit
+brings its labels without a Cosmos lookup. Identity: id=uuid (deterministic), key=IDMT-#### (the
+match/leave-one-out key), sourceId=stable Jira id. status = the ticket's Jira status.
 """
 
 from __future__ import annotations
 
 from teg.domain.condensed import CondensedTicket
+from teg.ingestion.documents.idmt_documents import ER_ENTITY_TYPE, doc_id
 from teg.ingestion.extraction.jira_records import ExtractedEngagementRequest
 from teg.ingestion.ground_truth.theme_ground_truth import ThemeGroundTruth
 from teg.value_stream.retrieval import build_retrieval_text
 
 SOURCE = "Jira"
-ENTITY_TYPE = "EngagementRequest"
+ENTITY_TYPE = ER_ENTITY_TYPE
 
 
 def build_historical_content(condensed: CondensedTicket) -> str:
@@ -31,14 +33,15 @@ def build_historical_index_document(
     content_vector: list[float] | None = None,
 ) -> dict:
     return {
-        "id": er.stable_id,
+        "id": doc_id(ENTITY_TYPE, er.stable_id),  # uuid (deterministic)
+        "key": er.key or None,  # IDMT-#### (the retrieval match / leave-one-out key)
+        "sourceId": er.stable_id,  # stable Jira internal id
         "source": SOURCE,
-        "sourceId": er.key or None,
         "entityType": ENTITY_TYPE,
-        "content": build_historical_content(condensed),
+        "status": er.status or None,  # Jira status (filter out Cancelled at retrieval)
+        "searchText": build_historical_content(condensed),
         "content_vector": content_vector,
         "properties": {
-            "summary": condensed.summary_fields.generated_summary,
             "valueStreams": [_label(gt) for gt in theme_gt],
         },
     }

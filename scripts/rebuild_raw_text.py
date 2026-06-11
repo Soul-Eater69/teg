@@ -29,7 +29,7 @@ from teg.integrations.jira import build_jira_client
 
 
 def _ticket_id(doc: dict) -> str:
-    return doc.get("ticketId") or doc.get("sourceId") or doc.get("id") or ""
+    return doc.get("key") or doc.get("ticketId") or doc.get("sourceId") or ""
 
 
 async def main(args) -> None:

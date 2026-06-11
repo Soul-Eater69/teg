@@ -109,7 +109,11 @@ def test_index_document_content_and_props(tmp_path) -> None:
     assert "Acquire Asset" in content and "Finance" in content and "Faster asset turnaround" in content
 
     doc = build_index_document(vs, content_vector=[0.1, 0.2])
-    assert doc["content"] == content
+    assert len(doc["id"]) == 36  # uuid doc id
+    assert doc["sourceId"] == "VSR00074583"  # VS id
+    assert doc["key"] == vs.value_stream_name  # VS name (business key)
+    assert doc["status"] is None  # VS has no ticket status
+    assert doc["searchText"] == content  # was 'content'
     assert doc["content_vector"] == [0.1, 0.2]
     props = doc["properties"]
     assert props["category"] == "Finance"

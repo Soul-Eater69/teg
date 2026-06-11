@@ -34,9 +34,9 @@ _RERANKER_SCALE = 4.0  # Azure semantic reranker scores are 0-4
 # uses the full-text embedding, so semantics aren't lost - only the keyword half is trimmed.
 _KEYWORD_CHAR_CAP = 8_000
 _EMBED_CHAR_CAP = 30_000  # ~8k tokens; keep under the embedding model's input limit
-_CONTENT_FIELD = "content"  # scope BM25 to one field so the clause count = terms x 1
+_CONTENT_FIELD = "searchText"  # the single searchable text field (BM25 clause count = terms x 1)
 _VS_SELECT = [
-    "id",
+    "key",
     "properties/valueStreamId",
     "properties/valueStreamName",
     "properties/valueStreamDescription",
@@ -44,7 +44,8 @@ _VS_SELECT = [
     "properties/trigger",
     "properties/valueProposition",
 ]
-_HISTORICAL_SELECT = ["id", "sourceId", "properties/summary", "properties/valueStreams"]
+# key (IDMT-####) is the leave-one-out / display id; searchText is the hit snippet.
+_HISTORICAL_SELECT = ["key", "sourceId", "searchText", "properties/valueStreams"]
 
 
 class AzureSearchClient:
@@ -123,12 +124,13 @@ def _to_value_stream_hit(doc) -> ValueStreamHit:
 
 def _to_historical_hit(doc) -> HistoricalHit:
     props = _props(doc)
-    ticket_id = str(doc.get("sourceId") or doc.get("id") or "")
+    # key (IDMT-####) is the match key used for leave-one-out exclusion in the eval.
+    ticket_id = str(doc.get("key") or doc.get("sourceId") or doc.get("id") or "")
     return HistoricalHit(
         ticket_id=ticket_id,
         title=ticket_id,
         score=_historical_score(doc),
-        snippet=str(props.get("summary") or ""),
+        snippet=str(doc.get("searchText") or "")[:200],
         value_streams=_parse_value_streams(props.get("valueStreams")),
     )
 
