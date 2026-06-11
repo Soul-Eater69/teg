@@ -475,15 +475,16 @@ if __name__ == "__main__":
     parser.add_argument("--buffer", type=int, default=2, help="added to |GT| in gt_buffer mode")
     parser.add_argument("--min-gt", type=int, default=2, help="skip tickets with fewer than this many GT value streams")
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 10], help="k values for P@k / R@k")
-    parser.add_argument("--concurrency", type=int, default=6, help="tickets evaluated in parallel")
+    parser.add_argument("--concurrency", type=int, default=3, help="tickets evaluated in parallel")
     parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
     parser.add_argument("--window", type=int, default=0,
                         help="override the LLM review-pool size (how many candidates the LLM sees; "
                              "default config=18). Decoupled from output count, so count=gt stays honest.")
-    parser.add_argument("--generic-penalty", type=float, default=0.6,
+    parser.add_argument("--generic-penalty", type=float, default=0.0,
                         help="broad-stream rank penalty scale (penalty = scale * signal, unless earned "
-                             "by history). Default 0.6. Pass 0 to disable. Signal is leave-one-out.")
+                             "by history). Default 0 (off - avoids the fp_rate pass-1). Pass 0.6 for the "
+                             "production operating point. Signal is leave-one-out.")
     parser.add_argument("--min-confidence", type=float, default=0.0,
                         help="abstention floor (0-1): keep only picks at/above this confidence and "
                              "stop padding to --count. Raises precision. Try 0.45. 0 = pad to count.")
