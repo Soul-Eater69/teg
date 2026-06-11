@@ -35,6 +35,17 @@ async def main() -> None:
         r = await client.get(f"{base}/indexes/{name}", params=params, headers=headers)
         r.raise_for_status()
         idx = r.json()
+        # total doc count + per-entityType count (so an empty index is obvious)
+        cnt = await client.get(f"{base}/indexes/{name}/docs/$count", params=params, headers=headers)
+        total = cnt.text.strip() if cnt.status_code == 200 else "?"
+        facet = await client.post(
+            f"{base}/indexes/{name}/docs/search", params=params, headers=headers,
+            json={"search": "*", "top": 0, "facets": ["entityType"]},
+        )
+        by_type = {}
+        if facet.status_code == 200:
+            for f in (facet.json().get("@search.facets", {}) or {}).get("entityType", []):
+                by_type[f.get("value")] = f.get("count")
 
     searchable: list[str] = []
 
@@ -46,7 +57,8 @@ async def main() -> None:
             if f.get("fields"):
                 walk(f["fields"], prefix + "  ")
 
-    print(f"LIVE index '{name}':\n")
+    print(f"LIVE index '{name}':  {total} documents")
+    print(f"  by entityType: {by_type or '(none - index is EMPTY)'}\n")
     walk(idx.get("fields", []))
     print(f"\nSearchable TEXT fields (BM25 clause multiplier): {searchable or ['(none)']}")
     print(f"-> clause limit hit when query_terms x {len(searchable)} > 3000")
