@@ -43,6 +43,7 @@ async def select_value_streams(
     min_confidence: float = 0.0,
     historic_evidence: str = "",
     prompt_name: str = "value_stream/selection",
+    show_scores: bool = True,
 ) -> list[ValueStreamRecommendation]:
     # In evidence mode the historic tickets are shown as a separate context block (not merged
     # into candidates); empty string keeps the section out of the prompt.
@@ -56,7 +57,7 @@ async def select_value_streams(
         requested_final_output_count=requested_count,
         query_for_prompt=query,
         historic_evidence=evidence_block,
-        candidate_blocks=render_candidate_blocks(candidates),
+        candidate_blocks=render_candidate_blocks(candidates, show_scores=show_scores),
     )
     selection = await llm_client.complete(system=system, user=user, schema=ValueStreamSelection)
     recommendations = _resolve(selection, candidates)

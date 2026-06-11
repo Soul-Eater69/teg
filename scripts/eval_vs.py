@@ -300,6 +300,7 @@ async def main(args) -> None:
         min_confidence=args.min_confidence,
         selection_mode=args.mode,
         selection_prompt_override=args.selection_prompt,
+        show_candidate_scores=not args.no_candidate_scores,
         **({"llm_candidate_window": window} if window else {}),
     )
     service = build_value_stream_service(config=config)
@@ -711,6 +712,9 @@ if __name__ == "__main__":
                         help="evaluate a seeded random subset of N tickets (fast prompt iteration); "
                              "0 = all. Same N+seed -> same tickets across runs, so A/Bs are comparable.")
     parser.add_argument("--seed", type=int, default=13, help="sampling seed (fixed so runs match)")
+    parser.add_argument("--no-candidate-scores", action="store_true",
+                        help="strip the lane + semantic score from candidate blocks (weak signal when "
+                             "VS-lane recall is low - test if the model does better without it)")
     parser.add_argument("--attachments-cache", default="",
                         help="EDA attachments_raw.json - adds no-attachment cohort rows to the breakdown")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")

@@ -30,3 +30,4 @@ class ValueStreamConfig:
     #   evidence      - all VS candidates + historic shown as a separate EVIDENCE block (no merge)
     selection_mode: str = "merge"
     selection_prompt_override: str = ""  # prompt name to use instead of the mode default (A/B prompts)
+    show_candidate_scores: bool = True  # show lane + semantic score in candidate blocks (False = strip)

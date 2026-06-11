@@ -127,6 +127,7 @@ class ValueStreamService:
             historic_evidence=historic_evidence,
             prompt_name=self._config.selection_prompt_override
             or _PROMPT_BY_MODE.get(mode, "value_stream/selection"),
+            show_scores=self._config.show_candidate_scores,
         )
         response = ValueStreamResponse(
             ticket_id=request.ticket_id,
