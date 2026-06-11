@@ -49,26 +49,25 @@ def test_idmt_document_shape() -> None:
         )
     ]
     doc = build_idmt_document(er=_er(), condensed=_condensed(), theme_gt=gt)
-    assert doc["id"] == "3364549"  # stable Jira id = the ticket's unique id
-    assert doc["ticketId"] == "IDMT-19761"  # mutable business key (was sourceId)
-    assert doc["entityType"] == "EngagementRequest"
-    assert doc["ingestedDate"]  # level-1 Cosmos lifecycle timestamp present
-    assert "parentId" not in doc  # ER is a root
+    assert doc["id"] == "3364549"  # Cosmos doc id = stable Jira id
+    assert doc["key"] == "IDMT-19761"  # business key
+    assert doc["sourceId"] == "3364549"  # stable Jira id
+    assert doc["entityType"] == "EngagementRequest"  # PascalCase
+    assert doc["createdAt"] and doc["createdBy"] == "teg-ingestion"  # Cosmos lifecycle, level 1
+    assert doc["lastModifiedAt"] and doc["parentRef"] is None  # ER is a root
     props = doc["properties"]
-    # source ticket audit moved into properties (level-1 is Cosmos lifecycle)
-    assert props["createdBy"] == "U133178"
-    assert "createdDate" in props and "modifiedDate" in props
-    assert "createdBy" not in doc  # no longer at top level
-    assert props["summary"] == "Automate appeals handling"
+    assert props["summary"] == "CP 2026 Women's and Family Health"  # the ticket TITLE
+    assert props["businessSummary"] == "Automate appeals handling"  # LLM summary
+    assert props["creationDate"].startswith("2024-05-31")  # source created
+    assert props["insightsTime"].startswith("2025-12-31")  # source last updated
+    assert "generationSignals" not in props  # signals no longer stored
     assert props["businessProblem"] == "Manual appeals are slow"
     assert props["keyTerms"] == ["appeals", "Medicare"]
-    assert "marketSegments" in props["generationSignals"]  # full condense output stored
     theme = props["themes"][0]
-    assert theme["key"] == "3966046"  # -> Theme doc id
-    assert theme["groupId"] == "GROUP-23618"
+    assert theme["key"] == "GROUP-23618"  # business key
+    assert theme["sourceId"] == "3966046"  # -> Theme doc id
     assert theme["valueStreamId"] == "VSR00074590"
     assert theme["valueStreamName"] == "Resolve Appeal"
-    assert "supportType" not in theme and "evidence" not in theme  # classification removed
 
 
 def test_theme_document_shape() -> None:
@@ -82,13 +81,14 @@ def test_theme_document_shape() -> None:
         created_by="U447949",
     )
     doc = build_theme_document(theme, parent_er_id="3364549")
-    assert doc["id"] == "3966046"  # stable Jira id
-    assert doc["groupId"] == "GROUP-23618"  # mutable GROUP key
+    assert doc["id"] == "3966046"  # Cosmos doc id = stable Jira id
+    assert doc["key"] == "GROUP-23618"  # business key
+    assert doc["sourceId"] == "3966046"  # stable Jira id
     assert doc["entityType"] == "Theme"
-    assert doc["parentId"] == "3364549"  # links to its ER
-    assert doc["parentEntityType"] == "EngagementRequest"
-    assert doc["ingestedDate"]  # level-1 Cosmos lifecycle
-    assert doc["properties"]["createdBy"] == "U447949"  # source audit moved into properties
-    assert "createdBy" not in doc
-    assert doc["properties"]["title"] == "CP 2027 Guided Health Plans : Appeal Decision"
-    assert doc["properties"]["description"].startswith("This theme")
+    assert doc["parentRef"] == "3364549"  # parent ER's sourceId
+    assert doc["createdAt"] and doc["createdBy"] == "teg-ingestion"  # Cosmos lifecycle
+    props = doc["properties"]
+    assert props["summary"] == "CP 2027 Guided Health Plans : Appeal Decision"  # ISSUE title
+    assert props["description"].startswith("This theme")
+    assert props["valueStream"] == {"valueStreamId": "", "valueStreamName": ""}  # from the field
+    assert props["creationDate"].startswith("2025-07-09")  # source created

@@ -16,8 +16,9 @@ from teg.ingestion.extraction.jira_records import ExtractedEngagementRequest, Ex
 from teg.ingestion.ground_truth.theme_ground_truth import ThemeGroundTruth
 
 ER_SOURCE = "Jira"
-ER_ENTITY_TYPE = "EngagementRequest"
+ER_ENTITY_TYPE = "EngagementRequest"  # PascalCase (consistent with ValueStream)
 THEME_ENTITY_TYPE = "Theme"
+INGEST_ACTOR = "teg-ingestion"  # the Cosmos createdBy/lastModifiedBy actor
 
 
 def _now() -> str:
@@ -30,32 +31,34 @@ def build_idmt_document(
     condensed: CondensedTicket,
     theme_gt: list[ThemeGroundTruth],
 ) -> dict:
-    """Cosmos IDMT/ER document: condensed business context + theme ground truth."""
+    """Cosmos IDMT/ER document (TDD 4.1.1). Level-1 = Cosmos lifecycle; the source ticket's own
+    dates live in properties as creationDate/insightsTime."""
     fields = condensed.summary_fields
+    now = _now()
     return {
-        "id": er.stable_id,  # stable Jira internal id = the ticket's unique id
-        "ticketId": er.key or None,  # IDMT-#### (mutable business key)
+        "id": er.stable_id,  # Cosmos doc id = the stable Jira internal id
+        "key": er.key or None,  # IDMT-#### (mutable business key)
+        "sourceId": er.stable_id,  # stable Jira internal id (== id)
         "source": ER_SOURCE,
         "entityType": ER_ENTITY_TYPE,
-        "ingestedDate": _now(),  # level-1 Cosmos lifecycle: when WE ingested it
+        "createdAt": now,  # Cosmos lifecycle
+        "createdBy": INGEST_ACTOR,
+        "lastModifiedAt": now,
+        "lastModifiedBy": INGEST_ACTOR,
+        "parentRef": None,  # ER is a root - no parent
         "properties": {
-            # source ticket audit (the Jira ticket's own created/modified) lives with the data
-            "createdDate": er.created_date or None,
-            "createdBy": er.created_by or None,
-            "modifiedDate": er.modified_date or None,
-            "modifiedBy": None,
             "description": condensed.description,
-            "summary": fields.generated_summary,
-            "title": condensed.ticket_title or er.title,
-            "rawText": condensed.raw_text,
+            "summary": condensed.ticket_title or er.title,  # the ticket TITLE
+            "creationDate": er.created_date or None,  # source ticket created
+            "insightsTime": er.modified_date or None,  # source ticket last updated
+            "businessSummary": fields.generated_summary,  # LLM-generated summary
             "keyTerms": list(fields.key_terms),
             "businessProblem": fields.business_problem,
             "businessCapability": fields.business_capability,
             "stakeholders": list(fields.stakeholders),
             "systemsAndProducts": list(fields.systems_and_products),
-            # Store the full condense output so historic tickets can skip condense on
-            # replay - the 18 generation signals feed Theme Description + Business Needs.
-            "generationSignals": condensed.generation_signals.model_dump(by_alias=True),
+            "rawText": condensed.raw_text,
+            # Value Stream ground truth (one entry per linked theme).
             "themes": [_theme_gt(gt) for gt in theme_gt],
         },
     }
@@ -63,29 +66,35 @@ def build_idmt_document(
 
 def _theme_gt(gt: ThemeGroundTruth) -> dict:
     return {
-        "key": gt.theme_stable_id,
-        "groupId": gt.group_key,
+        "key": gt.group_key,  # GROUP-#### (business key)
+        "sourceId": gt.theme_stable_id,  # stable Jira theme id -> Theme doc id
         "valueStreamId": gt.value_stream_id,
         "valueStreamName": gt.value_stream_name,
     }
 
 
 def build_theme_document(theme: ExtractedTheme, *, parent_er_id: str) -> dict:
-    """Cosmos Theme document: the Jira GROUP artifact, linked to its ER via parentId."""
+    """Cosmos Theme document (TDD 4.1.2): the Jira GROUP artifact, linked to its ER via parentRef."""
+    now = _now()
     return {
-        "id": theme.stable_id,  # stable Jira internal id = the theme's unique id
-        "groupId": theme.group_key or None,  # GROUP-#### (mutable business key)
+        "id": theme.stable_id,  # Cosmos doc id = stable Jira internal id
+        "key": theme.group_key or None,  # GROUP-#### (mutable business key)
+        "sourceId": theme.stable_id,  # stable Jira internal id (== id)
         "source": ER_SOURCE,
         "entityType": THEME_ENTITY_TYPE,
-        "parentId": parent_er_id,  # the ER's id (stable Jira internal id)
-        "parentEntityType": ER_ENTITY_TYPE,
-        "ingestedDate": _now(),  # level-1 Cosmos lifecycle
+        "createdAt": now,  # Cosmos lifecycle
+        "createdBy": INGEST_ACTOR,
+        "lastModifiedAt": now,
+        "lastModifiedBy": INGEST_ACTOR,
+        "parentRef": parent_er_id,  # the parent ER's sourceId (stable Jira id)
         "properties": {
-            "createdDate": theme.created_date or None,  # source ticket audit, with the data
-            "createdBy": theme.created_by or None,
-            "modifiedDate": theme.modified_date or None,
-            "modifiedBy": None,
+            "summary": theme.summary,  # ISSUE title
             "description": theme.description,
-            "title": theme.summary,
+            "valueStream": {
+                "valueStreamId": theme.value_stream_id,
+                "valueStreamName": theme.value_stream_name,
+            },
+            "creationDate": theme.created_date or None,  # source created
+            "insightsTime": theme.modified_date or None,  # source last updated
         },
     }
