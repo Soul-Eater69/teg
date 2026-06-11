@@ -282,6 +282,14 @@ async def main(args) -> None:
             continue
         base_jobs.append((doc, doc.get("key") or doc.get("ticketId") or doc.get("sourceId") or f"row{i}", gt))
 
+    # Sample a fixed subset for fast prompt iteration. Seeded + sorted by ticket id so every run
+    # (strong vs lean, summary vs raw, repeat 1/2/3) hits the SAME tickets -> comparable.
+    if args.sample and args.sample < len(base_jobs):
+        import random
+        rng = random.Random(args.seed)
+        base_jobs = sorted(rng.sample(base_jobs, args.sample), key=lambda j: j[1])
+        print(f"sampled {len(base_jobs)} tickets (seed={args.seed}) for this run")
+
     # Build the per-ticket penalty prior (leave-one-out) from the chosen signal.
     #   gt_freq = corpus tag frequency (broad = often a GT). fp_rate = false-positive rate
     #   (broad = often predicted-but-wrong; the correct attractor signal, needs a pass 1).
@@ -588,6 +596,10 @@ if __name__ == "__main__":
     parser.add_argument("--selection-prompt", default="",
                         help="override the mode's selection prompt (A/B prompt variants), "
                              "e.g. value_stream/selection_plain_lean")
+    parser.add_argument("--sample", type=int, default=0,
+                        help="evaluate a seeded random subset of N tickets (fast prompt iteration); "
+                             "0 = all. Same N+seed -> same tickets across runs, so A/Bs are comparable.")
+    parser.add_argument("--seed", type=int, default=13, help="sampling seed (fixed so runs match)")
     parser.add_argument("--attachments-cache", default="",
                         help="EDA attachments_raw.json - adds no-attachment cohort rows to the breakdown")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
