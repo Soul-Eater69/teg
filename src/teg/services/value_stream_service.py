@@ -123,7 +123,8 @@ class ValueStreamService:
             llm_client=self._llm,
             min_confidence=self._config.min_confidence,
             historic_evidence=historic_evidence,
-            prompt_name=_PROMPT_BY_MODE.get(mode, "value_stream/selection"),
+            prompt_name=self._config.selection_prompt_override
+            or _PROMPT_BY_MODE.get(mode, "value_stream/selection"),
         )
         response = ValueStreamResponse(
             ticket_id=request.ticket_id,

@@ -29,3 +29,4 @@ class ValueStreamConfig:
     #   historic_only - candidates only from the historic lane's VS
     #   evidence      - all VS candidates + historic shown as a separate EVIDENCE block (no merge)
     selection_mode: str = "merge"
+    selection_prompt_override: str = ""  # prompt name to use instead of the mode default (A/B prompts)

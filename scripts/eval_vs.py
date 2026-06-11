@@ -265,6 +265,7 @@ async def main(args) -> None:
         generic_penalty_scale=args.generic_penalty,
         min_confidence=args.min_confidence,
         selection_mode=args.mode,
+        selection_prompt_override=args.selection_prompt,
         **({"llm_candidate_window": window} if window else {}),
     )
     service = build_value_stream_service(config=config)
@@ -540,7 +541,9 @@ async def run_repeats(args) -> None:
             m, s = _mean_std([r[key] for r in runs])
             print(f"  {label:12} {m:.3f} ± {s:.3f}   runs={[round(r[key], 3) for r in runs]}")
     if args.docx:
-        docx_path = Path(args.out).with_name(f"eval_{args.mode}_{'raw' if args.raw_text else 'summary'}.docx")
+        tag = "_" + args.selection_prompt.split("/")[-1] if args.selection_prompt else ""
+        docx_path = Path(args.out).with_name(
+            f"eval_{args.mode}{tag}_{'raw' if args.raw_text else 'summary'}.docx")
         build_eval_docx(args, runs, docx_path)
         print(f"\ndocx -> {docx_path}")
 
@@ -582,6 +585,9 @@ if __name__ == "__main__":
     parser.add_argument("--repeat", type=int, default=1,
                         help="run the eval N times and report mean +/- std (captures LLM variance)")
     parser.add_argument("--docx", action="store_true", help="write a .docx report of the run(s)")
+    parser.add_argument("--selection-prompt", default="",
+                        help="override the mode's selection prompt (A/B prompt variants), "
+                             "e.g. value_stream/selection_plain_lean")
     parser.add_argument("--attachments-cache", default="",
                         help="EDA attachments_raw.json - adds no-attachment cohort rows to the breakdown")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
