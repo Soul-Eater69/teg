@@ -109,9 +109,15 @@ async def collect(
     api = settings.jira_api_version
     extractor = build_attachment_extractor()
     sem = asyncio.Semaphore(concurrency)
-    records: list[dict] = list(done_records or [])
-    done = {r["ticketId"] for r in records}
-    todo = [t for t in ticket_ids if t not in done]
+    # A ticket is "done" only if its cached record carries the theme data (new schema). Records
+    # from the older attachments-only collector lack themeCount - re-collect those, don't trust them.
+    complete = {r["ticketId"] for r in (done_records or [])
+                if r.get("kind") == "description" and "themeCount" in r}
+    records: list[dict] = [r for r in (done_records or []) if r["ticketId"] in complete]
+    todo = [t for t in ticket_ids if t not in complete]
+    stale = len(done_records or []) - len(records)
+    if stale:
+        print(f"  ignoring {stale} cached records without theme data (old schema) - re-collecting")
     progress = {"n": 0, "total": len(todo)}
 
     async def _issue(key: str, fields: str) -> dict:
@@ -721,7 +727,10 @@ async def _main(args) -> None:
 
     ticket_ids = load_ticket_ids(args.tickets)
     have = json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else []
-    collected_ids = {r["ticketId"] for r in have}
+    # Only count a ticket as cached if it has theme data (new schema); old attachments-only
+    # caches lack themeCount and would show every ticket as 0 themes / not useful.
+    collected_ids = {r["ticketId"] for r in have
+                     if r.get("kind") == "description" and "themeCount" in r}
     remaining = [t for t in ticket_ids if t not in collected_ids]
 
     if args.use_cache and not remaining:
