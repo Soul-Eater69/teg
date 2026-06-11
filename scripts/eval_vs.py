@@ -539,35 +539,42 @@ def build_eval_docx(args, runs: list[dict], out_path: Path) -> None:
         rows.append([lbl, f"{m:.3f} ± {s:.3f}", str([round(r[key], 3) for r in runs])])
     table(doc, ["Metric", "Mean ± Std", "Per run"], rows)
 
-    doc.add_heading("Cohorts (run 1)", level=1)
+    nr = len(runs)
+    avg = lambda key: sum(r.get(key, 0) or 0 for r in runs) / nr  # noqa: E731
+
+    doc.add_heading(f"Cohorts (mean of {nr} runs)", level=1)
     doc.add_paragraph("Single-VS: watch recall (precision is count-capped). Multi-VS is the hard half.")
     crows = []
-    for label, prf in runs[0].get("cohorts", {}).items():
-        p, r, f = prf
-        crows.append([label.strip(), runs[0]["cohort_n"].get(label, "-"), f"{p:.3f}", f"{r:.3f}", f"{f:.3f}"])
+    for label in runs[0].get("cohorts", {}):
+        ps = [r["cohorts"][label] for r in runs if label in r.get("cohorts", {})]
+        if not ps:
+            continue
+        p = sum(x[0] for x in ps) / len(ps); r_ = sum(x[1] for x in ps) / len(ps); f = sum(x[2] for x in ps) / len(ps)
+        crows.append([label.strip(), runs[0]["cohort_n"].get(label, "-"), f"{p:.3f}", f"{r_:.3f}", f"{f:.3f}"])
     table(doc, ["Cohort", "n", "P", "R", "F1"], crows)
 
-    doc.add_heading("Retrieval recall (ceiling, run 1)", level=1)
+    doc.add_heading(f"Retrieval recall (ceiling, mean of {nr} runs)", level=1)
     doc.add_paragraph("Did retrieval put the GT value streams in front of the LLM? The selection "
                       "recall cannot exceed the review-pool recall.")
-    rec = runs[0].get("retrieval", {})
+    keys = list(runs[0].get("retrieval", {}))
     rrows = [[k.replace("vs_lane@", "VS lane R@").replace("historic_lane", "historic lane R")
-              .replace("pool", "review pool R (ceiling)"), f"{v:.3f}"] for k, v in rec.items()]
-    table(doc, ["Lane / stage", "Recall"], rrows)
+              .replace("pool", "review pool R (ceiling)"),
+              f"{sum(r['retrieval'].get(k, 0) for r in runs) / nr:.3f}"] for k in keys]
+    table(doc, ["Lane / stage", "Recall (mean)"], rrows)
 
-    doc.add_heading("Latency + pool (run 1)", level=1)
-    lat = runs[0].get("latency", {})
-    b = runs[0].get("buckets", {})
-    table(doc, ["Metric", "Value"], [
-        ["avg latency (s)", f"{lat.get('avg', 0):.1f}"],
-        ["median latency (s)", f"{lat.get('median', 0):.1f}"],
-        ["max latency (s)", f"{lat.get('max', 0):.1f}"],
-        ["avg predicted", f"{runs[0].get('avg_predicted', 0):.1f}"],
-        ["avg gt", f"{runs[0].get('avg_gt', 0):.1f}"],
-        ["judge precision", f"{runs[0]['judge_p']:.3f}" if runs[0].get("judge_p") is not None else "n/a"],
-        ["miss: gated_pre_llm", b.get("gated_pre_llm", 0)],
-        ["miss: llm_dropped", b.get("llm_dropped", 0)],
-        ["miss: not_retrieved", b.get("not_retrieved", 0)],
+    doc.add_heading(f"Latency + pool (mean of {nr} runs)", level=1)
+    bk = lambda k: sum((r.get("buckets") or {}).get(k, 0) for r in runs) / nr  # noqa: E731
+    jp = [r["judge_p"] for r in runs if r.get("judge_p") is not None]
+    table(doc, ["Metric", "Value (mean)"], [
+        ["avg latency (s)", f"{sum(r.get('latency', {}).get('avg', 0) for r in runs)/nr:.1f}"],
+        ["median latency (s)", f"{sum(r.get('latency', {}).get('median', 0) for r in runs)/nr:.1f}"],
+        ["max latency (s)", f"{max(r.get('latency', {}).get('max', 0) for r in runs):.1f}"],
+        ["avg predicted", f"{avg('avg_predicted'):.1f}"],
+        ["avg gt", f"{avg('avg_gt'):.1f}"],
+        ["judge precision", f"{sum(jp)/len(jp):.3f}" if jp else "n/a"],
+        ["miss: gated_pre_llm", f"{bk('gated_pre_llm'):.0f}"],
+        ["miss: llm_dropped", f"{bk('llm_dropped'):.0f}"],
+        ["miss: not_retrieved", f"{bk('not_retrieved'):.0f}"],
     ])
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_path))
