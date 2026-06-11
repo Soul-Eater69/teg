@@ -9,7 +9,6 @@ caller's pydantic model and re-validated locally.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import TypeVar
 
@@ -17,6 +16,7 @@ import httpx
 from pydantic import BaseModel
 
 from teg.config.settings import Settings
+from teg.integrations.http_retry import post_with_retry
 from teg.integrations.llm.idp_auth import IDPCustomAuth
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -72,48 +72,13 @@ class IdpLLMClient:
         if self._max_output_tokens:
             body["max_completion_tokens"] = self._max_output_tokens
 
-        response = await self._post_with_retry(body)
+        response = await post_with_retry(
+            self._http, self._completion_path, body,
+            max_retries=self._max_retries, base_delay=self._retry_base_delay,
+            max_delay=self._retry_max_delay,
+        )
         content = _extract_content(response.json())
         return _validate(content, schema)
-
-    async def _post_with_retry(self, body: dict) -> httpx.Response:
-        """POST the completion, retrying rate-limit (429), server (5xx) and transient network
-        errors with exponential backoff + jitter, honoring a Retry-After header when present.
-        4xx other than 429 fail fast (a bad request won't fix itself by retrying)."""
-        for attempt in range(self._max_retries + 1):
-            try:
-                response = await self._http.post(self._completion_path, json=body)
-            except (httpx.TransportError, httpx.TimeoutException) as exc:  # transient network
-                if attempt >= self._max_retries:
-                    raise LLMError(f"network error after {attempt} retries: {exc}") from exc
-                await asyncio.sleep(self._backoff(attempt))
-                continue
-            if response.status_code == 429 or response.status_code >= 500:
-                if attempt >= self._max_retries:
-                    response.raise_for_status()  # out of retries -> surface the real error
-                delay = _retry_after(response) or self._backoff(attempt)
-                await asyncio.sleep(delay)
-                continue
-            response.raise_for_status()  # other 4xx -> fail fast
-            return response
-        raise LLMError("unreachable retry state")  # pragma: no cover
-
-    def _backoff(self, attempt: int) -> float:
-        import random
-
-        delay = min(self._retry_base_delay * (2 ** attempt), self._retry_max_delay)
-        return delay * (0.5 + random.random() / 2)  # full-ish jitter [0.5x, 1x]
-
-
-def _retry_after(response: httpx.Response) -> float | None:
-    """The Retry-After header in seconds, if the gateway sent one (integer-seconds form)."""
-    value = response.headers.get("retry-after") or response.headers.get("Retry-After")
-    if not value:
-        return None
-    try:
-        return max(0.0, float(value))
-    except ValueError:
-        return None  # HTTP-date form not handled; fall back to computed backoff
 
 
 def _strict_schema(schema: type[BaseModel]) -> dict:

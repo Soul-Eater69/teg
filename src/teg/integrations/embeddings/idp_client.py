@@ -10,6 +10,7 @@ from __future__ import annotations
 import httpx
 
 from teg.config.settings import Settings
+from teg.integrations.http_retry import post_with_retry
 from teg.integrations.llm.idp_auth import IDPCustomAuth
 
 
@@ -26,12 +27,14 @@ class IdpEmbeddingsClient:
         dimensions: int,
         path: str = "/api/v1/embeddings",
         api_version: str = "2024-06-01",
+        max_retries: int = 5,
     ) -> None:
         self._http = http_client
         self._model = model
         self._dimensions = dimensions
         self._path = path
         self._api_version = api_version
+        self._max_retries = max_retries
 
     async def embed(self, text: str) -> list[float]:
         return (await self.embed_many([text]))[0]
@@ -44,8 +47,7 @@ class IdpEmbeddingsClient:
             "encoding_format": "float",
             "dimensions": self._dimensions,
         }
-        response = await self._http.post(self._path, json=body)
-        response.raise_for_status()
+        response = await post_with_retry(self._http, self._path, body, max_retries=self._max_retries)
         data = response.json()
         try:
             return [entry["vector"] for entry in data["embeddings"]]
@@ -75,4 +77,5 @@ def build_embeddings_client(settings: Settings) -> IdpEmbeddingsClient:
         dimensions=settings.embedding_dimensions,
         path=settings.embedding_path,
         api_version=settings.embedding_api_version,
+        max_retries=settings.llm_max_retries,
     )
