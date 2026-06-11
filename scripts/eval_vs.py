@@ -388,6 +388,34 @@ async def main(args) -> None:
         w.writeheader(); w.writerows(rows)
     print(f"\nper-ticket CSV -> {out}")
 
+    return {
+        "micro_p": micro_p, "micro_r": micro_r,
+        "micro_f1": _div(2 * micro_p * micro_r, micro_p + micro_r),
+        "macro_f1": _div(2 * macro_p * macro_r, macro_p + macro_r),
+    }
+
+
+def _mean_std(values: list[float]) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    mean = sum(values) / len(values)
+    var = sum((v - mean) ** 2 for v in values) / len(values)
+    return mean, var ** 0.5
+
+
+async def run_repeats(args) -> None:
+    """Run the eval --repeat times and report each run + mean ± std (captures LLM variance)."""
+    runs = []
+    for i in range(1, args.repeat + 1):
+        print("\n" + "#" * 60 + f"\n# RUN {i}/{args.repeat}\n" + "#" * 60)
+        runs.append(await main(args))
+    if args.repeat > 1:
+        print("\n" + "=" * 60 + f"\nSUMMARY over {args.repeat} runs (mean ± std):")
+        for key, label in [("micro_p", "micro P"), ("micro_r", "micro R"),
+                           ("micro_f1", "micro F1"), ("macro_f1", "macro F1")]:
+            m, s = _mean_std([r[key] for r in runs])
+            print(f"  {label:9} {m:.3f} ± {s:.3f}   runs={[round(r[key], 3) for r in runs]}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -417,6 +445,8 @@ if __name__ == "__main__":
                         help="post-hoc LLM probe: classify why each llm_dropped GT was left out (extra calls)")
     parser.add_argument("--judge", action="store_true",
                         help="LLM-as-judge relevance of predictions + misses (GT-independent view; extra calls)")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="run the eval N times and report mean +/- std (captures LLM variance)")
     parser.add_argument("--out", default="out/eval/vs_eval.csv")
     args = parser.parse_args()
-    asyncio.run(main(args))
+    asyncio.run(run_repeats(args))
