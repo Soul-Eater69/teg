@@ -76,9 +76,11 @@ async def _eval_one(doc, search, gt: set[str], *, llm=None, content_by_key=None)
     retrieved = []
     for rank, h in enumerate(hits, start=1):
         vs_ids = sorted({v.value_stream_id for v in h.value_streams if v.value_stream_id})
+        shown = (content.get(h.ticket_id) or h.snippet or "").replace("\n", " ").strip()
         retrieved.append({
             "rank": rank, "ticket_id": h.ticket_id, "score": round(h.score, 4),
-            "vs_ids": vs_ids, "n_vs": len(vs_ids),
+            "vs_ids": vs_ids, "vs_names": [v.value_stream_name for v in h.value_streams if v.value_stream_id],
+            "n_vs": len(vs_ids), "text": shown[:280],  # the content shown (for example write-ups)
             "relevant": bool(set(vs_ids) & gt),  # label-relevance (primary)
             "content_relevant": judged.get(h.ticket_id) if judged else None,  # content-relevance (diagnostic)
         })
@@ -213,12 +215,15 @@ async def run(args) -> dict:
     settings = load_settings()
     search = build_search_client(settings)
     llm = build_llm_client(settings) if args.judge else None
-    # Richer content for the judge: map each ticket key -> its local businessSummary (else rawText).
-    content_by_key = {}
-    if args.judge:
-        for d in _load(args.dataset):
-            p = d.get("properties", {})
-            content_by_key[d.get("key", "")] = p.get("businessSummary") or (p.get("rawText") or "")[:1200]
+    # Map each ticket key -> its local businessSummary (else rawText): the judge's content + the text
+    # used in the example write-ups. Built for all docs (not just when judging).
+    content_by_key, vs_names = {}, {}
+    for d in _load(args.dataset):
+        p = d.get("properties", {})
+        content_by_key[d.get("key", "")] = (p.get("businessSummary") or (p.get("rawText") or ""))[:1200]
+        for t in p.get("themes") or []:
+            if t.get("valueStreamId"):
+                vs_names[t["valueStreamId"]] = t.get("valueStreamName") or t["valueStreamId"]
     sem = asyncio.Semaphore(args.concurrency)
     total = len(docs)
     done = 0
@@ -255,7 +260,7 @@ async def run(args) -> dict:
                    "min_gt": args.min_gt, "broad_fraction": BROAD_FRACTION,
                    "relevance": "query GT VS overlaps a retrieved ticket's VS labels"},
         "aggregates": aggregates,
-        "examples": _examples(per_query, gt_by_ticket),  # concrete cases for the write-up
+        "examples": _examples(per_query, gt_by_ticket, content_by_key, vs_names),  # concrete cases
         "per_query": per_query,
     }
     out = Path(args.out)
@@ -272,12 +277,23 @@ async def run(args) -> dict:
     return payload
 
 
-def _examples(per_query: list[dict], gt_by_ticket: dict[str, set], cap: int = 5) -> dict:
-    """A few concrete cases so the write-up can cite real tickets (can't be recovered post-run)."""
+def _examples(per_query: list[dict], gt_by_ticket: dict[str, set],
+              content: dict[str, str], vs_names: dict[str, str], cap: int = 6) -> dict:
+    """Concrete cases WITH text so the write-up can cite real tickets (can't be recovered post-run)."""
+    def gt_named(tid):
+        return [f"{v} ({vs_names.get(v, v)})" for v in sorted(gt_by_ticket.get(tid, []))]
+
     def case(q, r):
-        return {"query_ticket": q["ticket_id"], "query_gt": sorted(gt_by_ticket.get(q["ticket_id"], [])),
-                "retrieved_ticket": r["ticket_id"], "retrieved_vs": r["vs_ids"], "rank": r["rank"],
-                "score": r["score"], "label_relevant": r["relevant"], "content_relevant": r["content_relevant"]}
+        return {
+            "query_ticket": q["ticket_id"],
+            "query_text": (content.get(q["ticket_id"], "") or "")[:280],
+            "query_gt": gt_named(q["ticket_id"]),
+            "retrieved_ticket": r["ticket_id"], "rank": r["rank"], "score": r["score"],
+            "retrieved_text": r.get("text", ""),
+            "retrieved_vs": [f"{i} ({n})" for i, n in zip(r["vs_ids"], r.get("vs_names", []))] or r["vs_ids"],
+            "shared_vs": sorted(set(r["vs_ids"]) & gt_by_ticket.get(q["ticket_id"], set())),
+            "label_relevant": r["relevant"], "content_relevant": r["content_relevant"],
+        }
     lucky, mislabeled = [], []
     for q in per_query:
         for r in q["retrieved"]:
@@ -287,8 +303,11 @@ def _examples(per_query: list[dict], gt_by_ticket: dict[str, set], cap: int = 5)
                 lucky.append(case(q, r))            # shares a VS but not the same change
             if not r["relevant"] and r["content_relevant"] and len(mislabeled) < cap:
                 mislabeled.append(case(q, r))        # same change but different label
-    fully = [q["ticket_id"] for q in per_query if q["at_k"][MAX_K]["recall"] >= 0.999][:cap]
-    zero = [q["ticket_id"] for q in per_query if q["at_k"][MAX_K]["hit"] == 0][:cap]
+    fully = [{"ticket": q["ticket_id"], "gt": gt_named(q["ticket_id"])}
+             for q in per_query if q["at_k"][MAX_K]["recall"] >= 0.999][:cap]
+    zero = [{"ticket": q["ticket_id"], "gt": gt_named(q["ticket_id"]),
+             "query_text": (content.get(q["ticket_id"], "") or "")[:280]}
+            for q in per_query if q["at_k"][MAX_K]["hit"] == 0][:cap]
     return {"lucky_label_matches": lucky, "content_not_label": mislabeled,
             "fully_covered_tickets": fully, "zero_relevant_tickets": zero}
 
