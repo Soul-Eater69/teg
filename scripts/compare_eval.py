@@ -19,11 +19,11 @@ from pathlib import Path
 
 
 def _label_path(arg: str) -> tuple[str, str]:
-    # 'label=path' only when the left side is a plain label (no path separators / extension);
-    # otherwise the '=' is part of a path and the label is the file stem.
+    # 'label=path' - split on the LAST '=' so a label may itself contain '=' (e.g. "Recall K=6"),
+    # since the path has no '='. Only treat it as label=path when the right side looks like a path.
     if "=" in arg:
-        left, right = arg.split("=", 1)
-        if left and not any(ch in left for ch in "/\\.") and right:
+        left, right = arg.rsplit("=", 1)
+        if left and right and (right.endswith(".json") or "/" in right or "\\" in right):
             return left, right
     stem = Path(arg).name.replace(".runs.json", "").replace(".json", "")
     return stem, arg
@@ -325,7 +325,7 @@ def _add_table(doc, headers: list[str], rows: list[list[str]]):
 
 def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | None = None,
           describe: dict[str, str] | None = None, history_runs: set[str] | None = None,
-          narrative: str | None = None) -> None:
+          narrative: str | None = None, title: str | None = None, append: bool = False) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -426,17 +426,23 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
     best_r = max(data, key=lambda d: d["micro_r"])
     base = min(data, key=lambda d: d["micro_r"])  # weakest recall = the baseline
 
-    doc = Document()
-    doc.add_heading("Value-Stream prediction — comparison of approaches", level=0)
-    doc.add_paragraph(
-        "We predict which Value Streams a ticket belongs to. This compares a few ways of asking the "
-        "model to choose, on the same 60 tickets (each run repeated 3x; numbers are the average). "
-        "The two things we vary: (1) whether we show the model similar PAST tickets and the answers "
-        "they got, and (2) whether we include the search engine's relevance SCORES next to each "
-        "candidate. Plain-language guide to every metric is at the end.")
+    report_title = title or "Value-Stream prediction — comparison of approaches"
+    if append and out_path.exists():
+        # Add this comparison as a new chapter in the existing report.
+        doc = Document(str(out_path))
+        doc.add_page_break()
+        doc.add_heading(report_title, level=1)
+    else:
+        doc = Document()
+        doc.add_heading(report_title, level=0)
+        doc.add_paragraph(
+            "This report compares several approaches to Value Stream prediction on the same 60-ticket "
+            "eval set. Each chart states the question it answers and how to read it; a plain-language "
+            "guide to every metric is at the end. Where a chapter compares approaches that differ in "
+            "one setting, a head-to-head table isolates the effect of that single change.")
 
     # What each run is (glossary) - decode the short labels once, up front.
-    doc.add_heading("What each approach means", level=1)
+    doc.add_heading("What each approach means", level=2 if append else 1)
     gt = doc.add_table(rows=1, cols=2); gt.style = "Light Grid Accent 1"
     gt.rows[0].cells[0].text, gt.rows[0].cells[1].text = "Approach", "What we showed the model"
     for d in data:
@@ -584,7 +590,11 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
         "metric show 'n/a' (not zero) elsewhere in this report.")
     note.runs[0].italic = True
 
-    # plain-language glossary so nobody has to guess what a metric means
+    # plain-language glossary so nobody has to guess what a metric means (once per report)
+    if append:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(out_path))
+        return
     doc.add_heading("What the metrics mean", level=1)
     glossary = [
         ("Recall", "Of the Value Streams that were actually correct, the fraction we found. Higher is better."),
@@ -643,6 +653,10 @@ def main() -> None:
     parser.add_argument("--narrative", metavar="FILE",
                         help="markdown file (## / ### headings, - bullets, **bold**) rendered into the report "
                              "as an analysis section, e.g. the prompt change-log.")
+    parser.add_argument("--title", help="title for this comparison chapter (defaults to the standard title)")
+    parser.add_argument("--append", action="store_true",
+                        help="append this comparison as a new chapter to an existing --out docx (page break + "
+                             "title), instead of starting fresh. Build a multi-experiment report in several calls.")
     args = parser.parse_args()
     data = [load(a) for a in args.runs]
     axes = [_parse_axis(a) for a in args.axis]
@@ -653,7 +667,7 @@ def main() -> None:
     history_runs = set(args.history_run) or None
     narrative = Path(args.narrative).read_text(encoding="utf-8") if args.narrative else None
     build(data, Path(args.out), axes=axes, describe=describe, history_runs=history_runs,
-          narrative=narrative)
+          narrative=narrative, title=args.title, append=args.append)
     print(f"comparison -> {args.out}")
     print("\nquick table (P / R / F1 / Easy-R / Hard-R):")
     for d in data:
