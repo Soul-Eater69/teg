@@ -123,13 +123,41 @@ def load(arg: str) -> dict:
         "backed_r": backed_r, "notbacked_r": notbacked_r,
         "boost_lift": _boost_lift(runs),
         "lat_avg": _mean_nested(runs, "latency", "avg"),
+        "lat_avg_clean": _lat_avg_clean(runs),
         "lat_med": _mean_nested_opt(runs, "latency", "median"),
         "lat_max": _mean_nested(runs, "latency", "max"),
+        "lat_outlier": _has_outlier(runs),
         # where misses come from (retrieval vs the model)
         "miss_not_retrieved": _mean_nested_opt(runs, "buckets", "not_retrieved"),
         "miss_gated": _mean_nested_opt(runs, "buckets", "gated_pre_llm"),
         "llm_dropped": _mean_nested_opt(runs, "buckets", "llm_dropped"),
     }
+
+
+def _lat_avg_clean(runs: list[dict]) -> float | None:
+    """Mean latency with the single slowest ticket removed per run, when that ticket is an outlier
+    (slowest > 3x the median). runs.json only stores aggregates, so we back it out of the average:
+    (avg*n - slowest) / (n-1). Recovers the real typical cost when one ticket hit a retry storm."""
+    vals = []
+    for r in runs:
+        lat = r.get("latency") or {}
+        avg, mx, med, n = lat.get("avg"), lat.get("max"), lat.get("median"), r.get("n")
+        if avg is None:
+            continue
+        if mx is not None and med and n and n > 1 and mx > 3 * med:
+            vals.append((avg * n - mx) / (n - 1))
+        else:
+            vals.append(avg)
+    return sum(vals) / len(vals) if vals else None
+
+
+def _has_outlier(runs: list[dict]) -> bool:
+    for r in runs:
+        lat = r.get("latency") or {}
+        mx, med = lat.get("max"), lat.get("median")
+        if mx is not None and med and mx > 3 * med:
+            return True
+    return False
 
 
 def _boost_split(runs: list[dict]) -> tuple[float | None, float | None]:
@@ -350,17 +378,19 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
              note="Tall blue + short orange = the model picks an answer far more when a similar past "
              "ticket used it. That gap is the proof the examples are working.", pct=True)
         figs["boost"] = save(fig, "boost")
-    # 6. latency - typical (median), average, slowest; only runs that recorded the median
+    # 6. latency - typical (median) + average with the one outlier ticket removed, so the chart is
+    #    readable (the raw slowest/avg are in the table). Only runs that recorded a median.
     lat_data = [d for d in data if d["lat_med"] is not None]
     if lat_data:
+        any_outlier = any(d["lat_outlier"] for d in lat_data)
         fig, ax = plt.subplots(figsize=(8, 4.6))
         _bar(ax, [d["label"] for d in lat_data],
              {"typical (median)": [d["lat_med"] for d in lat_data],
-              "average": [d["lat_avg"] for d in lat_data],
-              "slowest": [d["lat_max"] for d in lat_data]},
+              "average (slowest ticket removed)": [d["lat_avg_clean"] for d in lat_data]},
              "How long does one prediction take?", "seconds",
-             note="Read the TYPICAL (median) bar. If 'average' or 'slowest' towers over it, one ticket "
-             "stalled on retries - an outlier, not the real speed.")
+             note=("One retry-storm ticket was excluded so the scale is readable - the raw average and "
+                   "slowest are in the table below." if any_outlier else
+                   "Typical (median) and average per ticket."))
         figs["latency"] = save(fig, "latency")
 
     best = max(data, key=lambda d: d["micro_f1"])
@@ -495,16 +525,17 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
     if "latency" in figs:
         doc.add_heading("5. How long does a prediction take?", level=1)
         doc.add_paragraph(
-            "Read the TYPICAL (median) bar — the middle ticket's time, the honest 'usual' speed. The average "
-            "and slowest are shown too: when they tower over the median, one ticket stalled on retries and "
-            "dragged the mean up. That is an outlier to investigate, not the real speed.")
+            "The chart shows TYPICAL (median) speed and the AVERAGE with the single slowest ticket removed. "
+            "We remove it because a retry/backoff storm on one ticket can make it take thousands of seconds "
+            "and wreck the average — that is an infrastructure hiccup, not the real cost. The table keeps the "
+            "raw numbers so nothing is hidden.")
         lrows = []
         for d in lat_data:
-            flag = ""
-            if d["lat_med"] and d["lat_avg"] and d["lat_avg"] > 3 * d["lat_med"]:
-                flag = "  ⚠ one outlier inflated the average"
-            lrows.append([d["label"], _secs(d["lat_med"]), _secs(d["lat_avg"]), _secs(d["lat_max"]) + flag])
-        _add_table(doc, ["Approach", "Typical (median)", "Average", "Slowest"], lrows)
+            flag = "  ⚠ retry-storm outlier" if d["lat_outlier"] else ""
+            lrows.append([d["label"], _secs(d["lat_med"]), _secs(d["lat_avg_clean"]),
+                          _secs(d["lat_avg"]), _secs(d["lat_max"]) + flag])
+        _add_table(doc, ["Approach", "Typical (median)", "Average (outlier removed)",
+                         "Raw average", "Raw slowest"], lrows)
         doc.add_picture(figs["latency"], width=Inches(6.2))
 
     # summary table

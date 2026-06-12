@@ -20,9 +20,10 @@
       "lift": 0.308
     },
     "latency": {
-      "avg": 59.9,
-      "median": 5.1,
-      "max": 9836.8
+      "avg": 169.44,
+      "min": 3.88,
+      "max": 9836.83,
+      "median": 5.12
     },
     "buckets": {
       "not_retrieved": 0,
@@ -69,9 +70,10 @@
       "lift": 0.308
     },
     "latency": {
-      "avg": 59.9,
-      "median": 5.1,
-      "max": 9836.8
+      "avg": 5.174,
+      "min": 3.53,
+      "max": 8.4,
+      "median": 5.07
     },
     "buckets": {
       "not_retrieved": 0,
@@ -118,9 +120,10 @@
       "lift": 0.308
     },
     "latency": {
-      "avg": 59.9,
-      "median": 5.1,
-      "max": 9836.8
+      "avg": 5.168,
+      "min": 3.94,
+      "max": 8.12,
+      "median": 5.08
     },
     "buckets": {
       "not_retrieved": 0,
