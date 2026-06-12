@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 from teg.domain.condensed import CondensedTicket
+from teg.ingestion.documents.text_cleaning import clean_text
 from teg.ingestion.extraction.jira_records import ExtractedEngagementRequest, ExtractedTheme
 from teg.ingestion.ground_truth.theme_ground_truth import ThemeGroundTruth
 
@@ -66,7 +67,7 @@ def build_idmt_document(
             "businessCapability": fields.business_capability,
             "stakeholders": list(fields.stakeholders),
             "systemsAndProducts": list(fields.systems_and_products),
-            "rawText": condensed.raw_text,
+            "rawText": clean_text(condensed.raw_text),  # cleaned for storage (LLM input untouched)
             # Value Stream ground truth (one entry per linked theme).
             "themes": [_theme_gt(gt) for gt in theme_gt],
         },
