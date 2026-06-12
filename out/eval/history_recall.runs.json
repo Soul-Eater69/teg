@@ -1,0 +1,53 @@
+[
+  {
+    "n": 60,
+    "micro_p": 0.1967,
+    "micro_r": 0.7763,
+    "micro_f1": 0.3138,
+    "macro_f1": 0.3138,
+    "single_recall": 0.8857,
+    "multi_f1": 0.4741,
+    "avg_predicted": 10.0,
+    "avg_gt": 2.533,
+    "cohorts": {
+      "single-VS (gt==1)": [
+        0.0886,
+        0.8857,
+        0.161
+      ],
+      "multi-VS  (gt>=2)": [
+        0.348,
+        0.7436,
+        0.4741
+      ]
+    },
+    "cohort_n": {
+      "single-VS (gt==1)": 35,
+      "multi-VS  (gt>=2)": 25
+    },
+    "latency": {
+      "avg": 5.3678,
+      "min": 4.35,
+      "max": 7.77,
+      "median": 5.26
+    },
+    "buckets": {
+      "not_retrieved": 0,
+      "gated_pre_llm": 0,
+      "llm_dropped": 34
+    },
+    "judge_p": 0.47,
+    "retrieval": {
+      "vs_lane@3": 0.1087,
+      "vs_lane@5": 0.1447,
+      "vs_lane@10": 0.2633,
+      "historic_lane": 0.8869,
+      "pool": 1.0
+    },
+    "boost": {
+      "backed_recall": 0.8271,
+      "notbacked_recall": 0.4211,
+      "lift": 0.406
+    }
+  }
+]

@@ -544,9 +544,9 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
     for d in data:
         lift = f"{d['boost_lift']:+.2f}" if d["boost_lift"] is not None else "n/a"
         srows.append([d["label"], _pct(d["micro_p"]), _pct(d["micro_r"]), _f2(d["micro_f1"]),
-                      _pct(d["single_r"]), _pct(d["multi_r"]), lift, _secs(d["lat_med"])])
+                      _pct(d["single_r"]), _pct(d["multi_r"]), _pct(d["backed_r"]), lift, _secs(d["lat_med"])])
     _add_table(doc, ["Approach", "Precision", "Recall", "F1", "Easy R", "Hard R",
-                     "Precedent lift", "Typical time"], srows)
+                     "Precedent backed", "Precedent lift", "Typical time"], srows)
     note = doc.add_paragraph(
         "Recall-type numbers are shown as percentages; F1 as a 0-1 score. Older runs that predate a "
         "metric show 'n/a' (not zero) elsewhere in this report.")
@@ -562,10 +562,15 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
                         "often we found that one answer."),
         ("Hard ticket", "A ticket that has TWO OR MORE correct Value Streams - we must find several. Scored with F1. "
                         "We track easy and hard apart so a win isn't just from the easy cases."),
-        ("Precedent use (lift)", "Does showing past examples actually change the picks? Take the correct answers, "
-                                 "split them into those that DID appear in the past examples vs those that did NOT, "
-                                 "and compare how often each got picked. Lift = the gap. Big positive = the model "
-                                 "leans on the examples; near zero = the examples do nothing."),
+        ("Precedent backed (capture)", "Of the correct answers that WERE in the shown past tickets, the fraction "
+                                       "the model actually picked. An absolute score: how much of what precedent "
+                                       "offered did it use (the ceiling is how many were in the tickets at all). "
+                                       "Higher = fewer precedent-backed answers left on the table."),
+        ("Precedent lift", "How much MORE often the model picks an answer when a past ticket used it vs when none "
+                           "did. A difference: (picked-rate for answers IN the past tickets) - (picked-rate for "
+                           "answers NOT in them). Big = the precedent is causing the pick, not general guessing; "
+                           "near zero = the examples make no difference. Backed says how much it captured; lift "
+                           "says whether the examples are the reason."),
         ("Past-ticket examples", "Similar tickets from the past, shown to the model along with the answers they got."),
         ("Search relevance scores", "Numbers from the search engine ranking each candidate; included or hidden."),
         ("Ceiling", "The fraction of correct answers that were on the candidate list at all - the best any "
