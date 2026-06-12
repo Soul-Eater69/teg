@@ -320,8 +320,14 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
         ("Recall", "Of the Value Streams that were actually correct, the fraction we found. Higher is better."),
         ("Precision", "Of our guesses, the fraction that were correct. Low here by design (10 guesses, ~2.5 real)."),
         ("F1", "A single balance score combining precision and recall. Higher is better."),
-        ("Easy: found", "On tickets with one correct answer, how often we found it."),
-        ("Hard: F1", "On tickets with two or more correct answers, the balance score."),
+        ("Easy ticket", "A ticket that has only ONE correct Value Stream - one answer to find. 'Easy: found' = how "
+                        "often we found that one answer."),
+        ("Hard ticket", "A ticket that has TWO OR MORE correct Value Streams - we must find several. Scored with F1. "
+                        "We track easy and hard apart so a win isn't just from the easy cases."),
+        ("Precedent use (lift)", "Does showing past examples actually change the picks? Take the correct answers, "
+                                 "split them into those that DID appear in the past examples vs those that did NOT, "
+                                 "and compare how often each got picked. Lift = the gap. Big positive = the model "
+                                 "leans on the examples; near zero = the examples do nothing."),
         ("Past-ticket examples", "Similar tickets from the past, shown to the model along with the answers they got."),
         ("Search relevance scores", "Numbers from the search engine ranking each candidate; included or hidden."),
         ("Shown to the model", "The fraction of correct answers that were on the candidate list at all (the ceiling)."),
