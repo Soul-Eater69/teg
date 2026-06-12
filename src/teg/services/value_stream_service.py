@@ -27,7 +27,9 @@ _PROMPT_BY_MODE = {
     "historic_only": "value_stream/selection_historic",  # precedent-derived pool
     "all50": "value_stream/selection_plain",
     "topk": "value_stream/selection_plain",
-    "evidence": "value_stream/selection_evidence",
+    # evidence is the production default - the Recall prompt is the tuning winner
+    # (recall 0.726 -> 0.776, hard-ticket recall +0.05; see docs/vs_selection_tuning.md).
+    "evidence": "value_stream/selection_evidence_recall",
 }
 
 

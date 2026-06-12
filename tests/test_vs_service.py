@@ -6,6 +6,7 @@ from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.domain.condensed import SummaryFields
 from teg.integrations.search import HistoricalHit, HistoricalValueStreamLabel, ValueStreamHit
 from teg.services.value_stream_service import ValueStreamService
+from teg.value_stream.config import ValueStreamConfig
 
 
 class _FakeSearch:
@@ -41,6 +42,9 @@ def _request() -> ValueStreamRequest:
 
 
 async def test_predict_end_to_end_camel_case() -> None:
+    # Default (production) is evidence mode: historic is shown as a separate EVIDENCE block, not
+    # merged onto candidates, so source_tickets is empty - the past tickets surface via
+    # historical_tickets instead.
     service = ValueStreamService(_FakeSearch(), _FakeLLM(), model_name="m")
     response = await service.predict(_request())
 
@@ -48,10 +52,23 @@ async def test_predict_end_to_end_camel_case() -> None:
     assert [r.value_stream_id for r in response.recommendations] == ["VS1"]
     rec = response.recommendations[0]
     assert rec.confidence == 90.0
-    assert rec.source_tickets == ["IDMT-1"]  # historic-backed (VS1 hit both lanes)
+    assert rec.source_tickets == []  # evidence mode does not attach historic to candidates
     assert [h.ticket_id for h in response.historical_tickets] == ["IDMT-1"]
     assert response.model == "m"
 
     data = response.model_dump(by_alias=True)
     assert data["recommendations"][0]["valueStreamId"] == "VS1"
-    assert data["recommendations"][0]["sourceTickets"] == ["IDMT-1"]
+    assert data["recommendations"][0]["sourceTickets"] == []
+
+
+async def test_predict_merge_mode_attaches_source_tickets() -> None:
+    # merge mode (experiment path) merges the historic lane onto candidates, so an implied pick
+    # carries the supporting historic ticket ids.
+    service = ValueStreamService(
+        _FakeSearch(), _FakeLLM(), model_name="m", config=ValueStreamConfig(selection_mode="merge")
+    )
+    response = await service.predict(_request())
+
+    rec = response.recommendations[0]
+    assert rec.value_stream_id == "VS1"
+    assert rec.source_tickets == ["IDMT-1"]  # historic-backed (VS1 hit both lanes)
