@@ -255,6 +255,7 @@ async def run(args) -> dict:
                    "min_gt": args.min_gt, "broad_fraction": BROAD_FRACTION,
                    "relevance": "query GT VS overlaps a retrieved ticket's VS labels"},
         "aggregates": aggregates,
+        "examples": _examples(per_query, gt_by_ticket),  # concrete cases for the write-up
         "per_query": per_query,
     }
     out = Path(args.out)
@@ -262,14 +263,29 @@ async def run(args) -> dict:
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"\ncomplete data -> {out}")
     _print_summary(aggregates)
-    try:
-        from scripts.retrieval_report import build_report
-        docx = out.with_suffix(".docx")
-        build_report(payload, docx)
-        print(f"report -> {docx}")
-    except Exception as exc:  # never lose the data to a docx error
-        print(f"[i] docx skipped ({exc}); rebuild from {out} with scripts/retrieval_report.py")
+    print("\nSend me this json (or just the 'aggregates' + 'examples' blocks) and I'll draft the write-up.")
     return payload
+
+
+def _examples(per_query: list[dict], gt_by_ticket: dict[str, set], cap: int = 5) -> dict:
+    """A few concrete cases so the write-up can cite real tickets (can't be recovered post-run)."""
+    def case(q, r):
+        return {"query_ticket": q["ticket_id"], "query_gt": sorted(gt_by_ticket.get(q["ticket_id"], [])),
+                "retrieved_ticket": r["ticket_id"], "retrieved_vs": r["vs_ids"], "rank": r["rank"],
+                "score": r["score"], "label_relevant": r["relevant"], "content_relevant": r["content_relevant"]}
+    lucky, mislabeled = [], []
+    for q in per_query:
+        for r in q["retrieved"]:
+            if r.get("content_relevant") is None:
+                continue
+            if r["relevant"] and not r["content_relevant"] and len(lucky) < cap:
+                lucky.append(case(q, r))            # shares a VS but not the same change
+            if not r["relevant"] and r["content_relevant"] and len(mislabeled) < cap:
+                mislabeled.append(case(q, r))        # same change but different label
+    fully = [q["ticket_id"] for q in per_query if q["at_k"][MAX_K]["recall"] >= 0.999][:cap]
+    zero = [q["ticket_id"] for q in per_query if q["at_k"][MAX_K]["hit"] == 0][:cap]
+    return {"lucky_label_matches": lucky, "content_not_label": mislabeled,
+            "fully_covered_tickets": fully, "zero_relevant_tickets": zero}
 
 
 def _print_summary(agg: dict) -> None:
