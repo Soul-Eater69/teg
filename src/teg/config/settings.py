@@ -36,10 +36,13 @@ class Settings(BaseSettings):
     azure_client_id: str = ""
     azure_client_secret: str = ""
 
-    # Cosmos (lineage, ground truth, governed catalogues)
+    # Cosmos (lineage, ground truth, governed catalogues). One container, partition key /sourceId,
+    # entityType discriminates ER / Theme / ValueStream docs. Auth = service principal (azure_*)
+    # if set, else cosmos_key.
     cosmos_endpoint: str = ""
     cosmos_key: str = ""
     cosmos_database: str = ""
+    cosmos_container: str = "teg_data"
 
     # LLM (IDP OpenAI-compatible gateway)
     llm_base_url: str = ""

@@ -35,6 +35,12 @@ search = [
     "azure-identity>=1.16",
     "aiohttp>=3.9",  # async transport for the aio search + identity clients
 ]
+# Cosmos DB persistence (install for live ingestion: uv sync --extra cosmos)
+cosmos = [
+    "azure-cosmos>=4.7",
+    "azure-identity>=1.16",  # service-principal auth (shared with search)
+    "aiohttp>=3.9",          # async transport for the aio cosmos client
+]
 
 [build-system]
 requires = ["hatchling"]
