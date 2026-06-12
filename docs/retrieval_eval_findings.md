@@ -67,15 +67,29 @@ How many Value Streams does a ticket actually have?  (373 tickets)
   10 or more       ███                       28    (8%)  ← hard: covering all is tough
 ```
 
-**So the 90% coverage is an average across easy and hard tickets — the easy single-VS half lifts
-it.** A truer "did we get *everything*" measure is the **fully-covered** rate: **78%** of tickets had
-*all* their Value Streams found at K=6. The 12-point gap between 90% (found *most*) and 78% (found
-*all*) is almost entirely the multi-Value-Stream tickets — we usually catch the obvious ones and miss
-a long-tail stream or two.
+Here's the honest split (at K=6, showing 6 past tickets):
 
-> **One thing to notice:** those 10-plus-VS tickets are a *double problem* — they're the hardest to
-> fully cover, **and** (from Finding 3) they're the "overloaded" tickets that cause the lucky matches.
-> Fixing how the system treats them helps both coverage *and* relevance.
+| Ticket type | Found *most* of its streams (avg coverage) | Found *every* stream (fully covered) |
+|---|---|---|
+| **Easy** (1 Value Stream) | 92% | 92% |
+| **Hard** (2 or more) | 88% | **63%** |
+| All tickets | 90% | 78% |
+
+Two takeaways from this:
+
+- **On average, the search does almost as well on hard tickets as easy ones** — it surfaces 88% of a
+  hard ticket's streams vs 92% for an easy one. It's good at finding *most* of the answer even when
+  there's a lot to find.
+- **But getting *everything* right is much harder on multi-stream tickets** — we find *all* the
+  streams only **63%** of the time (vs 92% for single-stream). In plain terms: on a hard ticket we
+  usually catch the obvious streams and **miss a stream or two from the long tail**.
+
+(For single-stream tickets, "found most" and "found all" are the same thing — there's only one to
+find — which is why both are 92%.)
+
+> **One thing to notice:** those 10-plus-stream tickets are a *double problem* — they're the hardest
+> to fully cover, **and** (from Finding 3) they're the "overloaded" tickets that cause the lucky
+> matches. Fixing how the system treats them helps both coverage *and* relevance.
 
 ---
 
