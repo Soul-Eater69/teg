@@ -81,14 +81,23 @@ def load(arg: str) -> dict:
         "vs_r10": _mean_nested(runs, "retrieval", "vs_lane@10"),
         "hist_r": _mean_nested(runs, "retrieval", "historic_lane"),
         "pool_r": _mean_nested(runs, "retrieval", "pool"),
-        "backed_r": _mean_nested(runs, "boost", "backed_recall"),
-        "notbacked_r": _mean_nested(runs, "boost", "notbacked_recall"),
+        # Both exactly 0 means an older run that serialized the field without computing it (a real
+        # run always has some recall) - treat as missing so it draws no bar instead of a fake zero.
+        **dict(zip(("backed_r", "notbacked_r"), _boost_split(runs))),
         "boost_lift": _boost_lift(runs),
         "lat_avg": _mean_nested(runs, "latency", "avg"),
         "lat_med": _mean_nested_opt(runs, "latency", "median"),
         "lat_max": _mean_nested(runs, "latency", "max"),
         "llm_dropped": _mean_nested_opt(runs, "buckets", "llm_dropped"),
     }
+
+
+def _boost_split(runs: list[dict]) -> tuple[float | None, float | None]:
+    backed = _mean_nested_opt(runs, "boost", "backed_recall")
+    notbacked = _mean_nested_opt(runs, "boost", "notbacked_recall")
+    if (backed or 0) == 0 and (notbacked or 0) == 0:
+        return None, None  # not actually computed in this (older) run
+    return backed, notbacked
 
 
 def _boost_lift(runs: list[dict]) -> float | None:
@@ -106,10 +115,13 @@ def _bar(ax, labels, series: dict, title, ylabel):
 
     x = np.arange(len(labels))
     width = 0.8 / max(1, len(series))
-    for i, (name, vals) in enumerate(series.items()):
+    for i, (name, raw) in enumerate(series.items()):
+        # None -> NaN so a missing value draws no bar (instead of a misleading 0).
+        vals = [float("nan") if v is None else v for v in raw]
         bars = ax.bar(x + i * width - 0.4 + width / 2, vals, width, label=name)
         for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v, f"{v:.2f}", ha="center", va="bottom", fontsize=7)
+            if v == v:  # skip NaN (no bar to label)
+                ax.text(b.get_x() + b.get_width() / 2, v, f"{v:.2f}", ha="center", va="bottom", fontsize=7)
     ax.set_xticks(x); ax.set_xticklabels(labels)
     ax.set(title=title, ylabel=ylabel)
     ax.legend(fontsize=8); ax.grid(axis="y", alpha=0.3)
@@ -189,10 +201,10 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
          "Were the right answers even put in front of the model?", "fraction of correct answers found")
     figs["retrieval"] = save(fig, "retrieval")
     # 4. historic boost (only where present)
-    if any(d["backed_r"] or d["notbacked_r"] for d in data):
+    if any(d["backed_r"] is not None or d["notbacked_r"] is not None for d in data):
         fig, ax = plt.subplots(figsize=(8, 4.5))
-        _bar(ax, labels, {"Answer shown in past examples": [d["backed_r"] for d in data],
-                          "Answer NOT in past examples": [d["notbacked_r"] for d in data]},
+        _bar(ax, labels, {"Answer was in the similar past tickets": [d["backed_r"] for d in data],
+                          "Answer was NOT in them": [d["notbacked_r"] for d in data]},
              "Does the model actually use the past examples?", "recall")
         figs["boost"] = save(fig, "boost")
     # 5. latency
@@ -236,7 +248,7 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
         f"found) and hard tickets (several correct answers: F1 {base['multi_f1']:.2f} → {best_r['multi_f1']:.2f}), "
         "so the gain is real, not just from the easy cases.",
     ]
-    if best_r["backed_r"] or best_r["notbacked_r"]:
+    if best_r["backed_r"] is not None and best_r["notbacked_r"] is not None:
         bullets.append(
             f"Why it wins: when a correct Value Stream showed up in the past-ticket examples, the model "
             f"picked it {best_r['backed_r']:.0%} of the time, vs only {best_r['notbacked_r']:.0%} when it "
@@ -289,9 +301,17 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
     if "boost" in figs:
         doc.add_heading("4. Does the model actually use the past examples?", level=1)
         doc.add_paragraph(
-            "This splits recall two ways: correct answers that appeared in the past-ticket examples, vs "
-            "correct answers that didn't. A big gap means the model leans on precedent. A gap near zero "
-            "(as in the no-history approaches) means the examples aren't doing anything.")
+            "We split the correct answers into two groups: ones that appeared in the similar past tickets, "
+            "and ones that didn't, then measure recall for each. A big gap means the model leans on "
+            "precedent.")
+        doc.add_paragraph(
+            "Important: the similar past tickets are ALWAYS fetched (we need them to compute this split), "
+            "but they are only SHOWN to the model in the 'History' approaches. The 'No history' approaches "
+            "are the control — the tickets are fetched but withheld. That is why 'No history' still has two "
+            "bars: the split is about whether an answer was IN the fetched tickets, not whether the model "
+            "saw them. In the control the two bars are nearly equal (being in the hidden tickets changes "
+            "nothing), and in the 'History' approaches a wide gap opens up — that gap is the proof the "
+            "examples are doing the work. A run with no bar at all is an older run that did not record this.")
         doc.add_picture(figs["boost"], width=Inches(6.2))
 
     doc.add_heading("5. Time per prediction", level=1)
@@ -313,6 +333,10 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
                 f"{d['single_r']:.0%}", f"{d['multi_f1']:.2f}"]
         for c, v in zip(cells, vals):
             c.text = str(v)
+    note = doc.add_paragraph(
+        "Recall-type numbers are shown as percentages; F1 as a 0-1 score. Older runs that predate a "
+        "metric show 'n/a' (not zero) elsewhere in this report.")
+    note.runs[0].italic = True
 
     # plain-language glossary so nobody has to guess what a metric means
     doc.add_heading("What the metrics mean", level=1)
