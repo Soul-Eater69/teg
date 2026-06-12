@@ -22,3 +22,6 @@ uv.lock
 .DS_Store
 .idea/
 .vscode/
+
+# Generated eval artifacts (machine-specific - never commit; regenerate locally)
+out/
