@@ -284,6 +284,34 @@ def _note(doc, text: str) -> None:
     p.runs[0].italic = True
 
 
+def _add_md_runs(paragraph, text: str) -> None:
+    # Render inline **bold** by splitting on the markers; everything else is a plain run.
+    for i, part in enumerate(text.split("**")):
+        if part:
+            run = paragraph.add_run(part)
+            run.bold = i % 2 == 1
+
+
+def _render_markdown(doc, text: str) -> None:
+    """Render a small markdown subset (## / ### headings, - bullets, **bold**, paragraphs) into the
+    docx, so an external analysis file can be dropped into the report verbatim."""
+    for block in text.split("\n"):
+        line = block.rstrip()
+        if not line.strip():
+            continue
+        if line.startswith("### "):
+            doc.add_heading(line[4:].strip(), level=3)
+        elif line.startswith("## "):
+            doc.add_heading(line[3:].strip(), level=2)
+        elif line.startswith("# "):
+            doc.add_heading(line[2:].strip(), level=1)
+        elif line.lstrip().startswith(("- ", "* ")):
+            p = doc.add_paragraph(style="List Bullet")
+            _add_md_runs(p, line.lstrip()[2:])
+        else:
+            _add_md_runs(doc.add_paragraph(), line)
+
+
 def _add_table(doc, headers: list[str], rows: list[list[str]]):
     t = doc.add_table(rows=1, cols=len(headers)); t.style = "Light Grid Accent 1"
     for c, h in zip(t.rows[0].cells, headers):
@@ -296,7 +324,8 @@ def _add_table(doc, headers: list[str], rows: list[list[str]]):
 
 
 def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | None = None,
-          describe: dict[str, str] | None = None, history_runs: set[str] | None = None) -> None:
+          describe: dict[str, str] | None = None, history_runs: set[str] | None = None,
+          narrative: str | None = None) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -448,6 +477,9 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
 
     if axes:
         _render_axes(doc, {d["label"]: d for d in data}, axes)
+
+    if narrative:
+        _render_markdown(doc, narrative)
 
     doc.add_heading("1. Precision, Recall, F1", level=1)
     doc.add_paragraph(
@@ -608,6 +640,9 @@ def main() -> None:
                         help="mark a run as one that SHOWS past tickets to the model; only these appear in the "
                              "precedent-use section. Repeat per history run. If omitted, falls back to any run "
                              "that recorded the precedent split.")
+    parser.add_argument("--narrative", metavar="FILE",
+                        help="markdown file (## / ### headings, - bullets, **bold**) rendered into the report "
+                             "as an analysis section, e.g. the prompt change-log.")
     args = parser.parse_args()
     data = [load(a) for a in args.runs]
     axes = [_parse_axis(a) for a in args.axis]
@@ -616,7 +651,9 @@ def main() -> None:
         label, _, text = d.partition(":")
         describe[label.strip()] = text.strip()
     history_runs = set(args.history_run) or None
-    build(data, Path(args.out), axes=axes, describe=describe, history_runs=history_runs)
+    narrative = Path(args.narrative).read_text(encoding="utf-8") if args.narrative else None
+    build(data, Path(args.out), axes=axes, describe=describe, history_runs=history_runs,
+          narrative=narrative)
     print(f"comparison -> {args.out}")
     print("\nquick table (P / R / F1 / Easy-R / Hard-R):")
     for d in data:
