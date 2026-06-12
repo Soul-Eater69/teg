@@ -34,8 +34,35 @@ captured more precedent (0.76 → 0.83) and relied on it more (lift 0.31 → 0.4
 precision guardrail held (0.478 → 0.470), so the extra picks are genuinely relevant, not padding.
 Trust also helped but less on hard tickets, dropped judge precision more, and ran slower.
 
-The Recall prompt treats precedent as a primary inclusion signal and pushes completeness on
-multi-workflow ideas (upstream/downstream reach), which is why it fixed the hard-ticket cohort.
+### What changed in each prompt, and which number it moved
+
+**Current → Trust.** The current prompt is *conservative about precedent*: it says
+"Treat them as PRECEDENT, not as answers", "Do NOT pick a value stream solely because a past
+ticket used it", and in the fit test "exclude it — even if a past ticket used it." When it ran
+short of the requested count, the leftover slots were padded with arbitrary catalogue streams.
+The Trust prompt replaced that with a two-tier rule: **Tier 1** = the streams that clearly fit;
+**Tier 2** = *fill the remaining slots with streams the most-similar past tickets were tagged
+with, not random padding* ("do NOT pad with random streams when precedent streams are available").
+*Effect:* recall 0.726 → 0.770 and precedent backed 0.76 → 0.81 — the precedent that used to be
+wasted on padding now lands on real GT. Easy-ticket recall jumped to 0.94. *Cost:* judge precision
+slipped (0.478 → 0.457) and latency rose — treating precedent as a blunt count-filler pulled in
+a few weak picks, and the extra reasoning was slower.
+
+**Trust → Recall.** Two wording changes. (1) Precedent moved from a *fallback filler* (Tier 2)
+to a **primary inclusion signal**: "PRECEDENT IS A PRIMARY SIGNAL … INCLUDE a precedent-backed
+stream unless it clearly cannot apply", with an explicit priority order (process fit → precedent →
+upstream/downstream reach). (2) An explicit **completeness** instruction for multi-workflow ideas:
+"An idea rarely touches only one workflow … find ALL of them … under-selecting is the most common
+mistake." *Effect:* hard-ticket recall 0.718 → **0.744** (the completeness push made the model
+enumerate the upstream/downstream streams that multi-VS tickets need), precedent backed 0.81 →
+**0.83** and lift 0.34 → **0.41** (precedent as a first-class signal, not padding), and judge
+precision **recovered** to 0.470 — because picks were now justified by reasoning or a named
+precedent rather than dumped to fill the count.
+
+In short: **Trust** stopped wasting slots on random padding (lifted overall + easy recall);
+**Recall** then made precedent first-class and forced multi-workflow completeness (lifted the hard
+cohort and restored precision). Each change targeted a measured weak spot, and the guardrail
+(judge precision) confirms the gains are real picks, not count-padding.
 
 ## Experiment 2 — historic-K (Recall prompt fixed)
 
