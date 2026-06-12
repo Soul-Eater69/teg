@@ -70,24 +70,64 @@ def _mean_nested_opt(runs: list[dict], outer: str, inner: str) -> float | None:
     return sum(vals) / len(vals) if vals else None
 
 
+def _cohort(runs: list[dict], prefix: str) -> tuple[float | None, float | None, float | None, int | None]:
+    """Mean (P, R, F1, n) for a cohort whose label starts with prefix; Nones if it isn't recorded."""
+    triples, ns = [], []
+    for r in runs:
+        for label, prf in (r.get("cohorts") or {}).items():
+            if label.strip().startswith(prefix) and prf:
+                triples.append(prf)
+                n = (r.get("cohort_n") or {}).get(label)
+                if n is not None:
+                    ns.append(n)
+    if not triples:
+        return None, None, None, None
+    p = sum(t[0] for t in triples) / len(triples)
+    r_ = sum(t[1] for t in triples) / len(triples)
+    f = sum(t[2] for t in triples) / len(triples)
+    return p, r_, f, (round(sum(ns) / len(ns)) if ns else None)
+
+
+def _ratio(num: float | None, den: float | None) -> float | None:
+    return (num / den) if (num is not None and den not in (None, 0)) else None
+
+
 def load(arg: str) -> dict:
     label, path = _label_path(arg)
     runs = json.loads(Path(path).read_text(encoding="utf-8"))
+    backed_r, notbacked_r = _boost_split(runs)
+    micro_r = _mean(runs, "micro_r")
+    hist_r = _mean_nested(runs, "retrieval", "historic_lane")
+    pool_r = _mean_nested(runs, "retrieval", "pool")
+    sp, sr, sf, sn = _cohort(runs, "single-VS")
+    mp, mr, mf, mn = _cohort(runs, "multi-VS")
     return {
         "label": label,
-        "micro_p": _mean(runs, "micro_p"), "micro_r": _mean(runs, "micro_r"),
-        "micro_f1": _mean(runs, "micro_f1"), "single_r": _mean(runs, "single_recall"),
-        "multi_f1": _mean(runs, "multi_f1"), "judge_p": _mean(runs, "judge_p"),
+        "micro_p": _mean(runs, "micro_p"), "micro_r": micro_r,
+        "micro_f1": _mean(runs, "micro_f1"), "judge_p": _mean(runs, "judge_p"),
+        # cohorts (prefer the recorded per-cohort P/R/F1; fall back to the headline single_recall/multi_f1)
+        "single_p": sp, "single_r": sr if sr is not None else _mean(runs, "single_recall"),
+        "single_f1": sf, "single_n": sn,
+        "multi_p": mp, "multi_r": mr,
+        "multi_f1": mf if mf is not None else _mean(runs, "multi_f1"), "multi_n": mn,
+        # retrieval depth + the two lanes + the ceiling
+        "vs_r3": _mean_nested_opt(runs, "retrieval", "vs_lane@3"),
+        "vs_r5": _mean_nested_opt(runs, "retrieval", "vs_lane@5"),
         "vs_r10": _mean_nested(runs, "retrieval", "vs_lane@10"),
-        "hist_r": _mean_nested(runs, "retrieval", "historic_lane"),
-        "pool_r": _mean_nested(runs, "retrieval", "pool"),
+        "hist_r": hist_r, "pool_r": pool_r,
+        # how much of what was available the model actually picked
+        "ceiling_capture": _ratio(micro_r, pool_r),
+        "precedent_capture": _ratio(backed_r, hist_r),
         # Both exactly 0 means an older run that serialized the field without computing it (a real
         # run always has some recall) - treat as missing so it draws no bar instead of a fake zero.
-        **dict(zip(("backed_r", "notbacked_r"), _boost_split(runs))),
+        "backed_r": backed_r, "notbacked_r": notbacked_r,
         "boost_lift": _boost_lift(runs),
         "lat_avg": _mean_nested(runs, "latency", "avg"),
         "lat_med": _mean_nested_opt(runs, "latency", "median"),
         "lat_max": _mean_nested(runs, "latency", "max"),
+        # where misses come from (retrieval vs the model)
+        "miss_not_retrieved": _mean_nested_opt(runs, "buckets", "not_retrieved"),
+        "miss_gated": _mean_nested_opt(runs, "buckets", "gated_pre_llm"),
         "llm_dropped": _mean_nested_opt(runs, "buckets", "llm_dropped"),
     }
 
@@ -162,8 +202,35 @@ def _render_axes(doc, by_label: dict[str, dict], axes: list[tuple[str, str, str]
                 c.text = v
 
 
+def _pct(v: float | None) -> str:
+    return "n/a" if v is None else f"{v:.0%}"
+
+
+def _f2(v: float | None) -> str:
+    return "n/a" if v is None else f"{v:.2f}"
+
+
+def _na_int(v: float | None) -> str:
+    return "n/a" if v is None else f"{v:.0f}"
+
+
+def _secs(v: float | None) -> str:
+    return "n/a" if v is None else f"{v:.1f}s"
+
+
+def _add_table(doc, headers: list[str], rows: list[list[str]]):
+    t = doc.add_table(rows=1, cols=len(headers)); t.style = "Light Grid Accent 1"
+    for c, h in zip(t.rows[0].cells, headers):
+        c.text = h
+    for r in rows:
+        cells = t.add_row().cells
+        for c, v in zip(cells, r):
+            c.text = str(v)
+    return t
+
+
 def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | None = None,
-          describe: dict[str, str] | None = None) -> None:
+          describe: dict[str, str] | None = None, history_runs: set[str] | None = None) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -173,6 +240,13 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
 
     describe = describe or {}
     labels = [d["label"] for d in data]
+    # Which approaches actually SHOWED past tickets to the model. The precedent analysis only makes
+    # sense for these - a "no history" run still has the numbers (the tickets were fetched to compute
+    # them) but the model never saw them, which is confusing, so we leave those out of section 4.
+    # If the caller doesn't say, fall back to runs that recorded the split.
+    hist_set = set(history_runs) if history_runs else {d["label"] for d in data if d["backed_r"] is not None}
+    hist_data = [d for d in data if d["label"] in hist_set]
+    hist_labels = [d["label"] for d in hist_data]
     charts_dir = out_path.parent / "compare_charts"
     charts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -187,30 +261,43 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
     _bar(ax, labels, {"Precision": [d["micro_p"] for d in data], "Recall": [d["micro_r"] for d in data],
                       "F1": [d["micro_f1"] for d in data]}, "Precision, Recall, F1 (higher = better)", "score")
     figs["quality"] = save(fig, "quality")
-    # 2. cohorts
+    # 2. cohorts - SAME metric (recall) for both, so it's apples to apples
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    _bar(ax, labels, {"Easy tickets (1 answer): recall": [d["single_r"] for d in data],
-                      "Hard tickets (2+ answers): F1": [d["multi_f1"] for d in data]},
-         "Easy vs hard tickets", "score")
+    _bar(ax, labels, {"Easy tickets (1 answer)": [d["single_r"] for d in data],
+                      "Hard tickets (2+ answers)": [d["multi_r"] for d in data]},
+         "Recall on easy vs hard tickets (same metric for both)", "recall")
     figs["cohorts"] = save(fig, "cohorts")
-    # 3. retrieval recall
+    # 3a. retrieval depth + lanes - identical across approaches (search is the same), so show once
+    rep = next((d for d in data if d["vs_r3"] is not None), data[0])
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    _bar(ax, labels, {"Search ranking (top 10)": [d["vs_r10"] for d in data],
-                      "Past-ticket examples": [d["hist_r"] for d in data],
-                      "Everything shown to model": [d["pool_r"] for d in data]},
-         "Were the right answers even put in front of the model?", "fraction of correct answers found")
+    _bar(ax, ["Search top 3", "Search top 5", "Search top 10", "Past-ticket\nexamples",
+              "Everything shown\n(ceiling)"],
+         {"fraction of correct answers found":
+          [rep["vs_r3"], rep["vs_r5"], rep["vs_r10"], rep["hist_r"], rep["pool_r"]]},
+         "How many correct answers retrieval surfaces (same for every approach)", "recall")
     figs["retrieval"] = save(fig, "retrieval")
-    # 4. historic boost (only where present)
-    if any(d["backed_r"] is not None or d["notbacked_r"] is not None for d in data):
+    # 3b. capture - of what was available, how much did the MODEL actually pick.
+    #     'of everything shown' applies to every approach; 'of the precedent' only to history runs.
+    if any(d["ceiling_capture"] is not None for d in data):
         fig, ax = plt.subplots(figsize=(8, 4.5))
-        _bar(ax, labels, {"Answer was in the similar past tickets": [d["backed_r"] for d in data],
-                          "Answer was NOT in them": [d["notbacked_r"] for d in data]},
-             "Does the model actually use the past examples?", "recall")
+        precedent = [d["precedent_capture"] if d["label"] in hist_set else None for d in data]
+        _bar(ax, labels, {"of everything shown (ceiling)": [d["ceiling_capture"] for d in data],
+                          "of the precedent answers (history runs)": precedent},
+             "Of the answers it COULD have picked, how many did the model pick?", "fraction picked")
+        figs["capture"] = save(fig, "capture")
+    # 4. historic boost - ONLY the approaches that actually showed past tickets to the model.
+    if hist_data:
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        _bar(ax, hist_labels, {"Answer was in the shown past tickets": [d["backed_r"] for d in hist_data],
+                               "Answer was NOT in them": [d["notbacked_r"] for d in hist_data]},
+             "When past tickets are shown, does the model use them?", "recall")
         figs["boost"] = save(fig, "boost")
-    # 5. latency
+    # 5. latency - average, typical (median), and slowest, so one outlier doesn't hide the typical
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    _bar(ax, labels, {"average (s)": [d["lat_avg"] for d in data], "slowest (s)": [d["lat_max"] for d in data]},
-         "Time per prediction", "seconds")
+    _bar(ax, labels, {"average (s)": [d["lat_avg"] for d in data],
+                      "typical / median (s)": [d["lat_med"] for d in data],
+                      "slowest (s)": [d["lat_max"] for d in data]},
+         "Time per prediction (lower = better)", "seconds")
     figs["latency"] = save(fig, "latency")
 
     best = max(data, key=lambda d: d["micro_f1"])
@@ -279,60 +366,110 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
 
     doc.add_heading("2. Easy tickets vs hard tickets", level=1)
     doc.add_paragraph(
-        "Easy tickets have one correct Value Stream (we track how often we find it). Hard tickets have "
-        "two or more (we track F1). An approach that improves BOTH is genuinely better — not just better "
-        f"at the easy ones. Here, \"{best_r['label']}\" leads on both: easy {best_r['single_r']:.0%} found, "
-        f"hard F1 {best_r['multi_f1']:.2f}.")
+        "Tickets split by how many correct Value Streams they have: EASY = exactly one, HARD = two or "
+        "more. The chart shows RECALL for both (same metric, apples to apples) — of the correct answers "
+        "on that kind of ticket, how many we found. An approach that lifts BOTH is genuinely better, not "
+        f"just better at the easy ones. \"{best_r['label']}\" leads on easy ({_pct(best_r['single_r'])} "
+        f"found) and on hard ({_pct(best_r['multi_r'])} found).")
+    doc.add_paragraph(
+        "Full per-cohort breakdown (Precision / Recall / F1, and how many tickets are in each group):")
+    crows = []
+    for d in data:
+        crows.append([d["label"], str(d["single_n"] or "-"), _pct(d["single_p"]), _pct(d["single_r"]),
+                      _f2(d["single_f1"]), str(d["multi_n"] or "-"), _pct(d["multi_p"]), _pct(d["multi_r"]),
+                      _f2(d["multi_f1"])])
+    _add_table(doc, ["Approach", "Easy n", "Easy P", "Easy R", "Easy F1",
+                     "Hard n", "Hard P", "Hard R", "Hard F1"], crows)
     doc.add_picture(figs["cohorts"], width=Inches(6.2))
 
     doc.add_heading("3. Were the right answers even shown to the model?", level=1)
-    p3 = data[0]  # retrieval is identical across approaches (same search), so describe once
+    p3 = rep  # retrieval is identical across approaches (same search), so describe once
     doc.add_paragraph(
-        "Before the model chooses, the system has to put the correct Value Streams in front of it — it "
-        "can't pick what it never sees. This is the ceiling on how well any approach can do.")
+        "Before the model can choose, the system has to put the correct Value Streams in front of it — it "
+        "can't pick what it never sees. This section is about the SYSTEM, not the model: how good is "
+        "retrieval, and what is the ceiling every approach is working under.")
     doc.add_paragraph(
-        f"Search ranking alone is weak: its top 10 contained only {p3['vs_r10']:.0%} of the correct answers. "
-        f"But the past-ticket examples contained {p3['hist_r']:.0%}, and because we hand the model the FULL "
-        f"50-stream catalogue every time, {p3['pool_r']:.0%} of the correct answers are always on the table. "
-        "So retrieval is NOT the bottleneck — every miss is the model choosing wrong from a complete list, "
-        "which is why the choice of prompt/approach matters so much.")
+        f"Two ways the system can surface a correct answer. (1) Semantic search ranking: weak — its top 10 "
+        f"holds only {_pct(p3['vs_r10'])} of the correct answers (top 3: {_pct(p3['vs_r3'])}, top 5: "
+        f"{_pct(p3['vs_r5'])} — it barely improves with depth, so the embedding ranks the right streams "
+        f"poorly). (2) Similar past tickets: strong — they hold {_pct(p3['hist_r'])} of the correct answers. "
+        f"And because we hand the model the FULL 50-stream catalogue every time, {_pct(p3['pool_r'])} of the "
+        "correct answers are ALWAYS on the table.")
     doc.add_picture(figs["retrieval"], width=Inches(6.2))
+    doc.add_paragraph(
+        "So retrieval is not the bottleneck. With the whole catalogue always present, every miss is the "
+        "model choosing wrong from a complete list — which is exactly why the prompt / approach is the "
+        "lever, not the search. The table below makes that concrete: of all the correct answers the model "
+        "MISSED, where did they go?")
+    mrows = []
+    for d in data:
+        nr, ga, dr = d["miss_not_retrieved"], d["miss_gated"], d["llm_dropped"]
+        total = sum(x for x in (nr, ga, dr) if x is not None) or None
+        share = (dr / total) if (dr is not None and total) else None
+        mrows.append([d["label"], _na_int(nr), _na_int(ga), _na_int(dr),
+                      "n/a" if share is None else f"{share:.0%}"])
+    _add_table(doc, ["Approach", "Never retrieved", "Filtered before model",
+                     "Model saw it, dropped it", "% misses = model's choice"], mrows)
+    doc.add_paragraph(
+        "'Never retrieved' and 'filtered before model' are retrieval/system failures; 'model saw it, "
+        "dropped it' is the model's choice. When that last column is ~100%, the only way to improve is the "
+        "model's selection (prompt, examples) — retrieval has already done its job.")
+
+    doc.add_heading("4. How much of what's available does the model actually pick?", level=1)
+    doc.add_paragraph(
+        "Two capture rates. CEILING CAPTURE = of all the correct answers shown to the model, how many it "
+        "picked (recall as a share of the ceiling). PRECEDENT CAPTURE = of the correct answers that appeared "
+        "in the shown past tickets, how many it picked. The second only applies to approaches that actually "
+        "show past tickets, so the no-history approaches are left out of it.")
+    caprows = []
+    for d in data:
+        prec = _pct(d["precedent_capture"]) if d["label"] in hist_set else "—"
+        caprows.append([d["label"], _pct(d["ceiling_capture"]), prec])
+    _add_table(doc, ["Approach", "Capture of everything shown", "Capture of precedent (history only)"], caprows)
+    if "capture" in figs:
+        doc.add_picture(figs["capture"], width=Inches(6.2))
 
     if "boost" in figs:
-        doc.add_heading("4. Does the model actually use the past examples?", level=1)
+        doc.add_heading("5. When past tickets are shown, does the model use them?", level=1)
         doc.add_paragraph(
-            "We split the correct answers into two groups: ones that appeared in the similar past tickets, "
-            "and ones that didn't, then measure recall for each. A big gap means the model leans on "
-            "precedent.")
-        doc.add_paragraph(
-            "Important: the similar past tickets are ALWAYS fetched (we need them to compute this split), "
-            "but they are only SHOWN to the model in the 'History' approaches. The 'No history' approaches "
-            "are the control — the tickets are fetched but withheld. That is why 'No history' still has two "
-            "bars: the split is about whether an answer was IN the fetched tickets, not whether the model "
-            "saw them. In the control the two bars are nearly equal (being in the hidden tickets changes "
-            "nothing), and in the 'History' approaches a wide gap opens up — that gap is the proof the "
-            "examples are doing the work. A run with no bar at all is an older run that did not record this.")
+            "Only the approaches that actually SHOW past tickets to the model appear here. We split the "
+            "correct answers into ones that were in the shown past tickets vs ones that weren't, and measure "
+            "recall for each. A big gap means the model is leaning on the precedent rather than ignoring it.")
+        hb = max(hist_data, key=lambda d: (d["backed_r"] or 0))
+        if hb["backed_r"] is not None and hb["notbacked_r"] is not None:
+            doc.add_paragraph(
+                f"In \"{hb['label']}\", an answer shown in the past tickets is picked {hb['backed_r']:.0%} of "
+                f"the time vs {hb['notbacked_r']:.0%} when it isn't — a {hb['backed_r'] - hb['notbacked_r']:+.0%} "
+                f"lift. There is still headroom: the past tickets CONTAIN {hb['hist_r']:.0%} of the correct "
+                f"answers but the model only USES {hb['backed_r']:.0%}, so ~{hb['hist_r'] - hb['backed_r']:.0%} "
+                "of right answers sit in front of it unpicked — a more trusting prompt or more past tickets "
+                "could capture them.")
         doc.add_picture(figs["boost"], width=Inches(6.2))
 
-    doc.add_heading("5. Time per prediction", level=1)
+    doc.add_heading("6. Time per prediction", level=1)
     doc.add_paragraph(
-        "Average and slowest seconds per ticket (the eval-only scoring calls are excluded). A very large "
-        "'slowest' next to a small average usually means one ticket hit a retry/backoff storm, not real "
-        "compute — worth a look, but it doesn't reflect typical speed.")
+        "Three numbers per approach: AVERAGE, TYPICAL (median), and SLOWEST seconds per ticket (the "
+        "eval-only scoring calls are excluded). Read the median for typical speed: if the average is far "
+        "above the median, one or two tickets hit a retry/backoff storm and dragged the mean up — that is "
+        "an outlier to investigate, not the real speed.")
+    lrows = []
+    for d in data:
+        flag = ""
+        if d["lat_med"] and d["lat_avg"] and d["lat_avg"] > 3 * d["lat_med"]:
+            flag = "  ⚠ avg inflated by an outlier"
+        lrows.append([d["label"], _secs(d["lat_avg"]), _secs(d["lat_med"]), _secs(d["lat_max"]) + flag])
+    _add_table(doc, ["Approach", "Average", "Typical (median)", "Slowest"], lrows)
     doc.add_picture(figs["latency"], width=Inches(6.2))
 
     # summary table
     doc.add_heading("All numbers in one table", level=1)
-    t = doc.add_table(rows=1, cols=6); t.style = "Light Grid Accent 1"
-    headers = ["Approach", "Precision", "Recall", "F1", "Easy: found", "Hard: F1"]
-    for c, h in zip(t.rows[0].cells, headers):
-        c.text = h
+    srows = []
     for d in data:
-        cells = t.add_row().cells
-        vals = [d["label"], f"{d['micro_p']:.0%}", f"{d['micro_r']:.0%}", f"{d['micro_f1']:.2f}",
-                f"{d['single_r']:.0%}", f"{d['multi_f1']:.2f}"]
-        for c, v in zip(cells, vals):
-            c.text = str(v)
+        lift = f"{d['boost_lift']:+.2f}" if d["boost_lift"] is not None else "n/a"
+        srows.append([d["label"], _pct(d["micro_p"]), _pct(d["micro_r"]), _f2(d["micro_f1"]),
+                      _pct(d["single_r"]), _pct(d["multi_r"]), lift, _secs(d["lat_med"])])
+    _add_table(doc, ["Approach", "Precision", "Recall", "F1", "Easy R", "Hard R",
+                     "Precedent lift", "Typical time"], srows)
     note = doc.add_paragraph(
         "Recall-type numbers are shown as percentages; F1 as a 0-1 score. Older runs that predate a "
         "metric show 'n/a' (not zero) elsewhere in this report.")
@@ -354,7 +491,16 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
                                  "leans on the examples; near zero = the examples do nothing."),
         ("Past-ticket examples", "Similar tickets from the past, shown to the model along with the answers they got."),
         ("Search relevance scores", "Numbers from the search engine ranking each candidate; included or hidden."),
-        ("Shown to the model", "The fraction of correct answers that were on the candidate list at all (the ceiling)."),
+        ("Ceiling", "The fraction of correct answers that were on the candidate list at all - the best any "
+                    "approach could possibly score. Here it's ~100% because the full catalogue is always shown."),
+        ("Ceiling capture", "Of the correct answers shown to the model, the fraction it actually picked "
+                            "(recall divided by the ceiling). Low = the model is leaving answers on the table."),
+        ("Precedent capture", "Of the correct answers that were in the SHOWN past tickets, the fraction the model "
+                              "picked. Only meaningful for approaches that show past tickets."),
+        ("Typical (median) time", "The middle ticket's time - the honest 'usual' speed. The AVERAGE can be far "
+                                  "higher if one ticket stalls on retries; compare the two to spot an outlier."),
+        ("Where misses go", "Each correct answer we missed is one of: never retrieved, filtered before the model, "
+                            "or the model saw it and dropped it. The last one is the model's fault, not the system's."),
     ]
     gl = doc.add_table(rows=1, cols=2); gl.style = "Light Grid Accent 1"
     gl.rows[0].cells[0].text, gl.rows[0].cells[1].text = "Term", "Plain meaning"
@@ -376,6 +522,10 @@ def main() -> None:
     parser.add_argument("--describe", action="append", default=[], metavar="'label: plain text'",
                         help="one-line plain-English description of a run, shown in the glossary, e.g. "
                              "--describe 'History: all 50 streams + similar past tickets shown as examples'")
+    parser.add_argument("--history-run", action="append", default=[], metavar="LABEL",
+                        help="mark a run as one that SHOWS past tickets to the model; only these appear in the "
+                             "precedent-use section. Repeat per history run. If omitted, falls back to any run "
+                             "that recorded the precedent split.")
     args = parser.parse_args()
     data = [load(a) for a in args.runs]
     axes = [_parse_axis(a) for a in args.axis]
@@ -383,12 +533,14 @@ def main() -> None:
     for d in args.describe:
         label, _, text = d.partition(":")
         describe[label.strip()] = text.strip()
-    build(data, Path(args.out), axes=axes, describe=describe)
+    history_runs = set(args.history_run) or None
+    build(data, Path(args.out), axes=axes, describe=describe, history_runs=history_runs)
     print(f"comparison -> {args.out}")
-    print("\nquick table (P / R / F1 / single-R / multi-F1):")
+    print("\nquick table (P / R / F1 / Easy-R / Hard-R):")
     for d in data:
-        print(f"  {d['label']:14} P={d['micro_p']:.3f} R={d['micro_r']:.3f} F1={d['micro_f1']:.3f} "
-              f"single-R={d['single_r']:.3f} multi-F1={d['multi_f1']:.3f}")
+        hr = "n/a" if d["multi_r"] is None else f"{d['multi_r']:.3f}"
+        print(f"  {d['label']:20} P={d['micro_p']:.3f} R={d['micro_r']:.3f} F1={d['micro_f1']:.3f} "
+              f"easy-R={d['single_r']:.3f} hard-R={hr}")
 
 
 if __name__ == "__main__":

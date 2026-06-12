@@ -28,7 +28,25 @@
       "not_retrieved": 0,
       "gated_pre_llm": 0,
       "llm_dropped": 63
-    }
+    },
+    "cohorts": {
+      "single-VS (gt==1)": [
+        0.068,
+        0.676,
+        0.123
+      ],
+      "multi-VS  (gt>=2)": [
+        0.263,
+        0.561,
+        0.358
+      ]
+    },
+    "cohort_n": {
+      "single-VS (gt==1)": 35,
+      "multi-VS  (gt>=2)": 25
+    },
+    "avg_predicted": 10.0,
+    "avg_gt": 2.5
   },
   {
     "n": 60,
@@ -59,7 +77,25 @@
       "not_retrieved": 0,
       "gated_pre_llm": 0,
       "llm_dropped": 63
-    }
+    },
+    "cohorts": {
+      "single-VS (gt==1)": [
+        0.068,
+        0.676,
+        0.123
+      ],
+      "multi-VS  (gt>=2)": [
+        0.263,
+        0.561,
+        0.358
+      ]
+    },
+    "cohort_n": {
+      "single-VS (gt==1)": 35,
+      "multi-VS  (gt>=2)": 25
+    },
+    "avg_predicted": 10.0,
+    "avg_gt": 2.5
   },
   {
     "n": 60,
@@ -90,6 +126,24 @@
       "not_retrieved": 0,
       "gated_pre_llm": 0,
       "llm_dropped": 63
-    }
+    },
+    "cohorts": {
+      "single-VS (gt==1)": [
+        0.068,
+        0.676,
+        0.123
+      ],
+      "multi-VS  (gt>=2)": [
+        0.263,
+        0.561,
+        0.358
+      ]
+    },
+    "cohort_n": {
+      "single-VS (gt==1)": 35,
+      "multi-VS  (gt>=2)": 25
+    },
+    "avg_predicted": 10.0,
+    "avg_gt": 2.5
   }
 ]
