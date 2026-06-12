@@ -62,6 +62,14 @@ def _mean_nested(runs: list[dict], outer: str, inner: str) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
+def _mean_nested_opt(runs: list[dict], outer: str, inner: str) -> float | None:
+    """Like _mean_nested but None (not 0.0) when the field is absent in every run, so the
+    axis table can show 'n/a' instead of a fake zero for older runs.json that predate a field."""
+    vals = [(r.get(outer) or {}).get(inner) for r in runs]
+    vals = [v for v in vals if v is not None]
+    return sum(vals) / len(vals) if vals else None
+
+
 def load(arg: str) -> dict:
     label, path = _label_path(arg)
     runs = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -75,12 +83,22 @@ def load(arg: str) -> dict:
         "pool_r": _mean_nested(runs, "retrieval", "pool"),
         "backed_r": _mean_nested(runs, "boost", "backed_recall"),
         "notbacked_r": _mean_nested(runs, "boost", "notbacked_recall"),
-        "boost_lift": _mean_nested(runs, "boost", "lift"),
+        "boost_lift": _boost_lift(runs),
         "lat_avg": _mean_nested(runs, "latency", "avg"),
-        "lat_med": _mean_nested(runs, "latency", "median"),
+        "lat_med": _mean_nested_opt(runs, "latency", "median"),
         "lat_max": _mean_nested(runs, "latency", "max"),
-        "llm_dropped": _mean_nested(runs, "buckets", "llm_dropped"),
+        "llm_dropped": _mean_nested_opt(runs, "buckets", "llm_dropped"),
     }
+
+
+def _boost_lift(runs: list[dict]) -> float | None:
+    # Prefer the stored lift; older runs.json have only backed/notbacked, so derive it from those.
+    lift = _mean_nested_opt(runs, "boost", "lift")
+    if lift is not None:
+        return lift
+    backed = _mean_nested_opt(runs, "boost", "backed_recall")
+    notbacked = _mean_nested_opt(runs, "boost", "notbacked_recall")
+    return (backed - notbacked) if (backed is not None and notbacked is not None) else None
 
 
 def _bar(ax, labels, series: dict, title, ylabel):
@@ -114,13 +132,19 @@ def _render_axes(doc, by_label: dict[str, dict], axes: list[tuple[str, str, str]
         for c, h in zip(t.rows[0].cells, ["metric", la, lb, "Δ (B-A)", "better"]):
             c.text = h
         for mlabel, key, higher in _AXIS_METRICS:
-            av, bv = a.get(key, 0.0), b.get(key, 0.0)
-            delta = bv - av
-            improved = (delta > 0) == higher
-            arrow = "—" if abs(delta) < 1e-9 else (f"→ {lb}" if improved else f"→ {la}")
-            fmt = "{:.0f}" if key in ("llm_dropped",) else "{:.3f}"
+            av, bv = a.get(key), b.get(key)
+            fmt = "{:.0f}" if key == "llm_dropped" else "{:.3f}"
+            if av is None or bv is None:
+                # A field one side never recorded (older runs.json) - show what we have, no delta.
+                row = [mlabel, "n/a" if av is None else fmt.format(av),
+                       "n/a" if bv is None else fmt.format(bv), "n/a", "—"]
+            else:
+                delta = bv - av
+                improved = (delta > 0) == higher
+                arrow = "—" if abs(delta) < 1e-9 else (f"→ {lb}" if improved else f"→ {la}")
+                row = [mlabel, fmt.format(av), fmt.format(bv), f"{delta:+.3f}", arrow]
             cells = t.add_row().cells
-            for c, v in zip(cells, [mlabel, fmt.format(av), fmt.format(bv), f"{delta:+.3f}", arrow]):
+            for c, v in zip(cells, row):
                 c.text = v
 
 
