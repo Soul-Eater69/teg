@@ -7,7 +7,7 @@ later. Inject a Settings instance; never read os.environ deep in the call tree.
 
 from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,18 +31,25 @@ class Settings(BaseSettings):
     search_semantic_config: str = "teg-semantic"
     search_api_version: str = "2024-07-01"  # needs >=2024-07-01 for the vector + complex schema
 
-    # Azure AD service principal (Search auth; falls back to search_api_key)
-    azure_tenant_id: str = ""
-    azure_client_id: str = ""
-    azure_client_secret: str = ""
+    # Azure AD service principal (Search + Cosmos auth; falls back to the resource key). Reads the
+    # TEG_ var or the org's AZURE_*_DEV name, whichever is set.
+    azure_tenant_id: str = Field("", validation_alias=AliasChoices(
+        "TEG_AZURE_TENANT_ID", "AZURE_TENANT_ID_DEV"))
+    azure_client_id: str = Field("", validation_alias=AliasChoices(
+        "TEG_AZURE_CLIENT_ID", "AZURE_CLIENT_ID_DEV"))
+    azure_client_secret: str = Field("", validation_alias=AliasChoices(
+        "TEG_AZURE_CLIENT_SECRET", "AZURE_CLIENT_SECRET_DEV"))
 
     # Cosmos (lineage, ground truth, governed catalogues). One container, partition key /sourceId,
     # entityType discriminates ER / Theme / ValueStream docs. Auth = service principal (azure_*)
-    # if set, else cosmos_key.
-    cosmos_endpoint: str = ""
+    # if set, else cosmos_key. Each field reads the TEG_ var or the org's AZURE_COSMOS_* name.
+    cosmos_endpoint: str = Field("", validation_alias=AliasChoices(
+        "TEG_COSMOS_ENDPOINT", "AZURE_COSMOS_DB_URL"))
     cosmos_key: str = ""
-    cosmos_database: str = ""
-    cosmos_container: str = "teg_data"
+    cosmos_database: str = Field("", validation_alias=AliasChoices(
+        "TEG_COSMOS_DATABASE", "AZURE_COSMOS_DB_NAME"))
+    cosmos_container: str = Field("theme-and-epic", validation_alias=AliasChoices(
+        "TEG_COSMOS_CONTAINER", "AZURE_COSMOS_CONTAINER_NAME"))
 
     # LLM (IDP OpenAI-compatible gateway)
     llm_base_url: str = ""
