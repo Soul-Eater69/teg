@@ -302,6 +302,7 @@ async def main(args) -> None:
         selection_prompt_override=args.selection_prompt,
         show_candidate_scores=not args.no_candidate_scores,
         **({"llm_candidate_window": window} if window else {}),
+        **({"historical_fetch_k": args.historic_k} if args.historic_k else {}),
     )
     service = build_value_stream_service(config=config)
     llm = build_llm_client(load_settings()) if (args.explain_drops or args.judge) else None
@@ -675,6 +676,9 @@ if __name__ == "__main__":
     parser.add_argument("--buffer", type=int, default=2, help="added to |GT| in gt_buffer mode")
     parser.add_argument("--min-gt", type=int, default=2, help="skip tickets with fewer than this many GT value streams")
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 10], help="k values for P@k / R@k")
+    parser.add_argument("--historic-k", type=int, default=0,
+                        help="how many similar past tickets to retrieve/show as evidence "
+                             "(overrides the config default of 6; e.g. 8 or 10)")
     parser.add_argument("--concurrency", type=int, default=3, help="tickets evaluated in parallel")
     parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
