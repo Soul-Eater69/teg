@@ -37,7 +37,9 @@ class _FakeClient:
 
 
 def _doc(doc_id: str, source_id: str, entity_type: str) -> dict:
-    return {"id": doc_id, "sourceId": source_id, "entityType": entity_type, "key": f"K-{source_id}"}
+    # Cosmos docs carry the hierarchical partition key paths (domain + entityType).
+    return {"id": doc_id, "domain": "WORKITEM", "entityType": entity_type,
+            "sourceId": source_id, "key": f"K-{source_id}"}
 
 
 async def test_upsert_writes_all_docs() -> None:
@@ -71,8 +73,10 @@ async def test_close_closes_client() -> None:
     assert client.closed is True
 
 
-def test_validate_requires_id_and_partition_key() -> None:
+def test_validate_requires_id_and_both_partition_paths() -> None:
     with pytest.raises(ValueError, match="missing 'id'"):
-        _validate({"sourceId": "x"})
-    with pytest.raises(ValueError, match="partition key"):
-        _validate({"id": "u1"})
+        _validate({"domain": "WORKITEM", "entityType": "THEME"})
+    with pytest.raises(ValueError, match="partition key 'domain'"):
+        _validate({"id": "u1", "entityType": "THEME"})
+    with pytest.raises(ValueError, match="partition key 'entityType'"):
+        _validate({"id": "u1", "domain": "WORKITEM"})

@@ -21,7 +21,7 @@ from pathlib import Path
 
 from teg.bootstrap import load_settings
 from teg.ingestion.documents.idmt_documents import _now, restamp
-from teg.integrations.cosmos import build_cosmos_writer
+from teg.integrations.cosmos import build_cosmos_writer, to_cosmos_doc
 
 _FILES = ("cosmos_idmt.json", "cosmos_themes.json")
 
@@ -48,6 +48,8 @@ async def main(out_dir: str, limit: int | None) -> None:
     when = _now()  # one timestamp for the whole run
     for doc in docs:
         restamp(doc, when)
+    # Adapt to the org Cosmos schema (domain=WORKITEM, uppercase discriminators, drop themes).
+    docs = [to_cosmos_doc(doc) for doc in docs]
 
     writer = build_cosmos_writer(load_settings())
     try:

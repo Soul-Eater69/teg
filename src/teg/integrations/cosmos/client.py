@@ -25,7 +25,9 @@ except Exception:  # pragma: no cover - import guarded so the module always load
     _CosmosClient = None  # type: ignore[assignment]
     _AsyncClientSecretCredential = None  # type: ignore[assignment]
 
-_PARTITION_KEY = "sourceId"
+# Hierarchical partition key (matches the org's Items containers): /domain + /entityType. The
+# azure-cosmos SDK reads both values straight from the document body on upsert.
+_PARTITION_PATHS = ("domain", "entityType")
 _UPSERT_CONCURRENCY = 8  # modest fan-out so autoscale RU/s isn't hammered into 429s
 
 
@@ -66,11 +68,12 @@ class AzureCosmosWriter:
 
 
 def _validate(doc: dict) -> dict:
-    # Cosmos needs an id; the partition key value must be present or the upsert is rejected.
+    # Cosmos needs an id; both partition-key paths must be present or the upsert is rejected.
     if not doc.get("id"):
         raise ValueError(f"cosmos doc missing 'id': {doc.get('key') or doc}")
-    if not doc.get(_PARTITION_KEY):
-        raise ValueError(f"cosmos doc missing partition key '{_PARTITION_KEY}': {doc.get('id')}")
+    for path in _PARTITION_PATHS:
+        if not doc.get(path):
+            raise ValueError(f"cosmos doc missing partition key '{path}': {doc.get('id')}")
     return doc
 
 
