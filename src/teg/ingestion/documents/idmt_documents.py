@@ -57,7 +57,7 @@ def build_idmt_document(
         "lastModifiedBy": INGEST_ACTOR,
         "parentRef": None,  # ER is a root - no parent
         "properties": {
-            "description": condensed.description,
+            "description": clean_text(condensed.description),
             "summary": condensed.ticket_title or er.title,  # the ticket TITLE
             "creationDate": er.created_date or None,  # source ticket created
             "insightsTime": er.modified_date or None,  # source ticket last updated
@@ -99,7 +99,7 @@ def build_theme_document(theme: ExtractedTheme, *, parent_er_id: str) -> dict:
         "parentRef": parent_er_id,  # the parent ER's sourceId (stable Jira id)
         "properties": {
             "summary": theme.summary,  # ISSUE title
-            "description": theme.description,
+            "description": clean_text(theme.description),
             "valueStream": {
                 "valueStreamId": theme.value_stream_id,
                 "valueStreamName": theme.value_stream_name,
