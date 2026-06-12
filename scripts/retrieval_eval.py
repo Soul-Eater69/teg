@@ -41,7 +41,9 @@ from time import perf_counter
 from scripts.eval_vs import _gt_ids, _load, _summary_fields
 
 from teg.config.settings import load_settings
+from teg.integrations.llm import build_llm_client
 from teg.integrations.search import build_search_client
+from teg.value_stream.content_relevance_judge import judge_ticket_relevance
 from teg.value_stream.retrieval import build_retrieval_text
 
 K_VALUES = (6, 8, 10)
@@ -52,15 +54,24 @@ BROAD_FRACTION = 0.15  # a VS tagged on >15% of tickets is "broad" (precision_st
 
 # ----------------------------------------------------------------- per-query retrieval
 
-async def _eval_one(doc, search, gt: set[str]) -> dict:
+async def _eval_one(doc, search, gt: set[str], *, llm=None, content_by_key=None) -> dict:
     key = doc.get("key") or ""
     summary = _summary_fields(doc.get("properties", {}), raw_text=False)
     query = build_retrieval_text(summary)
-    t0 = perf_counter()
     hits = await search.search_historical(query, top_k=MAX_K + OVERFETCH)
-    latency = perf_counter() - t0
     # Drop the ticket itself, keep the top MAX_K (one retrieval, then slice for each K).
     hits = [h for h in hits if h.ticket_id != key][:MAX_K]
+
+    # Content-relevance judge (diagnostic): one batched LLM call judging all retrieved tickets.
+    # Use the richer local doc content where available, else the search snippet.
+    content = content_by_key or {}
+    judged: dict[str, bool] = {}
+    if llm is not None and hits:
+        tickets = [(h.ticket_id, (content.get(h.ticket_id) or h.snippet or "")[:1200]) for h in hits]
+        try:
+            judged = await judge_ticket_relevance(query=query[:4000], tickets=tickets, llm_client=llm)
+        except Exception as exc:
+            print(f"    judge failed for {key}: {type(exc).__name__}: {exc}")
 
     retrieved = []
     for rank, h in enumerate(hits, start=1):
@@ -68,7 +79,8 @@ async def _eval_one(doc, search, gt: set[str]) -> dict:
         retrieved.append({
             "rank": rank, "ticket_id": h.ticket_id, "score": round(h.score, 4),
             "vs_ids": vs_ids, "n_vs": len(vs_ids),
-            "relevant": bool(set(vs_ids) & gt),
+            "relevant": bool(set(vs_ids) & gt),  # label-relevance (primary)
+            "content_relevant": judged.get(h.ticket_id) if judged else None,  # content-relevance (diagnostic)
         })
 
     at_k = {}
@@ -77,6 +89,7 @@ async def _eval_one(doc, search, gt: set[str]) -> dict:
         covered = {v for r in top for v in r["vs_ids"]} & gt
         rel_ranks = [r["rank"] for r in top if r["relevant"]]
         n_rel = len(rel_ranks)
+        n_content = sum(1 for r in top if r["content_relevant"]) if judged else None
         dcg = sum(1.0 / math.log2(r["rank"] + 1) for r in top if r["relevant"])
         ideal = sum(1.0 / math.log2(i + 2) for i in range(min(n_rel, k)))
         at_k[k] = {
@@ -88,6 +101,8 @@ async def _eval_one(doc, search, gt: set[str]) -> dict:
             "rr": 1.0 / rel_ranks[0] if rel_ranks else 0.0,
             "ndcg": dcg / ideal if ideal else 0.0,
             "evidence_density": statistics.mean(r["n_vs"] for r in top) if top else 0.0,
+            "content_precision": (n_content / len(top)) if (judged and top) else None,
+            "content_hit": (1 if n_content else 0) if judged else None,
         }
     first_rel = next((r["rank"] for r in retrieved if r["relevant"]), None)
     return {
@@ -119,10 +134,15 @@ def _aggregate(per_query: list[dict], broad: set[str], gt_by_ticket: dict[str, s
             top = q["retrieved"][:k]
             n_strict = sum(1 for r in top if (set(r["vs_ids"]) & gt) - broad)
             strict.append(n_strict / len(top) if top else 0.0)
+        cprec = [q["at_k"][k]["content_precision"] for q in per_query
+                 if q["at_k"][k]["content_precision"] is not None]
+        chit = [q["at_k"][k]["content_hit"] for q in per_query if q["at_k"][k]["content_hit"] is not None]
         by_k[k] = {
             "recall": _stats(rec),
             "precision": _stats(prec),
             "precision_strict": _stats(strict),
+            "content_precision": _stats(cprec) if cprec else {"mean": None},
+            "content_hit_rate": (statistics.mean(chit) if chit else None),
             "hit_rate": statistics.mean(q["at_k"][k]["hit"] for q in per_query),
             "mrr": statistics.mean(q["at_k"][k]["rr"] for q in per_query),
             "ndcg": statistics.mean(q["at_k"][k]["ndcg"] for q in per_query),
@@ -144,6 +164,17 @@ def _aggregate(per_query: list[dict], broad: set[str], gt_by_ticket: dict[str, s
     rel_scores = [r["score"] for q in per_query for r in q["retrieved"] if r["relevant"]]
     irr_scores = [r["score"] for q in per_query for r in q["retrieved"] if not r["relevant"]]
     first_ranks = [q["first_relevant_rank"] for q in per_query if q["first_relevant_rank"]]
+    # label x content cross-tab over every retrieved ticket that was judged (the diagnostic)
+    crosstab = None
+    judged_rows = [r for q in per_query for r in q["retrieved"] if r.get("content_relevant") is not None]
+    if judged_rows:
+        crosstab = {
+            "label_and_content": sum(1 for r in judged_rows if r["relevant"] and r["content_relevant"]),
+            "label_not_content": sum(1 for r in judged_rows if r["relevant"] and not r["content_relevant"]),
+            "content_not_label": sum(1 for r in judged_rows if not r["relevant"] and r["content_relevant"]),
+            "neither": sum(1 for r in judged_rows if not r["relevant"] and not r["content_relevant"]),
+            "total_judged": len(judged_rows),
+        }
     return {
         "n_queries": n,
         "by_k": by_k,
@@ -159,6 +190,7 @@ def _aggregate(per_query: list[dict], broad: set[str], gt_by_ticket: dict[str, s
                              "irrelevant_mean": _stats(irr_scores)["mean"],
                              "relevant_n": len(rel_scores), "irrelevant_n": len(irr_scores)},
         "broad_streams": sorted(broad),
+        "label_vs_content": crosstab,
     }
 
 
@@ -178,14 +210,22 @@ async def run(args) -> dict:
     n = len(docs)
     broad = {vs for vs, c in freq.items() if n and c / n > BROAD_FRACTION}
 
-    search = build_search_client(load_settings())
+    settings = load_settings()
+    search = build_search_client(settings)
+    llm = build_llm_client(settings) if args.judge else None
+    # Richer content for the judge: map each ticket key -> its local businessSummary (else rawText).
+    content_by_key = {}
+    if args.judge:
+        for d in _load(args.dataset):
+            p = d.get("properties", {})
+            content_by_key[d.get("key", "")] = p.get("businessSummary") or (p.get("rawText") or "")[:1200]
     sem = asyncio.Semaphore(args.concurrency)
 
     async def _guarded(d):
         async with sem:
             gt = gt_by_ticket[d.get("key", "")]
             try:
-                return await _eval_one(d, search, gt)
+                return await _eval_one(d, search, gt, llm=llm, content_by_key=content_by_key)
             except Exception as exc:  # keep the run alive; record the failure
                 print(f"  [!] {d.get('key')} failed: {exc}")
                 return None
@@ -235,6 +275,14 @@ def _print_summary(agg: dict) -> None:
           f"(min {agg['evidence_density_all']['min']}, max {agg['evidence_density_all']['max']})")
     fr = agg["first_relevant_rank"]
     print(f"first relevant at rank: median {fr['median']} (none for {fr['none_count']} queries)")
+    ct = agg.get("label_vs_content")
+    if ct:
+        tot = ct["total_judged"]
+        print(f"\nlabel vs content (judged {tot} retrieved tickets):")
+        print(f"  label+content (real hit) : {ct['label_and_content']:>4} ({ct['label_and_content']/tot:.0%})")
+        print(f"  label, NOT content (lucky): {ct['label_not_content']:>4} ({ct['label_not_content']/tot:.0%})")
+        print(f"  content, NOT label (mislabeled): {ct['content_not_label']:>4} ({ct['content_not_label']/tot:.0%})")
+        print(f"  neither                  : {ct['neither']:>4} ({ct['neither']/tot:.0%})")
 
 
 def main() -> None:
@@ -243,6 +291,9 @@ def main() -> None:
     parser.add_argument("--min-gt", type=int, default=1, help="only tickets with >= this many GT VS")
     parser.add_argument("--sample", type=int, default=0, help="evaluate only N tickets (default: all)")
     parser.add_argument("--seed", type=int, default=13)
+    parser.add_argument("--judge", action="store_true",
+                        help="add the LLM content-relevance diagnostic (1 batched call per ticket): "
+                             "is each retrieved ticket TOPICALLY similar, not just label-matched")
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--out", default="out/eval/retrieval_eval.json")
     asyncio.run(run(parser.parse_args()))

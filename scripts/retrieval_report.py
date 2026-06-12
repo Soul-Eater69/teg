@@ -208,6 +208,53 @@ def build_report(payload: dict, out_path: Path) -> None:
         "candidate precedent per slot. This is descriptive context for the coverage numbers above.")
     doc.add_picture(f_density, width=Inches(6.2))
 
+    # 6. content-relevance diagnostic (only when the judge ran)
+    ct = agg.get("label_vs_content")
+    if ct and ct.get("total_judged"):
+        tot = ct["total_judged"]
+        fig, ax = plt.subplots(figsize=(8, 4.2))
+        cats = ["label + content\n(real hit)", "label, NOT content\n(lucky match)",
+                "content, NOT label\n(mislabeled)", "neither"]
+        vals = [ct["label_and_content"], ct["label_not_content"], ct["content_not_label"], ct["neither"]]
+        bars = ax.bar(cats, vals, color=["#2a7", "#e8a", "#7ae", "#bbb"])
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v, f"{v}\n{v/tot:.0%}", ha="center", va="bottom", fontsize=8)
+        ax.set_ylabel("retrieved tickets")
+        _titles(ax, "Are the VS-label matches REAL, or lucky?",
+                "Label-relevance vs an independent LLM content judge. 'Lucky' = shares a VS but not the same change.")
+        ax.grid(axis="y", alpha=0.3)
+        f_ct = save(fig, "crosstab")
+
+        # label-precision vs content-precision across K
+        fig, ax = plt.subplots(figsize=(8, 4.2))
+        cprec = [by_k[k]["content_precision"]["mean"] for k in ks]
+        ax.plot(ks, [by_k[k]["precision"]["mean"] for k in ks], "-s", label="Label precision@k")
+        ax.plot(ks, cprec, "-o", label="Content precision@k (LLM judge)")
+        ax.set_xticks(ks); ax.set_xlabel("K"); ax.set_ylabel("precision"); ax.set_ylim(0, 1.05)
+        _titles(ax, "Label precision vs content precision",
+                "If content sits well below label, many 'relevant' tickets are coincidental label matches.")
+        ax.legend(fontsize=8); ax.grid(alpha=0.3)
+        f_cp = save(fig, "content_precision")
+
+        doc.add_heading("6. Are the matches REAL? (content-relevance diagnostic)", level=1)
+        real = ct["label_and_content"] / tot
+        lucky = ct["label_not_content"] / tot
+        doc.add_paragraph(
+            f"Label-relevance is free but can't tell a genuine precedent from a coincidental shared label. "
+            f"An independent LLM judge rated each retrieved ticket for TOPICAL similarity (same kind of "
+            f"change), regardless of labels. Of the {tot} retrieved tickets judged: {real:.0%} are real "
+            f"hits (label AND content agree), while {lucky:.0%} share a Value Stream but are NOT about the "
+            f"same change - 'lucky' label matches that inflate label-precision. {ct['content_not_label']/tot:.0%} "
+            "are content-similar but carry different labels (a taxonomy/labelling gap, not a retrieval miss).")
+        doc.add_picture(f_ct, width=Inches(6.2))
+        doc.add_paragraph(
+            "Across K, content-precision tracks below label-precision by the 'lucky match' gap. The wider "
+            "the gap, the more the headline precision is propped up by coincidental label overlap.")
+        doc.add_picture(f_cp, width=Inches(6.2))
+        _add_table(doc, ["K", "Label precision@k", "Content precision@k", "Content hit@k"],
+                   [[k, _pct(by_k[k]["precision"]["mean"]), _pct(by_k[k]["content_precision"]["mean"]),
+                     _pct(by_k[k]["content_hit_rate"])] for k in ks])
+
     doc.add_heading("What the metrics mean", level=1)
     _add_table(doc, ["Term", "Plain meaning"], [
         ["Relevant ticket", "A retrieved past ticket whose Value Stream labels overlap the query's correct VS."],
