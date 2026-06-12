@@ -30,6 +30,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def restamp(doc: dict, when: str | None = None) -> dict:
+    """Set the Cosmos lifecycle timestamps to the ingestion-run time (not the extraction time).
+
+    Docs built on disk carry createdAt/lastModifiedAt from when they were EXTRACTED. When they are
+    later loaded from the local file and written to Cosmos, we want the time they are USED. Pass the
+    same ``when`` for a whole run so every doc shares one timestamp. The source ticket's own dates
+    (properties.creationDate / insightsTime) are left untouched - those are real Jira facts.
+    """
+    when = when or _now()
+    doc["createdAt"] = when
+    doc["lastModifiedAt"] = when
+    return doc
+
+
 def doc_id(entity_type: str, source_id: str) -> str:
     """A UUID doc id, deterministic from entity + stable source id (idempotent upsert key)."""
     return str(uuid.uuid5(_DOC_NS, f"{entity_type}:{source_id}"))

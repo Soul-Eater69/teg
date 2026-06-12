@@ -94,3 +94,18 @@ def test_theme_document_shape() -> None:
     assert props["description"].startswith("This theme")
     assert props["valueStream"] == {"valueStreamId": "", "valueStreamName": ""}  # from the field
     assert props["creationDate"].startswith("2025-07-09")  # source created
+
+
+def test_restamp_sets_lifecycle_to_use_time_not_extraction() -> None:
+    from teg.ingestion.documents.idmt_documents import restamp
+
+    doc = {
+        "createdAt": "2025-11-01T00:00:00+00:00",       # extraction time
+        "lastModifiedAt": "2025-11-01T00:00:00+00:00",
+        "properties": {"creationDate": "2025-07-09T00:00:00+00:00"},  # source Jira fact - untouched
+    }
+    restamp(doc, when="2026-06-12T10:00:00+00:00")
+
+    assert doc["createdAt"] == "2026-06-12T10:00:00+00:00"
+    assert doc["lastModifiedAt"] == "2026-06-12T10:00:00+00:00"
+    assert doc["properties"]["creationDate"] == "2025-07-09T00:00:00+00:00"  # source date preserved
