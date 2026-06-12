@@ -220,15 +220,26 @@ async def run(args) -> dict:
             p = d.get("properties", {})
             content_by_key[d.get("key", "")] = p.get("businessSummary") or (p.get("rawText") or "")[:1200]
     sem = asyncio.Semaphore(args.concurrency)
+    total = len(docs)
+    done = 0
 
     async def _guarded(d):
+        nonlocal done
         async with sem:
             gt = gt_by_ticket[d.get("key", "")]
+            t0 = perf_counter()
             try:
-                return await _eval_one(d, search, gt, llm=llm, content_by_key=content_by_key)
+                res = await _eval_one(d, search, gt, llm=llm, content_by_key=content_by_key)
             except Exception as exc:  # keep the run alive; record the failure
-                print(f"  [!] {d.get('key')} failed: {exc}")
+                done += 1
+                print(f"  [{done}/{total}] {d.get('key')} FAILED: {type(exc).__name__}: {exc}")
                 return None
+            done += 1
+            rel = res["at_k"][MAX_K]["n_relevant"]
+            cov = res["at_k"][MAX_K]["recall"]
+            print(f"  [{done}/{total}] {res['ticket_id']:<14} {perf_counter() - t0:5.1f}s  "
+                  f"relevant@{MAX_K}={rel} coverage={cov:.0%}" + ("  judged" if llm else ""))
+            return res
 
     results = await asyncio.gather(*(_guarded(d) for d in docs))
     close = getattr(search, "close", None)
