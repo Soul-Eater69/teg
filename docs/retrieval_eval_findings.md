@@ -28,6 +28,10 @@ THE CATCH — but many "matches" aren't really relevant
 **In one line:** the search is **great at finding** the right examples, but **about half of what it
 labels "relevant" only matches by coincidence** — and two completely separate checks agree on that.
 
+*Context for the numbers:* **52% of tickets** belong to a single Value Stream (easy — one answer to
+find); **48%** belong to two or more, a few to as many as **19** (hard). The headline coverage is an
+average across both — see Finding 1b.
+
 ---
 
 ## Finding 1 — It finds the right examples (this part is strong)
@@ -46,6 +50,32 @@ Where does the first useful example land in the list?
 ```
 
 > **Takeaway:** the system rarely *fails to find* good examples. Finding isn't the problem.
+
+---
+
+## Finding 1b — Not every ticket is equally hard (read the 90% with this in mind)
+
+Half the tickets are **easy** — they belong to a single Value Stream, so "find the one right answer"
+is all it takes. The other half belong to **several**, and a handful belong to *many* (5 tickets are
+tagged with **19** Value Streams each). Covering *all* of those is far harder.
+
+```
+How many Value Streams does a ticket actually have?  (373 tickets)
+  Just 1            ███████████████████████  193  (52%)  ← easy: one answer to find
+  2–4              ████████████              98   (26%)
+  5–9              ██████                    54   (14%)
+  10 or more       ███                       28    (8%)  ← hard: covering all is tough
+```
+
+**So the 90% coverage is an average across easy and hard tickets — the easy single-VS half lifts
+it.** A truer "did we get *everything*" measure is the **fully-covered** rate: **78%** of tickets had
+*all* their Value Streams found at K=6. The 12-point gap between 90% (found *most*) and 78% (found
+*all*) is almost entirely the multi-Value-Stream tickets — we usually catch the obvious ones and miss
+a long-tail stream or two.
+
+> **One thing to notice:** those 10-plus-VS tickets are a *double problem* — they're the hardest to
+> fully cover, **and** (from Finding 3) they're the "overloaded" tickets that cause the lucky matches.
+> Fixing how the system treats them helps both coverage *and* relevance.
 
 ---
 
