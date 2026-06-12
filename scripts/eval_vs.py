@@ -36,7 +36,38 @@ from teg.value_stream.relevance_judge import judge_value_streams
 
 def _load(path: str) -> list[dict]:
     docs = json.loads(Path(path).read_text(encoding="utf-8"))
-    return docs if isinstance(docs, list) else [docs]
+    docs = docs if isinstance(docs, list) else [docs]
+    _attach_gt_from_themes(docs, Path(path))
+    return docs
+
+
+def _attach_gt_from_themes(idmt_docs: list[dict], idmt_path: Path) -> None:
+    """Reconstruct each ER's properties.themes (the VS ground truth) from the sibling themes file.
+
+    The Cosmos schema drops properties.themes from the ER doc - the GT lives in the separate Theme
+    docs (one per linked theme, parentRef == the ER's sourceId, properties.valueStream the tagged VS).
+    Rebuild it here so the rest of the eval (which reads properties.themes) is unchanged. No-op when
+    the docs already carry themes (old-format file) or the themes file is absent.
+    """
+    if any((d.get("properties") or {}).get("themes") for d in idmt_docs):
+        return  # GT already embedded
+    themes_path = idmt_path.with_name("cosmos_themes.json")
+    if not themes_path.exists():
+        return
+    theme_docs = json.loads(themes_path.read_text(encoding="utf-8"))
+    by_parent: dict[str, list[dict]] = {}
+    for t in theme_docs:
+        parent = t.get("parentRef")
+        vs = (t.get("properties") or {}).get("valueStream") or {}
+        if parent and vs.get("valueStreamId"):
+            by_parent.setdefault(parent, []).append({
+                "key": t.get("key"),
+                "sourceId": t.get("sourceId"),
+                "valueStreamId": vs.get("valueStreamId"),
+                "valueStreamName": vs.get("valueStreamName"),
+            })
+    for doc in idmt_docs:
+        doc.setdefault("properties", {})["themes"] = by_parent.get(doc.get("sourceId"), [])
 
 
 def _summary_fields(props: dict, *, raw_text: bool) -> SummaryFields:
