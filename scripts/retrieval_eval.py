@@ -261,9 +261,14 @@ async def run(args) -> dict:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    # Compact summary (no per_query) - small enough to send for the write-up.
+    summary = {k: payload[k] for k in ("config", "aggregates", "examples")}
+    summary_path = out.with_name(out.stem + "_summary.json")
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"\ncomplete data -> {out}")
+    print(f"compact summary -> {summary_path}  (~send me THIS one)")
     _print_summary(aggregates)
-    print("\nSend me this json (or just the 'aggregates' + 'examples' blocks) and I'll draft the write-up.")
+    print(f"\nSend me {summary_path.name} (the compact one, no per-query dump) and I'll draft the write-up.")
     return payload
 
 
@@ -297,7 +302,8 @@ def _print_summary(agg: dict) -> None:
               f"{b['precision_strict']['mean']:>7.3f} {b['hit_rate']:>6.3f} {b['mrr']:>6.3f} "
               f"{b['ndcg']:>6.3f} {b['zero_hit_rate']:>8.3f} {b['fully_covered_rate']:>8.3f}")
     s = agg["score_separation"]
-    print(f"\nscore separation: relevant {s['relevant_mean']:.3f} vs irrelevant {s['irrelevant_mean']:.3f}")
+    _f = lambda v: "n/a" if v is None else f"{v:.3f}"  # noqa: E731
+    print(f"\nscore separation: relevant {_f(s['relevant_mean'])} vs irrelevant {_f(s['irrelevant_mean'])}")
     print(f"evidence density (VS/ticket): mean {agg['evidence_density_all']['mean']:.2f} "
           f"(min {agg['evidence_density_all']['min']}, max {agg['evidence_density_all']['max']})")
     fr = agg["first_relevant_rank"]
