@@ -19,11 +19,36 @@ from pathlib import Path
 
 
 def _label_path(arg: str) -> tuple[str, str]:
-    if "=" in arg and not arg.split("=", 1)[1].startswith("/"):
-        label, path = arg.split("=", 1)
-        return label, path
+    # 'label=path' only when the left side is a plain label (no path separators / extension);
+    # otherwise the '=' is part of a path and the label is the file stem.
+    if "=" in arg:
+        left, right = arg.split("=", 1)
+        if left and not any(ch in left for ch in "/\\.") and right:
+            return left, right
     stem = Path(arg).name.replace(".runs.json", "").replace(".json", "")
     return stem, arg
+
+
+def _parse_axis(arg: str) -> tuple[str, str, str]:
+    """'plain->historic: all50 vs evidence' -> ('plain->historic', 'all50', 'evidence')."""
+    name, _, pair = arg.partition(":")
+    a, _, b = pair.partition(" vs ")
+    a, b = a.strip(), b.strip()
+    if not (name.strip() and a and b):
+        raise SystemExit(f"--axis must be 'name: labelA vs labelB', got: {arg!r}")
+    return name.strip(), a, b
+
+
+# Metrics shown in an axis-delta table: (label, key, higher_is_better).
+_AXIS_METRICS = [
+    ("micro R", "micro_r", True),
+    ("micro F1", "micro_f1", True),
+    ("single-VS R", "single_r", True),
+    ("multi-VS F1", "multi_f1", True),
+    ("historic lift", "boost_lift", True),
+    ("LLM-dropped GT", "llm_dropped", False),
+    ("median latency (s)", "lat_med", False),
+]
 
 
 def _mean(runs: list[dict], key: str) -> float:
@@ -50,8 +75,11 @@ def load(arg: str) -> dict:
         "pool_r": _mean_nested(runs, "retrieval", "pool"),
         "backed_r": _mean_nested(runs, "boost", "backed_recall"),
         "notbacked_r": _mean_nested(runs, "boost", "notbacked_recall"),
+        "boost_lift": _mean_nested(runs, "boost", "lift"),
         "lat_avg": _mean_nested(runs, "latency", "avg"),
+        "lat_med": _mean_nested(runs, "latency", "median"),
         "lat_max": _mean_nested(runs, "latency", "max"),
+        "llm_dropped": _mean_nested(runs, "buckets", "llm_dropped"),
     }
 
 
@@ -69,7 +97,34 @@ def _bar(ax, labels, series: dict, title, ylabel):
     ax.legend(fontsize=8); ax.grid(axis="y", alpha=0.3)
 
 
-def build(data: list[dict], out_path: Path) -> None:
+def _render_axes(doc, by_label: dict[str, dict], axes: list[tuple[str, str, str]]) -> None:
+    """One delta table per axis: each metric's value for A, for B, and B-A with a verdict word."""
+    doc.add_heading("Axis comparison (isolated deltas)", level=1)
+    doc.add_paragraph(
+        "Each axis holds everything else fixed and changes ONE thing, so the delta is attributable. "
+        "Δ = B - A; arrow points at the better side for that metric (recall/F1/lift: higher is better; "
+        "dropped GT and latency: lower is better).")
+    for name, la, lb in axes:
+        a, b = by_label.get(la), by_label.get(lb)
+        if a is None or b is None:
+            doc.add_paragraph(f"[skip axis '{name}': missing run '{la if a is None else lb}']")
+            continue
+        doc.add_heading(f"{name}:  {la}  →  {lb}", level=2)
+        t = doc.add_table(rows=1, cols=5); t.style = "Light Grid Accent 1"
+        for c, h in zip(t.rows[0].cells, ["metric", la, lb, "Δ (B-A)", "better"]):
+            c.text = h
+        for mlabel, key, higher in _AXIS_METRICS:
+            av, bv = a.get(key, 0.0), b.get(key, 0.0)
+            delta = bv - av
+            improved = (delta > 0) == higher
+            arrow = "—" if abs(delta) < 1e-9 else (f"→ {lb}" if improved else f"→ {la}")
+            fmt = "{:.0f}" if key in ("llm_dropped",) else "{:.3f}"
+            cells = t.add_row().cells
+            for c, v in zip(cells, [mlabel, fmt.format(av), fmt.format(bv), f"{delta:+.3f}", arrow]):
+                c.text = v
+
+
+def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | None = None) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -148,6 +203,10 @@ def build(data: list[dict], out_path: Path) -> None:
     bullets.append("Precision is count-capped (predicting 10 vs ~2.5 GT) - read recall/F1, not precision.")
     for b in bullets:
         doc.add_paragraph(b, style="List Bullet")
+
+    if axes:
+        _render_axes(doc, {d["label"]: d for d in data}, axes)
+
     doc.add_heading("1. Selection quality (P / R / F1)", level=1)
     doc.add_paragraph(
         f"Precision is count-capped (predicting {10} when avg GT is ~2.5), so READ RECALL and F1, "
@@ -201,9 +260,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("runs", nargs="+", help="runs.json files (or label=path) to compare")
     parser.add_argument("--out", default="out/eval/comparison.docx")
+    parser.add_argument("--axis", action="append", default=[], metavar="'name: A vs B'",
+                        help="add an isolated-delta section between two run labels, e.g. "
+                             "--axis 'plain->historic: all50_noscore vs evidence_noscore' "
+                             "--axis 'index->no-index: evidence_scored vs evidence_noscore'")
     args = parser.parse_args()
     data = [load(a) for a in args.runs]
-    build(data, Path(args.out))
+    axes = [_parse_axis(a) for a in args.axis]
+    build(data, Path(args.out), axes=axes)
     print(f"comparison -> {args.out}")
     print("\nquick table (P / R / F1 / single-R / multi-F1):")
     for d in data:
