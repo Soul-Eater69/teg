@@ -441,14 +441,15 @@ def build(data: list[dict], out_path: Path, axes: list[tuple[str, str, str]] | N
             "guide to every metric is at the end. Where a chapter compares approaches that differ in "
             "one setting, a head-to-head table isolates the effect of that single change.")
 
-    # What each run is (glossary) - decode the short labels once, up front.
-    doc.add_heading("What each approach means", level=2 if append else 1)
-    gt = doc.add_table(rows=1, cols=2); gt.style = "Light Grid Accent 1"
-    gt.rows[0].cells[0].text, gt.rows[0].cells[1].text = "Approach", "What we showed the model"
-    for d in data:
-        cells = gt.add_row().cells
-        cells[0].text = d["label"]
-        cells[1].text = describe.get(d["label"], "(no description given)")
+    # What each run is - decode the short labels (only when descriptions were given, else it's empty).
+    if describe:
+        doc.add_heading("What each approach means", level=2 if append else 1)
+        gt = doc.add_table(rows=1, cols=2); gt.style = "Light Grid Accent 1"
+        gt.rows[0].cells[0].text, gt.rows[0].cells[1].text = "Approach", "What we showed the model"
+        for d in data:
+            cells = gt.add_row().cells
+            cells[0].text = d["label"]
+            cells[1].text = describe.get(d["label"], "—")
 
     # Bottom line first - plain English, data-driven.
     doc.add_heading("Bottom line", level=1)
