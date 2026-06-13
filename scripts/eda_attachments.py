@@ -199,8 +199,18 @@ async def collect(
         return out
 
     async def _guarded(ticket_id: str) -> None:
-        async with sem:
-            out = await _one(ticket_id)
+        try:
+            async with sem:
+                out = await _one(ticket_id)
+        except Exception as exc:  # ANY per-ticket failure must not abort the batch
+            reason = f"{type(exc).__name__}: {exc}" or type(exc).__name__
+            print(f"  {ticket_id}: ERROR {reason} (skipped)")
+            out = [{
+                "ticketId": ticket_id, "kind": "fetch_error", "filename": "(ticket)",
+                "ext": "(error)", "mimeType": "", "sizeBytes": 0, "charCount": 0, "tokenEst": 0,
+                "supported": False, "ideaCard": False, "selected": False, "extractError": reason,
+                "linkCount": 0, "themeCount": 0, "valueStreamIds": [],
+            }]
         records.extend(out)
         progress["n"] += 1
         head = next((r for r in out if r["kind"] in ("description", "fetch_error")), {})
@@ -213,7 +223,7 @@ async def collect(
     try:
         if complete:
             print(f"resuming: {len(complete)} tickets already collected, {len(todo)} to go")
-        await asyncio.gather(*(_guarded(t) for t in todo))
+        await asyncio.gather(*(_guarded(t) for t in todo), return_exceptions=True)
     finally:
         await http.aclose()
     if checkpoint_path is not None:  # final flush
