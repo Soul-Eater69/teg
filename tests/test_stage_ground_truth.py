@@ -1,0 +1,131 @@
+"""Stage ground-truth extraction from Jira Themes/Epics (offline; fake Jira client)."""
+
+from __future__ import annotations
+
+import asyncio
+
+from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
+from teg.ingestion.ground_truth.stage_ground_truth import (
+    build_ticket_stage_ground_truth,
+    canonicalize_stage,
+    parse_capabilities,
+)
+
+
+def _stage(stage_id: str, name: str) -> CatalogueStage:
+    return CatalogueStage(
+        stage_id=stage_id, stage_name=name, stage_description="", sequence=0,
+        entrance_criteria="", exit_criteria="", value_items="", active=True,
+        created_date="", modified_date="",
+    )
+
+
+def _catalogue() -> list[CatalogueValueStream]:
+    return [
+        CatalogueValueStream(
+            value_stream_id="VSR001", value_stream_name="Resolve Appeal",
+            value_stream_description="", value_proposition="", trigger="", category="",
+            assumptions="", defined_terms="", active=True, created_date="", created_by="",
+            modified_date="", modified_by="",
+            stages=[_stage("ST1", "Intake & Triage"), _stage("ST2", "Resolve Appeal Decision")],
+        )
+    ]
+
+
+class FakeJira:
+    """Serves canned issues by key and canned JQL searches by exact query string."""
+
+    def __init__(self, issues: dict[str, dict], searches: dict[str, list[dict]]) -> None:
+        self._issues = issues
+        self._searches = searches
+
+    async def get_issue(self, key: str, *, fields) -> dict:
+        return self._issues[key]
+
+    async def search(self, jql: str, *, fields) -> list[dict]:
+        return self._searches.get(jql, [])
+
+
+def _epic(key: str, summary: str, *, l2=None, l3=None) -> dict:
+    return {"key": key, "fields": {
+        "summary": summary, "issuetype": {"name": "Epic"},
+        "customfield_18602": l2, "customfield_18603": l3,
+    }}
+
+
+def _fixture() -> FakeJira:
+    ticket = {"key": "IDMT-1", "fields": {
+        "summary": "Appeals automation", "description": "Automate appeals",
+        "issuelinks": [
+            {"type": {"name": "Relates"}, "outwardIssue": {"key": "GROUP-9"}},
+            {"type": {"name": "Relates"}, "outwardIssue": {"key": "REL-5"}},  # not a VS theme
+        ],
+    }}
+    theme = {"key": "GROUP-9", "fields": {
+        "summary": "Appeals theme", "description": "Theme description text",
+        "customfield_20900": "Members can appeal decisions quickly",
+        "Business Value Stream": "Resolve Appeal {VSR001}",
+        "issuelinks": [  # an Epic reached only via an implement link (not via parent search)
+            {"type": {"name": "Implements", "outward": "implements"},
+             "outwardIssue": {"key": "EPIC-3", "fields": {"issuetype": {"name": "Epic"}}}},
+        ],
+    }}
+    rel = {"key": "REL-5", "fields": {"summary": "unrelated", "Business Value Stream": None}}
+    epic2 = _epic("EPIC-2", "Resolve Appeal - Intake & Triage",
+                  l2=[{"value": "Capability Mgmt"}], l3="Case Intake; Triage Routing")
+    epic3 = _epic("EPIC-3", "Resolve Appeal Decision", l2={"value": "Decisioning"}, l3=None)
+    return FakeJira(
+        issues={"IDMT-1": ticket, "GROUP-9": theme, "REL-5": rel, "EPIC-3": epic3},
+        searches={'"Parent Link" = GROUP-9 AND issuetype = Epic': [epic2]},
+    )
+
+
+def test_build_ticket_stage_ground_truth_end_to_end() -> None:
+    gt = asyncio.run(build_ticket_stage_ground_truth(
+        "IDMT-1", jira=_fixture(), catalogue=_catalogue(), value_stream_field="Business Value Stream",
+    ))
+
+    assert gt.ticket_id == "IDMT-1"
+    assert gt.description == "Automate appeals"
+    assert len(gt.themes) == 1  # REL-5 (no VS field) is skipped
+
+    theme = gt.themes[0]
+    assert (theme.value_stream_id, theme.value_stream_name) == ("VSR001", "Resolve Appeal")
+    assert theme.theme_description == "Theme description text"
+    assert theme.business_needs == "Members can appeal decisions quickly"
+
+    by_key = {s.epic_key: s for s in theme.stages}
+    assert set(by_key) == {"EPIC-2", "EPIC-3"}  # parent-link Epic + issue-link Epic, deduped
+
+    # EPIC-2: prefix-stripped suffix "Intake & Triage" matches the catalogue stage exactly.
+    s2 = by_key["EPIC-2"]
+    assert (s2.stage_id, s2.stage_name, s2.match_method) == ("ST1", "Intake & Triage", "exact")
+    assert s2.l2_capabilities == ["Capability Mgmt"]
+    assert s2.l3_capabilities == ["Case Intake", "Triage Routing"]
+
+    # EPIC-3: full summary matches; reached only through the Theme's implement link.
+    s3 = by_key["EPIC-3"]
+    assert s3.stage_id == "ST2" and s3.match_method == "exact"
+    assert s3.l2_capabilities == ["Decisioning"] and s3.l3_capabilities == []
+
+
+def test_canonicalize_stage_exact_fuzzy_and_unresolved() -> None:
+    stages = _catalogue()[0].stages
+    # exact via prefix-stripped suffix
+    assert canonicalize_stage("Resolve Appeal - Intake & Triage", stages,
+                              value_stream_name="Resolve Appeal")[:3] == ("ST1", "Intake & Triage", "exact")
+    # fuzzy: a near miss still resolves above threshold
+    sid, _, method, conf = canonicalize_stage("Resolve Appeal Decisions", stages)
+    assert sid == "ST2" and method == "fuzzy" and conf >= 0.86
+    # unresolved: nothing close
+    assert canonicalize_stage("Completely unrelated work", stages)[2] == "unresolved"
+    # no catalogue stages -> unresolved
+    assert canonicalize_stage("Anything", [])[2] == "unresolved"
+
+
+def test_parse_capabilities_shapes() -> None:
+    assert parse_capabilities(None) == []
+    assert parse_capabilities({"value": "A"}) == ["A"]
+    assert parse_capabilities([{"value": "A"}, {"name": "B"}, {"value": "A"}]) == ["A", "B"]
+    assert parse_capabilities("X; Y\nZ") == ["X", "Y", "Z"]
+    assert parse_capabilities("Single") == ["Single"]
