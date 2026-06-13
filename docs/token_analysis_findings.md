@@ -41,6 +41,13 @@ The full distribution across all 374 tickets:
 **142 of 374 tickets** have under 2k tokens of text; the bulk are under 8k; only **53 tickets** are over
 16k (the big-deck minority). The shape is a steep drop with a long right tail.
 
+And how many tickets fit under each token budget (the raw text — description + all attachments):
+
+![Tokens per ticket vs budget](token_charts/budget_fit.png)
+
+**A 16k budget fits 86% of tickets; 24k fits 94%; 32k fits 97%.** This is the descriptive version of the
+budget decision (the cap-aware version, which is what we actually recommend, is in section 7).
+
 ---
 
 ## 2. How many attachments does a ticket have?

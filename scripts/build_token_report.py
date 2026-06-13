@@ -27,6 +27,8 @@ TYPE_DETAIL = {"PowerPoint": {"count": 410, "avg_tokens": 2158, "tok_per_mb": 89
                "PDF": {"count": 277, "avg_tokens": 5908, "tok_per_mb": 5091, "avg_mb": 1.16},
                "Word": {"count": 153, "avg_tokens": 1051, "tok_per_mb": 2243, "avg_mb": 0.47}}
 HEALTH = {"Carry text": 840, "Images / unsupported": 726, "Empty": 13}  # of 1,579 attachments
+# % of tickets whose full raw text (description + all attachments) fits under each budget
+BUDGET_FIT = {"4k": 51, "8k": 68, "12k": 78, "16k": 86, "24k": 94, "32k": 97}
 
 
 def build() -> None:
@@ -154,6 +156,18 @@ def build() -> None:
     ax.set_ylabel("number of attachments"); ax.figure.suptitle("Only half of attachments carry text", fontsize=14, fontweight="bold")
     ax.set_title("Of 1,579 attachments, 840 (53%) have text; ~46% are images/unsupported.", fontsize=10, style="italic", color="#555")
     save(fig, "extraction_health")
+
+    # 11. tokens per ticket vs budget — % of tickets that fit
+    fig, ax = plt.subplots(figsize=(7.5, 4))
+    keys = list(BUDGET_FIT); vals = list(BUDGET_FIT.values())
+    colors = [RED, AMBER, AMBER, BLUE, GREEN, GREEN]
+    bars = ax.bar([f"{k}\ntokens" for k in keys], vals, color=colors[:len(keys)])
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width() / 2, v, f"{v}%", ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax.set_ylim(0, 105); ax.set_ylabel("% of tickets whose full text fits")
+    ax.figure.suptitle("What token budget fits most tickets?", fontsize=14, fontweight="bold")
+    ax.set_title("Raw text (description + all attachments). 24k fits 94%; 16k fits 86%.", fontsize=10, style="italic", color="#555")
+    save(fig, "budget_fit")
 
     print(f"charts -> {CHARTS}")
 

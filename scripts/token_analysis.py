@@ -21,7 +21,7 @@ import statistics
 from collections import Counter
 from pathlib import Path
 
-TOKEN_THRESHOLDS = (4_000, 8_000, 16_000, 40_000)
+TOKEN_THRESHOLDS = (5_000, 10_000, 15_000, 20_000, 25_000, 30_000)
 
 
 def _pct(part: int, whole: int) -> str:
@@ -123,10 +123,11 @@ def main(cache_path: str, out_path: str) -> None:
     print(_line("RAW (desc + all attach)", _stats(raw)))
     print(_line("condense input (desc+sel)", _stats(cond)))
 
-    print(f"\nTickets crossing a token budget (on the RAW desc+all-attachments text):")
+    print(f"\nTokens per ticket vs budget (RAW desc+all-attachments text):")
     for thr in TOKEN_THRESHOLDS:
-        over = sum(1 for v in raw if v > thr)
-        print(f"  > {thr:>6,} tokens : {over:>4} tickets ({_pct(over, n)})")
+        fit = sum(1 for v in raw if v <= thr)
+        print(f"  <= {thr:>6,} tokens : {fit:>4} tickets fit ({_pct(fit, n)})   "
+              f"[{n - fit} over]")
 
     print(f"\nAvg RAW tokens by attachment count (description + all attachments):")
     by_count: dict[int, list[int]] = {}
