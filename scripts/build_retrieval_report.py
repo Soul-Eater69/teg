@@ -168,6 +168,16 @@ def build() -> None:
         for para in text.split("\n\n"):
             doc.add_paragraph(para)
         doc.add_picture(chart, width=Inches(6.0))
+        if chart is c1:  # the found-all/some/none coverage split, with each group's avg coverage
+            doc.add_paragraph("How complete is each group? Even the 'found some' group finds about "
+                              "two-thirds of their streams on average:")
+            ct = doc.add_table(rows=1, cols=3); ct.style = "Light Grid Accent 1"
+            for c, h in zip(ct.rows[0].cells, ["Group", "% of tickets", "Of their streams, found (avg)"]):
+                c.text = h
+            for g, pct, cov in [("Found ALL", "78%", "100%"), ("Found SOME", "18%", "~68% (≈2 of 3)"),
+                                ("Found NONE", "4%", "0%")]:
+                cells = ct.add_row().cells
+                cells[0].text, cells[1].text, cells[2].text = g, pct, cov
 
     doc.add_heading("All the numbers", level=1)
     t = doc.add_table(rows=1, cols=4); t.style = "Light Grid Accent 1"

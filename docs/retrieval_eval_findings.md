@@ -39,6 +39,18 @@ them?
 
 So **96% of tickets find at least something** (green + amber) and **78% find everything**.
 
+How complete is each group? Even the "found some" group does well — they find about **two-thirds** of
+their streams on average:
+
+| Group | % of tickets | Of their own streams, how many found (avg) |
+|---|---|---|
+| **Found ALL** | 78% | **100%** |
+| **Found SOME** | 18% | **~68%** (about 2 of every 3) |
+| **Found NONE** | 4% | **0%** |
+
+So the 18% "partial" tickets aren't finding just a sliver — they get most of the way and miss the last
+third (the long-tail streams on hard tickets).
+
 > *One more number, measured differently:* averaged across tickets, a typical ticket has **90%** of its
 > correct streams present in the examples — in plain counts, **~2.9 of its 3.2** correct Value Streams are
 > found on average. (That 90% is a per-ticket *average*, not a count of tickets — a ticket that finds 3 of
