@@ -89,6 +89,18 @@ def _summary_fields(props: dict, *, raw_text: bool, query_budget: int = 0) -> Su
     )
 
 
+def _prompt_text(props: dict, *, raw_text: bool, query_budget: int) -> str:
+    """Raw ticket text for the SELECTION prompt only (empty -> the prompt uses the summary).
+
+    Retrieval ALWAYS uses the summary (the embeddable matcher); this changes only what the LLM that
+    picks the VS reads - so '--raw-text' gives the prompt raw context WITHOUT degrading retrieval.
+    """
+    if not raw_text:
+        return ""
+    text = props.get("rawText", "") or ""
+    return text[:query_budget * 4] if query_budget else text  # ~4 chars/token
+
+
 def _gt_ids(props: dict) -> set[str]:
     return {t["valueStreamId"] for t in (props.get("themes") or []) if t.get("valueStreamId")}
 
@@ -157,7 +169,8 @@ async def _collect_predictions(service, args, jobs, sem) -> dict[str, list[str]]
         async with sem:
             req = ValueStreamRequest(
                 ticket_id=ticket_id,
-                summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
+                summary_fields=_summary_fields(doc.get("properties", {}), raw_text=False),  # retrieval = summary
+                prompt_text=_prompt_text(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
                 requested_count=_requested_count(args, gt),
                 exclude_ticket_ids=[ticket_id],
             )
@@ -220,7 +233,8 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     async with sem:
         request = ValueStreamRequest(
             ticket_id=ticket_id,
-            summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
+            summary_fields=_summary_fields(doc.get("properties", {}), raw_text=False),  # retrieval = summary
+            prompt_text=_prompt_text(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
             requested_count=_requested_count(args, gt),
             exclude_ticket_ids=[ticket_id],  # leave-one-out
         )

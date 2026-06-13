@@ -17,7 +17,12 @@ from teg.domain.value_stream import HistoricalTicket, ValueStreamRecommendation
 
 class ValueStreamRequest(CamelModel):
     ticket_id: str
-    summary_fields: SummaryFields
+    summary_fields: SummaryFields  # ALWAYS used for retrieval (embedding); summary stays the matcher
+    # Optional raw ticket text for the SELECTION prompt only (not retrieval). When set, the LLM that
+    # picks the VS reads this instead of the summary - "summary to find, raw to decide". Empty -> the
+    # prompt falls back to the summary. This is what keeps retrieval on the (embeddable) summary while
+    # the prompt gets full raw context.
+    prompt_text: str = ""
     requested_count: int = 10  # exact number of value streams to return (the only VS knob)
     # Optional free-text steer. May ONLY set the count (e.g. "give me 6"); a count parsed from
     # it overrides requested_count. Everything else is ignored - the raw text never reaches an

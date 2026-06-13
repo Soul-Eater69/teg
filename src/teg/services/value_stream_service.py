@@ -128,7 +128,8 @@ class ValueStreamService:
             historical_hits, repr=self._config.historic_repr, budget=self._config.historic_budget,
             content=self._historic_content) if mode == "evidence" else ""
         recommendations = await select_value_streams(
-            query=request.summary_fields.generated_summary,
+            # Prompt reads raw text when provided (decoupled from retrieval, which used the summary).
+            query=request.prompt_text or request.summary_fields.generated_summary,
             candidates=review_pool,
             requested_count=requested_count,
             llm_client=self._llm,
