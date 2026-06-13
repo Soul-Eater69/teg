@@ -57,6 +57,27 @@ def main(cache_path: str, out_path: str) -> None:
         elif r.get("kind") == "attachment" and r.get("supported") and r.get("tokenEst", 0):
             t["attachments"].append(r)
 
+    # --- file sizes (bytes on disk, not tokens) -----------------------------------------------
+    def _mb(b: float) -> str:
+        return f"{b/1024/1024:.2f} MB" if b >= 1024 * 1024 else f"{b/1024:.0f} KB"
+
+    att_bytes = [int(a.get("sizeBytes", 0)) for t in tickets.values() for a in t["attachments"]]
+    ticket_bytes = [sum(int(a.get("sizeBytes", 0)) for a in t["attachments"]) for t in tickets.values()]
+    by_type: dict[str, list[int]] = {}
+    for t in tickets.values():
+        for a in t["attachments"]:
+            by_type.setdefault(a.get("ext", "?"), []).append(int(a.get("sizeBytes", 0)))
+    print("File sizes on disk (not tokens):")
+    sb = _stats(att_bytes)
+    print(f"  per attachment   : median {_mb(sb['median'])}  p90 {_mb(sb['p90'])}  "
+          f"p95 {_mb(sb['p95'])}  max {_mb(sb['max'])}")
+    tb = _stats(ticket_bytes)
+    print(f"  per ticket (all) : median {_mb(tb['median'])}  p90 {_mb(tb['p90'])}  max {_mb(tb['max'])}")
+    print(f"  avg size by type :  " +
+          ",  ".join(f"{ext} {_mb(statistics.mean(v))}" for ext, v in
+                     sorted(by_type.items(), key=lambda kv: -len(kv[1]))[:5]))
+    print()
+
     n = len(tickets)
     per_ticket = []
     for tid, t in tickets.items():
@@ -126,7 +147,10 @@ def main(cache_path: str, out_path: str) -> None:
                         "tokens_per_attachment": _stats(all_att),
                         "count_histogram": {str(k): counts[k] for k in sorted(counts)},
                         "avg_raw_tokens_by_count": {str(k): v for k, v in tokens_by_count.items()},
-                        "file_types": dict(exts.most_common())},
+                        "file_types": dict(exts.most_common()),
+                        "bytes_per_attachment": _stats(att_bytes),
+                        "bytes_per_ticket": _stats(ticket_bytes),
+                        "avg_bytes_by_type": {ext: round(statistics.mean(v)) for ext, v in by_type.items()}},
         "condense_keep_ratio": keep,
     }
     out = Path(out_path)
