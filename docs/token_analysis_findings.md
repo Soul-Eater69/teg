@@ -31,28 +31,28 @@ of an LLM-written summary — and where to cap it. Measured on **374 tickets** b
 
 - **Typical (median) — 3,854:** half of tickets are smaller than this. Most tickets are small.
 - **Big (top 10%) — 19,433** and **Bigger (top 5%) — 25,921:** a minority are large.
-- **Largest — 88,614:** one ticket is huge (a big attachment).
-- The dashed reference line is at 40k tokens, just to show how few tickets are that large (no decision
-  implied).
+- **Largest — 88,614:** one ticket is huge (a big slide deck).
 
 The description by itself is tiny (median ~358 tokens, max ~2,600) — **attachments are what make a
-ticket big**, and only for a minority.
+ticket big**, and only for a minority. *Where to actually cut (the token budget) is decided in the
+[optimization doc](token_budget_optimization.md), not here — this section just shows the sizes.*
 
 ---
 
-## 2. How many tickets cross each token budget?
+## 2. How many tickets need more than each budget?
 
 ![Tickets over each budget](token_charts/budget.png)
 
-**How to read it.** Each bar is how many of the 374 tickets have raw text bigger than that budget:
+**How to read it.** Each bar is how many of the 374 tickets have raw text bigger than that budget
+(so a budget there would have to trim them):
 
 - **Over 4k tokens — 184 (49%):** about half the tickets need more than 4k tokens for their full text.
-- **Over 8k — 120 (32%)**, **over 16k — 53 (14%):** the higher you go, the fewer.
+- **Over 8k — 120 (32%)**, **over 16k — 53 (14%):** the higher the budget, the fewer get trimmed.
 - **Over 40k — 8 (2%):** only 8 tickets are truly huge.
 
-**This frames the truncation tradeoff.** A higher budget trims fewer tickets (e.g. a 16k budget would
-trim 53 tickets / 14%; an 8k budget would trim 120 / 32%). The right budget is chosen *together* with
-the attachment cap — see the optimization grid — not in isolation.
+This is the **descriptive** side of the budget question — *which* budget to pick (and the matching
+attachment cap) is worked out in the [optimization doc](token_budget_optimization.md), where the
+attachment cap and budget are chosen together.
 
 ---
 
@@ -116,10 +116,11 @@ PowerPoint dominating explains the big-token tail: a single deck can be tens of 
 3. **The 18% no-attachment tickets** run on the description alone (median ~358 tokens) — a low-context
    cohort worth flagging.
 
-**Open (decided by the optimization grid, separate doc):**
-- The exact **token budget** and **attachment cap** combo — we have *not* fixed a number yet. The grid
-  shows, for every (cap, budget) pair, what % of tickets fit without truncation, so we pick the combo
-  that covers the most tickets for the least budget.
+**The cap + budget choice → see the [optimization doc](token_budget_optimization.md):**
+- The grid there shows the token budget is the real lever (the attachment cap barely changes coverage),
+  and that keeping 3–4 attachments retains ~all the content. Its recommendation: **keep 4 attachments +
+  a ~24k-token budget** (95% of tickets fit untouched, 99% of content kept) — with 16k (lean) and 32k
+  (generous) as the other operating points. Nothing is locked in code yet.
 
 ---
 

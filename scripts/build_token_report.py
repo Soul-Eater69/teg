@@ -42,7 +42,6 @@ def build() -> None:
     vals = [RAW["median"], RAW["p90"], RAW["p95"], RAW["max"]]
     bars = ax.bar(keys, vals, color=[GREEN, BLUE, AMBER, RED])
     label(ax, bars, vals)
-    ax.axhline(40000, color=RED, ls="--", lw=1.5); ax.text(3.3, 41500, "40k guardrail", color=RED, fontsize=9)
     ax.set_ylabel("tokens in the raw text"); ax.figure.suptitle("How big is a ticket's text?", fontsize=14, fontweight="bold")
     ax.set_title("Most tickets are small (median ~3.9k tokens); a few are huge (max ~89k).", fontsize=10, style="italic", color="#555")
     save(fig, "size")
@@ -54,8 +53,8 @@ def build() -> None:
     pass
     for b, v in zip(bars, vals):
         ax.text(b.get_x() + b.get_width() / 2, v, f"{v} ({v/N:.0%})", ha="center", va="bottom", fontsize=9, fontweight="bold")
-    ax.set_ylabel("number of tickets"); ax.figure.suptitle("How many tickets cross each token budget?", fontsize=14, fontweight="bold")
-    ax.set_title("A 40k-token cap would truncate only 8 tickets (2%).", fontsize=10, style="italic", color="#555")
+    ax.set_ylabel("number of tickets"); ax.figure.suptitle("How many tickets need more than each budget?", fontsize=14, fontweight="bold")
+    ax.set_title("About half need >4k tokens; only a few (2%) exceed even 40k.", fontsize=10, style="italic", color="#555")
     save(fig, "budget")
 
     # 3. attachments per ticket
