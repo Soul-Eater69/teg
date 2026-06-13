@@ -125,7 +125,7 @@ def main(cache_path: str, out_path: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cache", default="out/eda/attachments_raw.json",
+    parser.add_argument("--cache", default="out/eda/attachments/attachments_raw.json",
                         help="EDA cache from eda_attachments.py (per-attachment token records)")
     parser.add_argument("--out", default="out/eda/token_analysis.json")
     args = parser.parse_args()
