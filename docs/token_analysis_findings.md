@@ -1,0 +1,124 @@
+# How much text is in a ticket? (token & attachment analysis)
+
+*To decide whether we can feed the model the **raw ticket text** (description + attachments) instead
+of an LLM-written summary — and where to cap it. Measured on **374 tickets** by counting tokens
+(the units the model reads) with tiktoken.*
+
+> A **token** is roughly ¾ of a word. The model has a budget of how many tokens it can read at once,
+> and more tokens = slower + costlier. So we need to know how big the tickets actually are.
+
+---
+
+## Bottom line
+
+- **Most tickets are small.** The typical (median) ticket's full text is **~3,854 tokens** — tiny.
+  Half of all tickets are under that.
+- **A few are huge.** The top 5% run to ~26k tokens and the largest single ticket is **~89k tokens** —
+  driven by big PowerPoint/PDF attachments.
+- **Raw text is feasible.** Even the largest ticket fits the model's context. **98% of tickets are
+  under 40k tokens**, so we can feed raw text directly for almost everything.
+- **A 40k-token cap is the clean guardrail** — it truncates only **8 tickets (2%)** while leaving 98%
+  untouched, and bounds the worst-case latency/cost.
+- **18% of tickets have no attachments at all** — for those, the only input is the (short) description.
+
+---
+
+## 1. How big is a ticket's text?
+
+![How big is a ticket's text](token_charts/size.png)
+
+**How to read it.** Each bar is the raw text size (description + all attachments) in tokens:
+
+- **Typical (median) — 3,854:** half of tickets are smaller than this. Most tickets are small.
+- **Big (top 10%) — 19,433** and **Bigger (top 5%) — 25,921:** a minority are large.
+- **Largest — 88,614:** one ticket is huge (a big attachment).
+- The dashed line is a **40k-token cap** — only the very largest tickets poke above it.
+
+The description by itself is tiny (median ~358 tokens, max ~2,600) — **attachments are what make a
+ticket big**, and only for a minority.
+
+---
+
+## 2. How many tickets cross each token budget?
+
+![Tickets over each budget](token_charts/budget.png)
+
+**How to read it.** Each bar is how many of the 374 tickets have raw text bigger than that budget:
+
+- **Over 4k tokens — 184 (49%):** about half the tickets need more than 4k tokens for their full text.
+- **Over 8k — 120 (32%)**, **over 16k — 53 (14%):** the higher you go, the fewer.
+- **Over 40k — 8 (2%):** only 8 tickets are truly huge.
+
+**This is the truncation decision.** If we cap the text at **40k tokens**, only **8 tickets (2%)** get
+trimmed — a clean way to bound the worst case without touching 98% of tickets. (Cap lower, e.g. 16k,
+and you'd trim 53 tickets / 14% — more aggressive.)
+
+---
+
+## 3. How many attachments does a ticket have?
+
+![Attachments per ticket](token_charts/attachments.png)
+
+**How to read it.** Each bar is how many tickets have that many attachments:
+
+- **0 — 67 tickets (18%):** no attachments — the model only sees the short description.
+- **1–4 — 269 tickets (72%):** most tickets. Since we currently keep the top 4 attachments, **these
+  tickets lose nothing** — we already use all their attachments.
+- **5+ — 38 tickets (10%):** only here does the top-4 rule drop anything. Bumping the limit to 5 would
+  fully cover ~94% of tickets; beyond that, diminishing returns.
+
+So the current **top-4 selection already captures every attachment for 90% of tickets** — which is why
+trimming to the top 4 barely changes the token count (it keeps ~97% of the raw text on average).
+
+---
+
+## 4. What kinds of attachments are they?
+
+![File types](token_charts/filetypes.png)
+
+**How to read it.** Of all the attachments across the corpus:
+
+- **PowerPoint — 410 (49%):** the most common, and usually the biggest (slide decks).
+- **PDF — 277 (33%)** and **Word — 153 (18%):** the rest.
+
+PowerPoint dominating explains the big-token tail: a single deck can be tens of thousands of tokens
+(the largest attachment alone was ~69k tokens).
+
+---
+
+## What this means — the decisions
+
+1. **We can use the raw ticket text** (description + attachments) as the model input instead of an
+   LLM-written summary — it fits for **98% of tickets** without any trimming.
+2. **Set a 40k-token cap** as the guardrail. It only affects the 8 biggest tickets (2%), and it bounds
+   the worst-case time/cost. (The current setting is a 40k-*character* budget ≈ 10k tokens, which is
+   much tighter and trims far more tickets — a 40k-*token* cap is the more generous, raw-text-friendly
+   choice.)
+3. **Apply the same 40k-token cap to historical tickets** shown as precedent, so a giant past ticket
+   can't blow up the prompt size during prediction.
+4. **Keep ~4 attachments** (maybe 5). Top-4 already covers all attachments for 90% of tickets; raising
+   it to 5 covers ~94%, and beyond that adds little.
+5. **Flag the 18% no-attachment tickets** — they run on the description alone (median ~358 tokens), so
+   they're inherently low-context and may be the hardest to predict.
+
+---
+
+## All the numbers
+
+| Token counts (per ticket) | Median | Top 10% | Top 5% | Max |
+|---|---|---|---|---|
+| Description only | 358 | 880 | 1,241 | 2,634 |
+| Attachments only | 3,387 | 19,079 | 24,433 | 87,718 |
+| **Raw (description + all attachments)** | **3,854** | **19,433** | **25,921** | **88,614** |
+
+| Tickets over a token budget | > 4k | > 8k | > 16k | > 40k |
+|---|---|---|---|---|
+| count | 184 | 120 | 53 | 8 |
+| share | 49% | 32% | 14% | **2%** |
+
+| Attachments | Value |
+|---|---|
+| Tickets with none | 67 (18%) |
+| Avg per ticket | 2.25 (median 2, max 12) |
+| Tokens per attachment | median 1,483 · top 5% 12,224 · max 68,768 |
+| File types | PowerPoint 49% · PDF 33% · Word 18% |
