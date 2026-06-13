@@ -38,6 +38,27 @@ def _stats(values: list[float]) -> dict:
             "min": vals[0], "max": vals[-1]}
 
 
+def _hist(values: list[float], bins: list[tuple]) -> dict:
+    """Bin values into labelled ranges -> {label: count}, so the json carries chart-ready histograms."""
+    out = {label: 0 for _, _, label in bins}
+    for v in values:
+        for lo, hi, label in bins:
+            if lo <= v < hi:
+                out[label] += 1
+                break
+    return out
+
+
+_MB = 1024 * 1024
+TOKEN_BINS_TICKET = [(0, 2000, "0-2k"), (2000, 4000, "2-4k"), (4000, 8000, "4-8k"),
+                     (8000, 16000, "8-16k"), (16000, 32000, "16-32k"), (32000, float("inf"), "32k+")]
+TOKEN_BINS_ATT = [(0, 1000, "0-1k"), (1000, 2000, "1-2k"), (2000, 4000, "2-4k"),
+                  (4000, 8000, "4-8k"), (8000, 16000, "8-16k"), (16000, float("inf"), "16k+")]
+BYTE_BINS = [(0, 100 * 1024, "<100KB"), (100 * 1024, 500 * 1024, "100-500KB"),
+             (500 * 1024, _MB, "0.5-1MB"), (_MB, 2 * _MB, "1-2MB"),
+             (2 * _MB, 5 * _MB, "2-5MB"), (5 * _MB, float("inf"), "5MB+")]
+
+
 def _line(label: str, s: dict) -> str:
     if not s:
         return f"  {label:24} (no data)"
@@ -137,12 +158,50 @@ def main(cache_path: str, out_path: str) -> None:
     keep = statistics.mean(p["condense_input"] / p["raw_total"] for p in per_ticket if p["raw_total"]) if per_ticket else 0
     print(f"\nCondense keeps ~{keep:.0%} of the raw tokens on average (description + selected vs everything).")
 
+    # --- full EDA: distributions, per-type detail, extraction health, idea cards ---------------
+    all_att_recs = [r for r in records if r.get("kind") == "attachment"]
+    n_att_total = len(all_att_recs)
+    supported = [r for r in all_att_recs if r.get("supported")]
+    with_text = [r for r in supported if r.get("tokenEst", 0)]
+    failed = [r for r in all_att_recs if r.get("extractError")]
+    empty = [r for r in supported if not r.get("tokenEst", 0) and not r.get("extractError")]
+    idea_tickets = {r["ticketId"] for r in all_att_recs if r.get("ideaCard")}
+
+    # per-type detail: count, avg tokens, avg MB, extraction density (tokens per MB)
+    type_detail = {}
+    by_type_tokens: dict[str, list[int]] = {}
+    by_type_bytes: dict[str, list[int]] = {}
+    for r in with_text:
+        e = r.get("ext", "?")
+        by_type_tokens.setdefault(e, []).append(int(r.get("tokenEst", 0)))
+        by_type_bytes.setdefault(e, []).append(int(r.get("sizeBytes", 0)))
+    for e in by_type_tokens:
+        toks, byts = by_type_tokens[e], by_type_bytes[e]
+        avg_mb = (statistics.mean(byts) / _MB) if byts else 0
+        type_detail[e] = {"count": len(toks), "avg_tokens": round(statistics.mean(toks)),
+                          "avg_mb": round(avg_mb, 2),
+                          "tokens_per_mb": round(statistics.mean(toks) / avg_mb) if avg_mb else None}
+
+    print(f"\nExtraction health: {n_att_total} attachments | {len(supported)} supported | "
+          f"{len(with_text)} extracted text | {len(failed)} failed | {len(empty)} empty (e.g. image)")
+    print(f"Idea-card attachment present in {len(idea_tickets)} tickets ({_pct(len(idea_tickets), n)})")
+    print(f"Tokens per MB by type (extraction density): " +
+          ", ".join(f"{e} {d['tokens_per_mb']}" for e, d in
+                    sorted(type_detail.items(), key=lambda kv: -kv[1]['count']) if d['tokens_per_mb']))
+
     payload = {
         "n_tickets": n, "no_attachment_tickets": no_att,
         "tokens": {"description": _stats([p["desc_tokens"] for p in per_ticket]),
                    "attachments_all": _stats([p["att_total"] for p in per_ticket]),
                    "raw_desc_plus_all": _stats(raw), "condense_input": _stats(cond)},
         "budget_crossings": {str(thr): sum(1 for v in raw if v > thr) for thr in TOKEN_THRESHOLDS},
+        "distributions": {
+            "raw_tokens_per_ticket": _hist(raw, TOKEN_BINS_TICKET),
+            "attachment_text_per_ticket": _hist([p["att_total"] for p in per_ticket], TOKEN_BINS_TICKET),
+            "tokens_per_attachment": _hist(all_att, TOKEN_BINS_ATT),
+            "bytes_per_attachment": _hist(att_bytes, BYTE_BINS),
+            "bytes_per_ticket": _hist(ticket_bytes, BYTE_BINS),
+        },
         "attachments": {"per_ticket": _stats([p["n_attachments"] for p in per_ticket]),
                         "tokens_per_attachment": _stats(all_att),
                         "count_histogram": {str(k): counts[k] for k in sorted(counts)},
@@ -150,7 +209,11 @@ def main(cache_path: str, out_path: str) -> None:
                         "file_types": dict(exts.most_common()),
                         "bytes_per_attachment": _stats(att_bytes),
                         "bytes_per_ticket": _stats(ticket_bytes),
-                        "avg_bytes_by_type": {ext: round(statistics.mean(v)) for ext, v in by_type.items()}},
+                        "avg_bytes_by_type": {ext: round(statistics.mean(v)) for ext, v in by_type.items()},
+                        "type_detail": type_detail},
+        "extraction_health": {"total": n_att_total, "supported": len(supported),
+                              "extracted_text": len(with_text), "failed": len(failed),
+                              "empty_no_text": len(empty), "idea_card_tickets": len(idea_tickets)},
         "condense_keep_ratio": keep,
     }
     out = Path(out_path)
