@@ -129,6 +129,16 @@ def main(cache_path: str, out_path: str) -> None:
         print(f"  <= {thr:>6,} tokens : {fit:>4} tickets fit ({_pct(fit, n)})   "
               f"[{n - fit} over]")
 
+    # For the RETRIEVAL-embedding question: if we truncate every ticket's raw text at a budget,
+    # how much of the TOTAL content (across all tickets) is kept, and how many tickets are untouched.
+    total_raw = sum(raw)
+    print(f"\nContent kept if we TRUNCATE every ticket's raw text (for the embedding):")
+    for b in (5_000, 7_000, 7_500, 10_000, 15_000):
+        captured = sum(min(v, b) for v in raw)
+        untouched = sum(1 for v in raw if v <= b)
+        print(f"  truncate @ {b:>6,} : {captured/total_raw:>4.0%} of all content kept   "
+              f"({_pct(untouched, n)} tickets untouched)")
+
     print(f"\nAvg RAW tokens by attachment count (description + all attachments):")
     by_count: dict[int, list[int]] = {}
     for p in per_ticket:
