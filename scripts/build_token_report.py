@@ -28,7 +28,7 @@ TYPE_DETAIL = {"PowerPoint": {"count": 410, "avg_tokens": 2158, "tok_per_mb": 89
                "Word": {"count": 153, "avg_tokens": 1051, "tok_per_mb": 2243, "avg_mb": 0.47}}
 HEALTH = {"Carry text": 840, "Images / unsupported": 726, "Empty": 13}  # of 1,579 attachments
 # % of tickets whose full raw text (description + all attachments) fits under each budget
-BUDGET_FIT = {"4k": 51, "8k": 68, "12k": 78, "16k": 86, "24k": 94, "32k": 97}
+BUDGET_FIT = {"5k": 56, "10k": 74, "15k": 84, "20k": 91, "25k": 95, "30k": 97}
 
 
 def build() -> None:
@@ -166,7 +166,7 @@ def build() -> None:
         ax.text(b.get_x() + b.get_width() / 2, v, f"{v}%", ha="center", va="bottom", fontsize=9, fontweight="bold")
     ax.set_ylim(0, 105); ax.set_ylabel("% of tickets whose full text fits")
     ax.figure.suptitle("What token budget fits most tickets?", fontsize=14, fontweight="bold")
-    ax.set_title("Raw text (description + all attachments). 24k fits 94%; 16k fits 86%.", fontsize=10, style="italic", color="#555")
+    ax.set_title("Raw text (description + all attachments). 20k fits 91%; 25k fits 95%.", fontsize=10, style="italic", color="#555")
     save(fig, "budget_fit")
 
     print(f"charts -> {CHARTS}")
