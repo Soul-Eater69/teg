@@ -33,6 +33,10 @@ class ValueStreamConfig:
     #   evidence      - all VS candidates + historic shown as a separate EVIDENCE block (no merge)
     selection_mode: str = "evidence"
     selection_prompt_override: str = ""  # prompt name to use instead of the mode default (A/B prompts)
+    # How each historic ticket is rendered in the evidence block (experiment knob):
+    #   snippet (default, search snippet) | summary (businessSummary) | description | raw
+    historic_repr: str = "snippet"
+    historic_budget: int = 0  # truncate the historic 'raw' text to ~N tokens (0 = no cap)
     # Semantic scores in candidate blocks are off: the VS-lane ranking is weak (R@10 ~0.26) so the
     # score is a misleading hint; the eval showed it's a wash-to-slightly-better to drop it.
     show_candidate_scores: bool = False

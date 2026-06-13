@@ -70,12 +70,14 @@ def _attach_gt_from_themes(idmt_docs: list[dict], idmt_path: Path) -> None:
         doc.setdefault("properties", {})["themes"] = by_parent.get(doc.get("sourceId"), [])
 
 
-def _summary_fields(props: dict, *, raw_text: bool) -> SummaryFields:
+def _summary_fields(props: dict, *, raw_text: bool, query_budget: int = 0) -> SummaryFields:
     # New schema: the LLM summary is businessSummary (properties.summary is the ticket title).
     # Fall back to summary for any pre-rename file.
     llm_summary = props.get("businessSummary") or props.get("summary", "")
     if raw_text:
         text = props.get("rawText", "") or llm_summary
+        if query_budget:  # truncate the raw query to ~N tokens (the 7k-raw experiment); ~4 chars/token
+            text = text[:query_budget * 4]
         return SummaryFields(generated_summary=text, business_problem="", business_capability="")
     return SummaryFields(
         generated_summary=llm_summary,
@@ -155,7 +157,7 @@ async def _collect_predictions(service, args, jobs, sem) -> dict[str, list[str]]
         async with sem:
             req = ValueStreamRequest(
                 ticket_id=ticket_id,
-                summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text),
+                summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
                 requested_count=_requested_count(args, gt),
                 exclude_ticket_ids=[ticket_id],
             )
@@ -218,7 +220,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     async with sem:
         request = ValueStreamRequest(
             ticket_id=ticket_id,
-            summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text),
+            summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
             requested_count=_requested_count(args, gt),
             exclude_ticket_ids=[ticket_id],  # leave-one-out
         )
@@ -332,10 +334,20 @@ async def main(args) -> None:
         selection_mode=args.mode,
         selection_prompt_override=args.selection_prompt,
         show_candidate_scores=not args.no_candidate_scores,
+        historic_repr=args.historic_repr,
+        historic_budget=args.historic_budget,
         **({"llm_candidate_window": window} if window else {}),
         **({"historical_fetch_k": args.historic_k} if args.historic_k else {}),
     )
-    service = build_value_stream_service(config=config)
+    # Local content lookup so the evidence block can use each historic ticket's summary/description/
+    # raw text (keyed by business key) - the offline stand-in for production's Cosmos point-reads.
+    historic_content = {
+        d.get("key", ""): {"raw": (d.get("properties", {}).get("rawText") or ""),
+                           "description": (d.get("properties", {}).get("description") or ""),
+                           "summary": (d.get("properties", {}).get("businessSummary") or "")}
+        for d in docs
+    }
+    service = build_value_stream_service(config=config, historic_content=historic_content)
     llm = build_llm_client(load_settings()) if (args.explain_drops or args.judge) else None
     sem = asyncio.Semaphore(args.concurrency)
 
@@ -710,6 +722,13 @@ if __name__ == "__main__":
     parser.add_argument("--historic-k", type=int, default=0,
                         help="how many similar past tickets to retrieve/show as evidence "
                              "(overrides the config default of 6; e.g. 8 or 10)")
+    parser.add_argument("--historic-repr", default="snippet",
+                        choices=["snippet", "summary", "description", "raw"],
+                        help="how to render each historic ticket in the evidence block (experiment)")
+    parser.add_argument("--historic-budget", type=int, default=0,
+                        help="truncate each historic 'raw' to ~N tokens (the K sweep; 0 = no cap)")
+    parser.add_argument("--query-budget", type=int, default=0,
+                        help="with --raw-text, truncate the query raw text to ~N tokens (e.g. 7000)")
     parser.add_argument("--concurrency", type=int, default=3, help="tickets evaluated in parallel")
     parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")

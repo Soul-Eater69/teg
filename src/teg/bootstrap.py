@@ -59,6 +59,7 @@ def build_value_stream_service(
     *,
     config: ValueStreamConfig | None = None,
     catalogue_path: str = "data/value_stream_capability_map.json",
+    historic_content: dict[str, dict] | None = None,
 ) -> ValueStreamService:
     settings = settings or load_settings()
     # Per-VS selection context from the governed catalogue (the lean index has only id+name).
@@ -79,6 +80,7 @@ def build_value_stream_service(
         model_name=settings.llm_model,
         config=config or ValueStreamConfig(),
         vs_details=vs_details,
+        historic_content=historic_content,
     )
 
 

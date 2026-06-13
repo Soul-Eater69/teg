@@ -57,6 +57,7 @@ class ValueStreamService:
         config: ValueStreamConfig = ValueStreamConfig(),
         base_rates: dict[str, float] | None = None,
         vs_details: dict[str, dict] | None = None,
+        historic_content: dict[str, dict] | None = None,
     ) -> None:
         self._search = search_client
         self._llm = llm_client
@@ -69,6 +70,10 @@ class ValueStreamService:
         # id+name); used to enrich candidate blocks: {vs_id: {description, category, trigger,
         # valueProposition}}.
         self._vs_details = vs_details or {}
+        # Richer per-historic-ticket content for the evidence block (experiment): {ticket_id:
+        # {raw, description, summary}}. Production fills it from Cosmos point-reads; the eval from a
+        # local lookup. Empty -> the evidence block falls back to the search snippet.
+        self._historic_content = historic_content or {}
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
         response, _ = await self._predict(request)
@@ -119,7 +124,9 @@ class ValueStreamService:
         )
         review_pool = select_review_pool(candidates, policy=policy)
         # evidence mode: historic tickets shown as a context block, not merged.
-        historic_evidence = _render_evidence(historical_hits) if mode == "evidence" else ""
+        historic_evidence = _render_evidence(
+            historical_hits, repr=self._config.historic_repr, budget=self._config.historic_budget,
+            content=self._historic_content) if mode == "evidence" else ""
         recommendations = await select_value_streams(
             query=request.summary_fields.generated_summary,
             candidates=review_pool,
@@ -187,12 +194,33 @@ def _unique(ids: list[str]) -> list[str]:
     return out
 
 
-def _render_evidence(hits: list[HistoricalHit]) -> str:
-    """Render the similar past tickets as an evidence block (summary + the VS they were tagged
-    with) for the 'evidence' selection mode - context the LLM weighs when picking from all VS."""
+def _render_evidence(hits: list[HistoricalHit], *, repr: str = "snippet", budget: int = 0,
+                     content: dict[str, dict] | None = None) -> str:
+    """Render the similar past tickets as an evidence block (their content + the VS they were tagged
+    with) for the 'evidence' selection mode - context the LLM weighs when picking from all VS.
+
+    ``repr`` chooses each ticket's content: snippet (search snippet), summary, description, or raw
+    (truncated to ``budget`` tokens). Falls back to the snippet when the content lookup lacks it.
+    """
+    content = content or {}
     lines: list[str] = []
     for hit in hits:
         vs = ", ".join(f"{v.value_stream_name} ({v.value_stream_id})" for v in hit.value_streams)
-        snippet = (hit.snippet or "").strip().replace("\n", " ")[:200]
-        lines.append(f"- {hit.ticket_id}: {snippet}\n  -> tagged value streams: {vs or '(none)'}")
+        text = _historic_text(hit, repr, budget, content.get(hit.ticket_id, {}))
+        lines.append(f"- {hit.ticket_id}: {text}\n  -> tagged value streams: {vs or '(none)'}")
     return "\n".join(lines)
+
+
+def _historic_text(hit: HistoricalHit, repr: str, budget: int, c: dict) -> str:
+    """The historic ticket's content for the chosen representation (~4 chars/token for truncation)."""
+    if repr == "summary":
+        text = c.get("summary") or hit.snippet
+    elif repr == "description":
+        text = c.get("description") or hit.snippet
+    elif repr == "raw":
+        text = c.get("raw") or hit.snippet
+        if budget:
+            text = (text or "")[:budget * 4]  # ~4 chars per token
+    else:  # snippet (default): the existing 200-char search snippet
+        text = (hit.snippet or "")[:200]
+    return (text or "").strip().replace("\n", " ")
