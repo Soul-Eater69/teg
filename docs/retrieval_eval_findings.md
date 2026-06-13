@@ -14,6 +14,7 @@ ticket's correct **Value Streams**, how many does the search actually surface.*
   typical ticket's streams, and **96%** of tickets find at least one.
 - **78% of tickets find EVERY** correct Value Stream; **18%** find some but miss a few; only **4%** find
   none.
+- On average, a ticket has **3.2** correct Value Streams and the search finds **~2.9 of them** (90%).
 - The misses are concentrated in the **hard tickets** (those with several Value Streams) — there we find
   *most* streams (88%) but the *complete* set only **63%** of the time.
 - **Showing 6 past tickets is enough** — going to 10 adds only ~4 points of coverage.
@@ -39,9 +40,9 @@ them?
 So **96% of tickets find at least something** (green + amber) and **78% find everything**.
 
 > *One more number, measured differently:* averaged across tickets, a typical ticket has **90%** of its
-> correct streams present in the examples. (That 90% is a per-ticket *average*, not a count of tickets —
-> a ticket that finds 3 of its 4 streams contributes 75% to it. Both numbers say the same thing: coverage
-> is strong.)
+> correct streams present in the examples — in plain counts, **~2.9 of its 3.2** correct Value Streams are
+> found on average. (That 90% is a per-ticket *average*, not a count of tickets — a ticket that finds 3 of
+> its 4 streams contributes 75% to it. Both numbers say the same thing: coverage is strong.)
 
 ---
 
