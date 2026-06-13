@@ -201,8 +201,9 @@ async def collect(
     async def _guarded(ticket_id: str) -> None:
         try:
             async with sem:
-                out = await _one(ticket_id)
-        except Exception as exc:  # ANY per-ticket failure must not abort the batch
+                # hard cap on the WHOLE ticket so a hang can't freeze a concurrency slot forever
+                out = await asyncio.wait_for(_one(ticket_id), timeout=ticket_timeout * 3)
+        except BaseException as exc:  # ANY failure (incl. timeout/cancel) must not abort the batch
             reason = f"{type(exc).__name__}: {exc}" or type(exc).__name__
             print(f"  {ticket_id}: ERROR {reason} (skipped)")
             out = [{
@@ -219,6 +220,7 @@ async def collect(
               f"{n_att} attach, {head.get('themeCount', 0)} themes")
         if checkpoint_path is not None and progress["n"] % checkpoint_every == 0:
             checkpoint_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"  …checkpoint saved ({progress['n']} tickets)")
 
     try:
         if complete:
