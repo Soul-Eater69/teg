@@ -72,6 +72,25 @@ trimming to the top 4 barely changes the token count (it keeps ~97% of the raw t
 
 ---
 
+## 3b. More attachments → more tokens (and a jump at 5)
+
+![Avg tokens by attachment count](token_charts/tokens_by_count.png)
+
+**How to read it.** Each bar is the average raw token count for tickets with that many attachments
+(ticket count in parentheses):
+
+- **Roughly linear up to 4** — each attachment adds **~3,000 tokens**: 1→3k, 2→6.7k, 3→9.5k, 4→11.7k.
+- **A jump at 5 — ~26,520 tokens.** Five-attachment tickets aren't just "one more file" — their
+  attachments are individually bigger (~5.2k each vs ~3k), i.e. the content-heavy, big-deck tickets.
+- **6+ are noisy** (only 1–7 tickets each), so don't over-read them.
+
+**Why this matters:** attachment count is a **lever for the token budget.** Keeping the limit at **4
+attachments holds a ticket under ~12k tokens**; allowing 5+ jumps it to ~27k. So the attachment cap and
+the token cap are two ways of controlling the same thing — and capping at 4–5 keeps almost every ticket
+comfortably under the 40k guardrail without needing to truncate text mid-document.
+
+---
+
 ## 4. What kinds of attachments are they?
 
 ![File types](token_charts/filetypes.png)
@@ -122,3 +141,8 @@ PowerPoint dominating explains the big-token tail: a single deck can be tens of 
 | Avg per ticket | 2.25 (median 2, max 12) |
 | Tokens per attachment | median 1,483 · top 5% 12,224 · max 68,768 |
 | File types | PowerPoint 49% · PDF 33% · Word 18% |
+
+| Avg raw tokens by attachment count | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| avg tokens | 552 | 3,042 | 6,708 | 9,489 | 11,652 | **26,520** |
+| tickets | 67 | 93 | 66 | 56 | 54 | 22 |

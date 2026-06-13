@@ -15,6 +15,9 @@ RAW = {"median": 3854, "p90": 19433, "p95": 25921, "max": 88614}
 BUDGET = {"4,000": 184, "8,000": 120, "16,000": 53, "40,000": 8}
 ATT_COUNT = {"0": 67, "1": 93, "2": 66, "3": 56, "4": 54, "5": 22, "6+": 16}
 FILE_TYPES = {"PowerPoint": 410, "PDF": 277, "Word": 153}
+# avg raw tokens by attachment count (and ticket counts); 6+ grouped (small samples)
+TOKENS_BY_COUNT = {"0": 552, "1": 3042, "2": 6708, "3": 9489, "4": 11652, "5": 26520, "6+": 21770}
+TICKETS_BY_COUNT = {"0": 67, "1": 93, "2": 66, "3": 56, "4": 54, "5": 22, "6+": 16}
 
 
 def build() -> None:
@@ -75,6 +78,20 @@ def build() -> None:
     ax.set_ylabel("number of attachments"); ax.figure.suptitle("What kinds of attachments are they?", fontsize=14, fontweight="bold")
     ax.set_title("PowerPoint is the most common, then PDF, then Word.", fontsize=10, style="italic", color="#555")
     save(fig, "filetypes")
+
+    # 5. avg tokens by attachment count (the lever connecting count -> token budget)
+    fig, ax = plt.subplots(figsize=(7.5, 4))
+    keys = list(TOKENS_BY_COUNT); vals = list(TOKENS_BY_COUNT.values())
+    colors = [GREEN] * 5 + [RED, AMBER]
+    bars = ax.bar(keys, vals, color=colors[:len(keys)])
+    for b, v, k in zip(bars, vals, keys):
+        ax.text(b.get_x() + b.get_width() / 2, v, f"{v:,}\n({TICKETS_BY_COUNT[k]})",
+                ha="center", va="bottom", fontsize=8, fontweight="bold")
+    ax.axhline(40000, color=RED, ls="--", lw=1.2); ax.set_ylim(0, 45000)
+    ax.set_xlabel("attachments on the ticket (ticket count in parentheses)"); ax.set_ylabel("avg tokens")
+    ax.figure.suptitle("More attachments → more tokens (and a jump at 5)", fontsize=14, fontweight="bold")
+    ax.set_title("~3k tokens per attachment up to 4 (~12k); 5-attachment tickets jump to ~27k.", fontsize=10, style="italic", color="#555")
+    save(fig, "tokens_by_count")
 
     print(f"charts -> {CHARTS}")
 
