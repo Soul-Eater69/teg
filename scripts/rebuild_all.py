@@ -31,8 +31,12 @@ async def main(args) -> None:
     print("\n" + "=" * 70 + "\n[1/3] RECREATE INDEX (drops all docs)\n" + "=" * 70)
     await create_index.main(args.definition, recreate=True)
 
-    print("\n" + "=" * 70 + "\n[2/3] VS CATALOGUE -> INDEX\n" + "=" * 70)
-    await generate_vs_catalogue.main(args.catalogue, args.catalogue_out, embed=True, upload=True)
+    if args.with_vs_index:
+        print("\n" + "=" * 70 + "\n[2/3] VS CATALOGUE -> INDEX\n" + "=" * 70)
+        await generate_vs_catalogue.main(args.catalogue, args.catalogue_out, embed=True, upload=True)
+    else:
+        print("\n" + "=" * 70 + "\n[2/3] VS CATALOGUE -> INDEX  (SKIPPED - VS now comes from the "
+              "catalogue file; index holds only historic docs)\n" + "=" * 70)
 
     print("\n" + "=" * 70 + "\n[3/3] FRESH TICKET INGEST -> COSMOS + HISTORIC INDEX\n" + "=" * 70)
     await ingest_tickets.main(
@@ -47,6 +51,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("tickets_file", help="text file with one ticket id per line")
     parser.add_argument("--yes", action="store_true", help="confirm the destructive index recreate")
+    parser.add_argument("--with-vs-index", action="store_true",
+                        help="also upload the VS catalogue to the index (legacy; VS now comes from "
+                             "the catalogue file, so this is off by default)")
     parser.add_argument("--definition", default="data/idp_teg_data_index.json")
     parser.add_argument("--catalogue", default="data/value_stream_capability_map.json")
     parser.add_argument("--catalogue-out", dest="catalogue_out", default="out/catalogue")

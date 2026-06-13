@@ -13,7 +13,7 @@ from teg.integrations.embeddings import build_embeddings_client
 from teg.integrations.files import build_attachment_extractor
 from teg.integrations.jira import build_jira_client
 from teg.integrations.llm import build_llm_client
-from teg.integrations.search import build_search_client
+from teg.integrations.search import ValueStreamHit, build_search_client
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.ingestion.extraction.jira_source import build_jira_ingestion_source
 from teg.ingestion.pipeline.idmt_ingestion import IdmtIngestion
@@ -62,7 +62,8 @@ def build_value_stream_service(
     historic_content: dict[str, dict] | None = None,
 ) -> ValueStreamService:
     settings = settings or load_settings()
-    # Per-VS selection context from the governed catalogue (the lean index has only id+name).
+    catalogue = _load_vs_catalogue(catalogue_path)
+    # Per-VS selection context (used to enrich candidate blocks).
     vs_details = {
         vs.value_stream_id: {
             "description": vs.value_stream_description,
@@ -70,8 +71,18 @@ def build_value_stream_service(
             "trigger": vs.trigger,
             "valueProposition": vs.value_proposition,
         }
-        for vs in _load_vs_catalogue(catalogue_path)
+        for vs in catalogue
     }
+    # The 50 VS as candidates straight from the governed catalogue - so the VS lane no longer needs
+    # the search index (the index holds only historic docs). score=0: ranking is unused (scores off).
+    vs_candidates = [
+        ValueStreamHit(
+            value_stream_id=vs.value_stream_id, value_stream_name=vs.value_stream_name,
+            value_stream_description=vs.value_stream_description, category=vs.category,
+            trigger=vs.trigger, value_proposition=vs.value_proposition, score=0.0,
+        )
+        for vs in catalogue
+    ] or None  # None -> fall back to index search when the catalogue is empty (tests/fakes)
     # Retrieval/window tuning lives in ValueStreamConfig (code default, eval-tuned),
     # not env - env is for secrets + per-deployment infra only. config override is for eval.
     return ValueStreamService(
@@ -81,6 +92,7 @@ def build_value_stream_service(
         config=config or ValueStreamConfig(),
         vs_details=vs_details,
         historic_content=historic_content,
+        vs_candidates=vs_candidates,
     )
 
 

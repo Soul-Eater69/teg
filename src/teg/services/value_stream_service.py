@@ -58,6 +58,7 @@ class ValueStreamService:
         base_rates: dict[str, float] | None = None,
         vs_details: dict[str, dict] | None = None,
         historic_content: dict[str, dict] | None = None,
+        vs_candidates: list | None = None,
     ) -> None:
         self._search = search_client
         self._llm = llm_client
@@ -74,6 +75,9 @@ class ValueStreamService:
         # {raw, description, summary}}. Production fills it from Cosmos point-reads; the eval from a
         # local lookup. Empty -> the evidence block falls back to the search snippet.
         self._historic_content = historic_content or {}
+        # The 50 governed VS as candidates (from the catalogue, not the index). When set, the VS lane
+        # is sourced from here and the index holds only historic docs. None -> legacy index search.
+        self._vs_candidates = vs_candidates
 
     async def predict(self, request: ValueStreamRequest) -> ValueStreamResponse:
         response, _ = await self._predict(request)
@@ -106,6 +110,7 @@ class ValueStreamService:
             vs_top_k=vs_top_k,
             historical_top_k=historical_top_k + len(request.exclude_ticket_ids),
             include_historical=self._config.use_historic_lane,
+            vs_candidates=self._vs_candidates,  # None -> index search; set -> from the catalogue
         )
         historical_hits = _excluding(result.historical_hits, request.exclude_ticket_ids)[:historical_top_k]
         # SME-selected analogs become the evidence used for ranking (all retrieved if
