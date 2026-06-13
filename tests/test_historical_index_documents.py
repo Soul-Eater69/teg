@@ -62,13 +62,11 @@ def test_historical_index_document_shape() -> None:
     assert doc["entityType"] == "EngagementRequest"
     assert doc["content_vector"] == [0.1, 0.2]
     assert doc["searchText"]  # was 'content'
-    assert "summary" not in doc["properties"]  # summary dropped from the index
-    label = doc["properties"]["valueStreams"][0]
-    assert label["valueStreamId"] == "VSR00074590"
-    assert label["valueStreamName"] == "Resolve Appeal"
+    # Retrieval-only doc: no properties block at all - VS labels + content come from Cosmos by key.
+    assert "properties" not in doc
 
 
 def test_no_vector_when_not_embedded() -> None:
     doc = build_historical_index_document(er=_er(), condensed=_condensed(), theme_gt=[])
     assert doc["content_vector"] is None
-    assert doc["properties"]["valueStreams"] == []
+    assert "properties" not in doc  # retrieval-only

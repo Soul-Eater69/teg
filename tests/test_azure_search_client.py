@@ -34,28 +34,20 @@ def test_value_stream_hit_prefers_reranker_score() -> None:
     assert _to_value_stream_hit(doc).score == 2.7
 
 
-def test_historical_hit_maps_native_value_streams() -> None:
+def test_historical_hit_is_retrieval_only_vs_enriched_later() -> None:
+    # The index is retrieval-only: a hit carries id + searchText + score, NOT the VS labels (those
+    # come from Cosmos by key, enriched by the service).
     doc = {
         "key": "IDMT-8280",
         "sourceId": "3364549",
         "@search.score": 0.82,
         "searchText": "BH enhancements initiative adds suicide prevention",
-        "properties": {
-            "valueStreams": [
-                {
-                    "valueStreamId": "VSR00074586",
-                    "valueStreamName": "Configure, Price, and Quote",
-                }
-            ],
-        },
     }
     hit = _to_historical_hit(doc)
     assert hit.ticket_id == "IDMT-8280"  # key (IDMT-####) = the leave-one-out match key
     assert hit.snippet.startswith("BH enhancements")
     assert hit.score == 0.82
-    label = hit.value_streams[0]
-    assert label.value_stream_id == "VSR00074586"
-    assert label.value_stream_name == "Configure, Price, and Quote"
+    assert hit.value_streams == []  # not in the index - enriched downstream from Cosmos
 
 
 def test_historical_hit_normalizes_reranker_score() -> None:

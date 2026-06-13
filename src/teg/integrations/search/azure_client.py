@@ -41,7 +41,7 @@ _VS_SELECT = [
     "properties/valueStreamName",
 ]  # lean index: description/category/trigger/value come from the catalogue at selection time
 # key (IDMT-####) is the leave-one-out / display id; searchText is the hit snippet.
-_HISTORICAL_SELECT = ["key", "sourceId", "searchText", "properties/valueStreams"]
+_HISTORICAL_SELECT = ["key", "sourceId", "searchText"]  # VS labels come from Cosmos by key, not the index
 
 
 class AzureSearchClient:
@@ -117,15 +117,14 @@ def _to_value_stream_hit(doc) -> ValueStreamHit:
 
 
 def _to_historical_hit(doc) -> HistoricalHit:
-    props = _props(doc)
-    # key (IDMT-####) is the match key used for leave-one-out exclusion in the eval.
+    # Retrieval-only doc: key + searchText. The VS labels are enriched downstream from Cosmos by key.
     ticket_id = str(doc.get("key") or doc.get("sourceId") or doc.get("id") or "")
     return HistoricalHit(
         ticket_id=ticket_id,
         title=ticket_id,
         score=_historical_score(doc),
         snippet=str(doc.get("searchText") or "")[:200],
-        value_streams=_parse_value_streams(props.get("valueStreams")),
+        value_streams=[],  # filled by the service from the historic lookup (Cosmos / eval-local)
     )
 
 

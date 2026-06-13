@@ -32,6 +32,10 @@ def build_historical_index_document(
     theme_gt: list[ThemeGroundTruth],
     content_vector: list[float] | None = None,
 ) -> dict:
+    # Retrieval-only doc: searchText (embedded) + the match key. The VS labels (GT) and full content
+    # are NOT stored here - they live in Cosmos and are fetched by key when a hit is used (one
+    # point-read returns both). theme_gt is accepted for signature stability but no longer stored.
+    _ = theme_gt
     return {
         "id": doc_id(ENTITY_TYPE, er.stable_id),  # uuid (deterministic)
         "key": er.key or None,  # IDMT-#### (the retrieval match / leave-one-out key)
@@ -41,14 +45,4 @@ def build_historical_index_document(
         "status": er.status or None,  # Jira status (filter out Cancelled at retrieval)
         "searchText": build_historical_content(condensed),
         "content_vector": content_vector,
-        "properties": {
-            "valueStreams": [_label(gt) for gt in theme_gt],
-        },
-    }
-
-
-def _label(gt: ThemeGroundTruth) -> dict:
-    return {
-        "valueStreamId": gt.value_stream_id,
-        "valueStreamName": gt.value_stream_name,
     }

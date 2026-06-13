@@ -29,6 +29,7 @@ from teg.config.settings import load_settings
 from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.domain.condensed import SummaryFields
 from teg.integrations.llm import build_llm_client
+from teg.integrations.search import HistoricalValueStreamLabel
 from teg.value_stream.config import ValueStreamConfig
 from teg.value_stream.drop_explainer import explain_drops
 from teg.value_stream.relevance_judge import judge_value_streams
@@ -353,12 +354,15 @@ async def main(args) -> None:
         **({"llm_candidate_window": window} if window else {}),
         **({"historical_fetch_k": args.historic_k} if args.historic_k else {}),
     )
-    # Local content lookup so the evidence block can use each historic ticket's summary/description/
-    # raw text (keyed by business key) - the offline stand-in for production's Cosmos point-reads.
+    # Local content lookup so the evidence block + VS labels come from the corpus (keyed by business
+    # key) - the offline stand-in for production's Cosmos point-reads (the index is retrieval-only).
     historic_content = {
         d.get("key", ""): {"raw": (d.get("properties", {}).get("rawText") or ""),
                            "description": (d.get("properties", {}).get("description") or ""),
-                           "summary": (d.get("properties", {}).get("businessSummary") or "")}
+                           "summary": (d.get("properties", {}).get("businessSummary") or ""),
+                           "vs": [HistoricalValueStreamLabel(t["valueStreamId"], t.get("valueStreamName", ""))
+                                  for t in (d.get("properties", {}).get("themes") or [])
+                                  if t.get("valueStreamId")]}
         for d in docs
     }
     service = build_value_stream_service(config=config, historic_content=historic_content)

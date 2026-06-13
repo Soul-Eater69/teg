@@ -112,6 +112,12 @@ class ValueStreamService:
             include_historical=self._config.use_historic_lane,
             vs_candidates=self._vs_candidates,  # None -> index search; set -> from the catalogue
         )
+        # The index is retrieval-only - enrich each hit's VS labels from the historic lookup (keyed by
+        # ticket id; Cosmos point-read in prod, local in the eval). Empty lookup -> hits keep [] VS.
+        for hit in result.historical_hits:
+            vs = (self._historic_content.get(hit.ticket_id) or {}).get("vs")
+            if vs:
+                hit.value_streams = vs
         historical_hits = _excluding(result.historical_hits, request.exclude_ticket_ids)[:historical_top_k]
         # SME-selected analogs become the evidence used for ranking (all retrieved if
         # none selected); the full retrieved set is still returned for the HITL step.
