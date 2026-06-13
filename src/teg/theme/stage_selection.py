@@ -69,9 +69,27 @@ async def select_stages_for_all(
     llm_client: LLMClient,
 ) -> dict[str, list[SelectedStage]]:
     """Pick stages for every approved value stream in one call. Returns {vs_id: stages}."""
+    resolved, _ = await select_stages_for_all_traced(
+        condensed=condensed, inputs=inputs, llm_client=llm_client
+    )
+    return resolved
+
+
+async def select_stages_for_all_traced(
+    *,
+    condensed: CondensedContext,
+    inputs: list[StageSelectionInput],
+    llm_client: LLMClient,
+) -> tuple[dict[str, list[SelectedStage]], dict[str, list[str]]]:
+    """Same batched call, but also return the LLM's RAW picks per VS (unresolved).
+
+    The second value is ``{vs_id: [picked stage_id, ...]}`` exactly as the LLM returned it,
+    BEFORE :func:`_resolve` drops ids foreign to that VS - so eval can measure cross-VS
+    mislinking (a stage the batched call put under the wrong value stream).
+    """
     active = [i for i in inputs if i.stages]  # a VS with no candidate stages has nothing to pick
     if not active:
-        return {}
+        return {}, {}
 
     prompt = load_prompt("theme/stage_selection")
     system, user = prompt.render(
@@ -82,10 +100,14 @@ async def select_stages_for_all(
     result = await llm_client.complete(system=system, user=user, schema=BatchedStageSelection)
 
     by_vs = {r.value_stream_id: r for r in result.value_streams}
-    return {
-        i.value_stream.value_stream_id: _resolve(by_vs.get(i.value_stream.value_stream_id), i.stages)
-        for i in active
-    }
+    resolved: dict[str, list[SelectedStage]] = {}
+    raw_picks: dict[str, list[str]] = {}
+    for i in active:
+        vs_id = i.value_stream.value_stream_id
+        entry = by_vs.get(vs_id)
+        resolved[vs_id] = _resolve(entry, i.stages)
+        raw_picks[vs_id] = [item.stage_id for item in (entry.selected_stages if entry else [])]
+    return resolved, raw_picks
 
 
 async def select_stages(
