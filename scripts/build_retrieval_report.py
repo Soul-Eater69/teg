@@ -61,7 +61,7 @@ def build() -> None:
     fig, ax = plt.subplots(figsize=(7.5, 4))
     _bars(ax, ["Found ALL their\nValue Streams", "Found SOME\n(missed a few)", "Found NONE"],
           [full, some, none], colors=[GREEN, AMBER, RED])
-    ax.set_ylim(0, 1.0); ax.figure.suptitle("What happened to each ticket? (showing 6 examples)", fontsize=14, fontweight="bold")
+    ax.set_ylim(0, 1.0); ax.figure.suptitle("What happened to each ticket?", fontsize=14, fontweight="bold")
     ax.set_title("Every ticket is in exactly one group — the three add up to 100%.", fontsize=10, style="italic", color="#555")
     c1 = _save(fig, plt, charts, "coverage")
 
