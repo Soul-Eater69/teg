@@ -187,7 +187,7 @@ def build() -> None:
     cells = t.add_row().cells
     cells[0].text = "Streams found per ticket (of ~3.2 correct)"
     for i, r in enumerate(d["recall"]):
-        cells[i + 1].text = f"~{r * 3.21:.1f}"
+        cells[i + 1].text = f"{r * 3.21:.2f}"  # 2 decimals: 2.90 -> 3.03 barely moves (diminishing returns)
     for label, key in [("Avg coverage (fraction of streams found)", "recall"),
                        ("Found at least one correct stream", "hit"),
                        ("Found EVERY correct stream", "fully_covered")]:

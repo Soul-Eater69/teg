@@ -133,12 +133,14 @@ top example is already on target.
 
 | Measure (per ticket) | Show 6 | Show 8 | Show 10 |
 |---|---|---|---|
-| **Streams found per ticket** (of ~3.2 correct) | **~2.9** | ~3.0 | ~3.0 |
+| **Streams found per ticket** (of ~3.2 correct) | **2.90** | 2.97 | 3.03 |
 | Avg coverage (fraction of streams found) | 90% | 92% | 94% |
 | Found at least one correct stream | 96% | 97% | 98% |
 | Found EVERY correct stream | 78% | 81% | 85% |
 
-*(A ticket has **3.2** correct Value Streams on average; the historic search surfaces **~2.9** of them.)*
+*(A ticket has **3.2** correct Value Streams on average; the historic search surfaces **~2.9** of them.
+Note how the count barely moves — 2.90 → 3.03 — across 4 extra tickets: that's the diminishing returns
+from chart 4.)*
 
 ---
 
