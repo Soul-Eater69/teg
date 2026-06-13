@@ -86,6 +86,17 @@ def main(cache_path: str, out_path: str) -> None:
         over = sum(1 for v in raw if v > thr)
         print(f"  > {thr:>6,} tokens : {over:>4} tickets ({_pct(over, n)})")
 
+    print(f"\nAvg RAW tokens by attachment count (description + all attachments):")
+    by_count: dict[int, list[int]] = {}
+    for p in per_ticket:
+        by_count.setdefault(p["n_attachments"], []).append(p["raw_total"])
+    tokens_by_count = {}
+    for k in sorted(by_count):
+        vals = by_count[k]
+        avg = statistics.mean(vals)
+        tokens_by_count[k] = round(avg)
+        print(f"  {k:>2} attachments : avg {avg:>7.0f} tokens  ({len(vals)} tickets)")
+
     print(f"\nAttachments (Task 5):")
     counts = Counter(p["n_attachments"] for p in per_ticket)
     print(f"  tickets with NO attachments : {no_att} ({_pct(no_att, n)})")
@@ -114,6 +125,7 @@ def main(cache_path: str, out_path: str) -> None:
         "attachments": {"per_ticket": _stats([p["n_attachments"] for p in per_ticket]),
                         "tokens_per_attachment": _stats(all_att),
                         "count_histogram": {str(k): counts[k] for k in sorted(counts)},
+                        "avg_raw_tokens_by_count": {str(k): v for k, v in tokens_by_count.items()},
                         "file_types": dict(exts.most_common())},
         "condense_keep_ratio": keep,
     }
