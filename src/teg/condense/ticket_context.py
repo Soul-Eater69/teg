@@ -29,23 +29,31 @@ def _consolidate(
 ) -> str:
     """Combine the description (always full - the one authoritative source) with docs.
 
-    ``doc_char_budget=None`` -> include each doc in full (idea-card path). Otherwise the
-    documents share the budget evenly (fallback path), and docs that extract to fewer
-    than ``min_doc_chars`` are dropped as near-empty (image files without OCR).
+    GREEDY budget packing: the description is taken first (counts against the budget), then each
+    attachment (in ranked order) takes up to the REMAINING budget, until the budget is exhausted.
+    So small attachments don't waste their share, big ones aren't over-truncated, and the 5th/6th
+    attachment is included whenever it still fits - the token budget is the only cap, not a count.
+    ``doc_char_budget=None`` -> every doc in full (idea-card path). Docs under ``min_doc_chars`` are
+    dropped as near-empty (image files without OCR).
     """
     docs = [(name, text) for name, text in documents if text and text.strip()]
     if min_doc_chars:
         docs = [(name, text) for name, text in docs if len(text.strip()) >= min_doc_chars]
 
     blocks: list[str] = []
-    if description.strip():
-        blocks.append(_section("DESCRIPTION", description))
-    if docs:
-        per_doc = (doc_char_budget // len(docs)) if doc_char_budget else None
-        for name, text in docs:
-            body = text.strip() if per_doc is None else text.strip()[:per_doc]
-            if body:
-                blocks.append(_section(f"DOCUMENT: {name}", body))
+    desc = description.strip()
+    if desc:
+        blocks.append(_section("DESCRIPTION", desc))
+    remaining = None if doc_char_budget is None else max(0, doc_char_budget - len(desc))
+    for name, text in docs:
+        body = text.strip()
+        if remaining is not None:
+            if remaining <= 0:
+                break  # budget exhausted - drop the rest
+            body = body[:remaining]
+            remaining -= len(body)
+        if body:
+            blocks.append(_section(f"DOCUMENT: {name}", body))
     return "\n\n".join(blocks)
 
 

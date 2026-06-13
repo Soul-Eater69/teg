@@ -129,13 +129,16 @@ class _LongExtractor:
         return "X" * 5000
 
 
-async def test_description_kept_full_and_doc_budget_split_across_fallback() -> None:
+async def test_description_full_and_attachments_greedily_packed_to_budget() -> None:
     ticket = _ticket([JiraAttachment("a.pdf"), JiraAttachment("b.pdf")])
     ctx = await resolve_from_ticket(
         ticket, FakeJira(ticket), _LongExtractor(), config=CondenseConfig(doc_char_budget=400)
     )
     assert ticket.description in ctx.consolidated_text  # authoritative, never truncated
-    assert ctx.consolidated_text.count("X") == 400  # 400 budget split 200/doc across 2 docs
+    # GREEDY: description (counts against the 400 budget); the FIRST doc takes the whole remaining
+    # budget, the second is dropped (budget exhausted) - not an even 200/200 split.
+    assert ctx.consolidated_text.count("X") == 400 - len(ticket.description)
+    assert ctx.consolidated_text.count("[DOCUMENT:") == 1  # second doc dropped
 
 
 async def test_idea_card_used_in_full_ignoring_budget() -> None:
