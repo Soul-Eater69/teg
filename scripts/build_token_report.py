@@ -12,7 +12,7 @@ CHARTS = Path("docs/token_charts")
 # from out/eda/token_analysis.json (374 tickets)
 N = 374
 RAW = {"median": 3854, "p90": 19433, "p95": 25921, "max": 88614}
-BUDGET = {"4,000": 184, "8,000": 120, "16,000": 53, "40,000": 8}
+BUDGET = {"4,000": 184, "8,000": 120, "16,000": 53}
 ATT_COUNT = {"0": 67, "1": 93, "2": 66, "3": 56, "4": 54, "5": 22, "6+": 16}
 FILE_TYPES = {"PowerPoint": 410, "PDF": 277, "Word": 153}
 # avg raw tokens by attachment count (and ticket counts); 6+ grouped (small samples)
@@ -49,12 +49,11 @@ def build() -> None:
     # 2. tickets over each budget
     fig, ax = plt.subplots(figsize=(7.5, 4))
     keys = list(BUDGET); vals = list(BUDGET.values())
-    bars = ax.bar([f"> {k}\ntokens" for k in keys], vals, color=[AMBER, AMBER, BLUE, GREEN])
-    pass
+    bars = ax.bar([f"> {k}\ntokens" for k in keys], vals, color=[AMBER, BLUE, GREEN])
     for b, v in zip(bars, vals):
         ax.text(b.get_x() + b.get_width() / 2, v, f"{v} ({v/N:.0%})", ha="center", va="bottom", fontsize=9, fontweight="bold")
     ax.set_ylabel("number of tickets"); ax.figure.suptitle("How many tickets need more than each budget?", fontsize=14, fontweight="bold")
-    ax.set_title("About half need >4k tokens; only a few (2%) exceed even 40k.", fontsize=10, style="italic", color="#555")
+    ax.set_title("About half need >4k tokens; only 14% need more than 16k.", fontsize=10, style="italic", color="#555")
     save(fig, "budget")
 
     # 3. attachments per ticket
