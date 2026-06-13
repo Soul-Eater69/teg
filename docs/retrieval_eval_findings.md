@@ -33,24 +33,26 @@ belong to two or more, a few to as many as **19** (hard).
 
 ## 1. It finds the right examples
 
-For 90% of tickets the correct Value Stream is among the 6 pulled examples, 96% have at least one
-genuinely useful example, and for **288 of 373** tickets the *first* result is already a hit. Finding
-good examples is not the problem.
+When we show the 6 most similar past tickets, here's what happens to each of the 373 tickets — every
+ticket lands in exactly one of three groups (so they add up to 100%):
 
-![Coverage scorecard](retrieval_charts/coverage.png)
+![What happened to each ticket](retrieval_charts/coverage.png)
 
-**How to read it.** Three increasingly strict ways of asking *"did we find the answer?"*, all at K=6:
+**How to read it.** Each ticket has one or more correct Value Streams to find. Did the 6 examples
+contain them?
 
-- **Found ≥1 useful example — 96%** *(loosest):* for 96% of tickets, at least one correct Value Stream
-  appeared. "Did we find *anything* right?" — almost always.
-- **Right answer found — 90%** *(the average):* of all the correct Value Streams across all tickets,
-  90% individually showed up. This counts streams, so a ticket with 4 correct streams contributes all 4.
-- **Found EVERY stream — 78%** *(strictest):* for 78% of tickets, *all* their correct streams were
-  found, none missed.
+- **Found ALL — 78%:** for 78% of tickets, *every* correct Value Stream was in the examples. Nothing
+  missed. ✅
+- **Found SOME — 18%:** found at least one, but missed a few. Usually the multi-stream tickets, where
+  we catch the obvious streams and miss a long-tail one (see chart 3).
+- **Found NONE — 4%:** the examples contained none of the correct streams — the only real misses.
 
-The bars fall 96 → 90 → 78 because each is harder than the last. **Example:** a ticket with streams
-A, B, C — finding just A counts for "≥1"; finding A and B is 67% of its average; only finding all of
-A, B, C counts for "every stream." The 96→78 gap is the multi-stream tickets (see chart 3).
+So **96% of tickets find at least something** (the green + amber bars), and **78% find everything**.
+
+> *One more number, measured differently:* averaged across tickets, a typical ticket has **90%** of its
+> correct streams present in the examples. (That 90% is a per-ticket *average*, not a count of tickets —
+> a ticket that finds 3 of its 4 streams contributes 75% to that average. The three bars above are
+> ticket counts; the 90% is an average. Both say the same thing: coverage is strong.)
 
 ---
 

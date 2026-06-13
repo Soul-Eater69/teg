@@ -71,12 +71,15 @@ def build() -> None:
     charts.mkdir(parents=True, exist_ok=True)
     GREEN, AMBER, BLUE, GREY = "#2a9d4a", "#e8a23d", "#3d7fe8", "#9aa0a6"
 
-    # 1. coverage scorecard
+    # 1. coverage scorecard - mutually-exclusive ticket buckets that ADD TO 100% (intuitive)
+    full = d["fully_covered"][0]            # found all
+    some = d["hit"][0] - d["fully_covered"][0]  # found some (>=1 but not all)
+    none = 1 - d["hit"][0]                  # found none
     fig, ax = plt.subplots(figsize=(7.5, 4))
-    _bars(ax, ["Right answer\nfound (@6)", "Found ≥1 useful\nexample (@6)", "Found EVERY\nstream (@6)"],
-          [d["recall"][0], d["hit"][0], d["fully_covered"][0]], colors=[GREEN, GREEN, BLUE])
-    ax.set_ylim(0, 1.1); ax.figure.suptitle("The right examples almost always show up", fontsize=14, fontweight="bold")
-    ax.set_title("Coverage is the strong part of the system.", fontsize=10, style="italic", color="#555")
+    _bars(ax, ["Found ALL their\nValue Streams", "Found SOME\n(missed a few)", "Found NONE"],
+          [full, some, none], colors=[GREEN, AMBER, "#c0392b"])
+    ax.set_ylim(0, 1.0); ax.figure.suptitle("What happened to each ticket? (showing 6 examples)", fontsize=14, fontweight="bold")
+    ax.set_title("Every ticket is in exactly one group — the three add up to 100%.", fontsize=10, style="italic", color="#555")
     c1 = _save(fig, plt, charts, "coverage")
 
     # 2. precision reality check
