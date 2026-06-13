@@ -15,10 +15,10 @@ of an LLM-written summary — and where to cap it. Measured on **374 tickets** b
   Half of all tickets are under that.
 - **A few are huge.** The top 5% run to ~26k tokens and the largest single ticket is **~89k tokens** —
   driven by big PowerPoint/PDF attachments.
-- **Raw text is feasible.** Even the largest ticket fits the model's context. **98% of tickets are
-  under 40k tokens**, so we can feed raw text directly for almost everything.
-- **A 40k-token cap is the clean guardrail** — it truncates only **8 tickets (2%)** while leaving 98%
-  untouched, and bounds the worst-case latency/cost.
+- **Raw text is feasible** for almost every ticket — even the largest fits the model's context.
+- **The token budget is a joint choice with the attachment cap** (how many attachments we keep). The
+  fewer attachments we keep, the smaller the budget needed — see the optimization grid (separate doc).
+  We have **not** fixed a single limit yet; the grid shows the tradeoff so the data picks it.
 - **18% of tickets have no attachments at all** — for those, the only input is the (short) description.
 
 ---
@@ -32,7 +32,8 @@ of an LLM-written summary — and where to cap it. Measured on **374 tickets** b
 - **Typical (median) — 3,854:** half of tickets are smaller than this. Most tickets are small.
 - **Big (top 10%) — 19,433** and **Bigger (top 5%) — 25,921:** a minority are large.
 - **Largest — 88,614:** one ticket is huge (a big attachment).
-- The dashed line is a **40k-token cap** — only the very largest tickets poke above it.
+- The dashed reference line is at 40k tokens, just to show how few tickets are that large (no decision
+  implied).
 
 The description by itself is tiny (median ~358 tokens, max ~2,600) — **attachments are what make a
 ticket big**, and only for a minority.
@@ -49,9 +50,9 @@ ticket big**, and only for a minority.
 - **Over 8k — 120 (32%)**, **over 16k — 53 (14%):** the higher you go, the fewer.
 - **Over 40k — 8 (2%):** only 8 tickets are truly huge.
 
-**This is the truncation decision.** If we cap the text at **40k tokens**, only **8 tickets (2%)** get
-trimmed — a clean way to bound the worst case without touching 98% of tickets. (Cap lower, e.g. 16k,
-and you'd trim 53 tickets / 14% — more aggressive.)
+**This frames the truncation tradeoff.** A higher budget trims fewer tickets (e.g. a 16k budget would
+trim 53 tickets / 14%; an 8k budget would trim 120 / 32%). The right budget is chosen *together* with
+the attachment cap — see the optimization grid — not in isolation.
 
 ---
 
@@ -86,8 +87,8 @@ trimming to the top 4 barely changes the token count (it keeps ~97% of the raw t
 
 **Why this matters:** attachment count is a **lever for the token budget.** Keeping the limit at **4
 attachments holds a ticket under ~12k tokens**; allowing 5+ jumps it to ~27k. So the attachment cap and
-the token cap are two ways of controlling the same thing — and capping at 4–5 keeps almost every ticket
-comfortably under the 40k guardrail without needing to truncate text mid-document.
+the token budget are two ways of controlling the same thing — which is exactly why we choose them
+*together* (the optimization grid), rather than fixing either alone.
 
 ---
 
@@ -105,20 +106,20 @@ PowerPoint dominating explains the big-token tail: a single deck can be tens of 
 
 ---
 
-## What this means — the decisions
+## What this means — what's settled and what's open
 
+**Settled:**
 1. **We can use the raw ticket text** (description + attachments) as the model input instead of an
-   LLM-written summary — it fits for **98% of tickets** without any trimming.
-2. **Set a 40k-token cap** as the guardrail. It only affects the 8 biggest tickets (2%), and it bounds
-   the worst-case time/cost. (The current setting is a 40k-*character* budget ≈ 10k tokens, which is
-   much tighter and trims far more tickets — a 40k-*token* cap is the more generous, raw-text-friendly
-   choice.)
-3. **Apply the same 40k-token cap to historical tickets** shown as precedent, so a giant past ticket
-   can't blow up the prompt size during prediction.
-4. **Keep ~4 attachments** (maybe 5). Top-4 already covers all attachments for 90% of tickets; raising
-   it to 5 covers ~94%, and beyond that adds little.
-5. **Flag the 18% no-attachment tickets** — they run on the description alone (median ~358 tokens), so
-   they're inherently low-context and may be the hardest to predict.
+   LLM-written summary — most tickets are small enough.
+2. **Attachment count and token budget are one joint decision** — each attachment adds ~3k tokens up to
+   4, then jumps at 5. So we tune them together, not separately.
+3. **The 18% no-attachment tickets** run on the description alone (median ~358 tokens) — a low-context
+   cohort worth flagging.
+
+**Open (decided by the optimization grid, separate doc):**
+- The exact **token budget** and **attachment cap** combo — we have *not* fixed a number yet. The grid
+  shows, for every (cap, budget) pair, what % of tickets fit without truncation, so we pick the combo
+  that covers the most tickets for the least budget.
 
 ---
 
