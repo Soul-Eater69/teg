@@ -64,15 +64,23 @@ So "90% coverage" is blended across these — the 52% single-stream tickets are 
 
 ![Easy vs hard coverage](retrieval_charts/easy_hard.png)
 
-**How to read it.** Two ticket groups (easy = 1 stream, hard = 2+), each measured two ways:
+**How to read it.** Two ticket groups (**easy** = 1 stream, 193 tickets; **hard** = 2+, 180 tickets),
+each measured two ways:
 
 - **Blue — "Found MOST streams (avg)":** the average fraction of a ticket's streams that were found.
   Easy 92%, hard **88%** — nearly the same, so we find *most* of the answer even on hard tickets.
 - **Green — "Found EVERY stream":** how often *all* streams were found. Easy 92%, hard only **63%**.
 
-For **easy** tickets the two bars match (one stream, so "most" and "every" are the same). For **hard**
-tickets the gap (88% vs 63%) is the story: we usually catch the obvious streams but miss one or two from
-the long tail.
+In plain counts:
+
+- **Easy ticket:** has **1** correct Value Stream → found 92% of the time (≈ **178 of 193** easy tickets
+  get their one stream). With a single stream, "found most" and "found every" are the same — that's why
+  the two bars match.
+- **Hard ticket:** has **~5.6** correct Value Streams on average → the search finds **~4.9 of them**
+  (88%), but lands the *complete* set only 63% of the time (≈ **113 of 180** hard tickets).
+
+So the hard-ticket gap (88% vs 63%) is the story: on a ~5.6-stream ticket we usually catch ~4.9 of them
+but **miss one or two from the long tail**, so we rarely get *all* of them.
 
 ---
 
@@ -82,11 +90,14 @@ the long tail.
 
 **How to read it.** The x-axis is *how many past tickets we show* (6, 8, 10):
 
-- **Green — Avg coverage:** climbs only 90% → 94% across the three.
-- **Blue — Found everything:** climbs only 78% → 85%.
+- **Green — Avg coverage:** climbs only 90% → 94% across the three (≈ **2.9 → 3.0 of 3.2** streams found
+  per ticket).
+- **Blue — Found everything:** the share of tickets that get *all* their streams climbs only 78% → 85%
+  (≈ **291 → 317 of 373** tickets).
 
-Each extra ticket adds a little coverage, but with **diminishing returns**. **6 examples is enough** —
-more adds length without much benefit.
+Each extra ticket adds a little coverage, but with **diminishing returns** — going from 6 to 10 examples
+finds only ~0.1 more stream on a typical ticket. **6 examples is enough** — more adds length without
+much benefit.
 
 ---
 
@@ -97,11 +108,12 @@ more adds length without much benefit.
 **How to read it.** For each ticket, the position of the *first* pulled ticket that carries a correct
 Value Stream:
 
-- **Position 1 — 288 tickets:** for most tickets the very first result already carries a correct stream.
-- **Positions 2, 3, 4–10 — small:** a few need to look a little deeper.
-- **None — 9 tickets:** found nothing correct at all (the only true misses).
+- **Position 1 — 288 of 373 tickets (77%):** the very first result already carries a correct stream.
+- **Positions 2, 3, 4–10 — ~76 tickets total:** a few need to look a little deeper.
+- **None — 9 tickets (2%):** found nothing correct at all (the only true misses).
 
-So the search not only *finds* the right streams, it usually *ranks them first*.
+So the search not only *finds* the right streams, it usually *ranks them first* — for 3 in 4 tickets the
+top example is already on target.
 
 ---
 

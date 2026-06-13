@@ -146,12 +146,13 @@ def build() -> None:
          "few have 19). The more streams a ticket has, the harder it is to find them all — so the "
          "coverage numbers are an average across easy and hard tickets."),
         ("3. Hard tickets: we find most, but rarely all", c3,
-         "Two ticket groups (easy = 1 stream, hard = 2+), each measured two ways. BLUE 'found most' is "
-         "the average fraction of a ticket's streams found — easy 92%, hard 88% (nearly the same, so we "
-         "find most of the answer even on hard tickets). GREEN 'found every' is how often ALL streams "
-         "were found — easy 92%, hard only 63%. For easy tickets the two bars match (one stream, so "
-         "'most' and 'every' are the same). For hard tickets the gap (88% vs 63%) is the story: we "
-         "usually catch the obvious streams but miss one or two from the long tail."),
+         "Two ticket groups (easy = 1 stream, 193 tickets; hard = 2+, 180 tickets), each measured two "
+         "ways. BLUE 'found most' is the average fraction of a ticket's streams found — easy 92%, hard "
+         "88%. GREEN 'found every' is how often ALL streams were found — easy 92%, hard only 63%.\n\n"
+         "In plain counts: an easy ticket has 1 stream, found 92% of the time (~178 of 193). A hard "
+         "ticket has ~5.6 correct Value Streams on average — the search finds ~4.9 of them (88%) but "
+         "lands the complete set only 63% of the time (~113 of 180). So on a hard ticket we usually "
+         "catch ~4.9 of ~5.6 streams but miss one or two from the long tail."),
         ("4. Showing more tickets barely helps", c4,
          "Showing 6, 8, or 10 past tickets. Average coverage climbs only 90% → 94% and full coverage "
          "78% → 85% — small, diminishing gains for each extra ticket. So 6 examples is enough; more adds "
