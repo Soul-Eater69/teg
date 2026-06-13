@@ -17,11 +17,14 @@ and costlier).*
 - **Only ~half of attachments carry text** — of 1,579 attachments, 840 (53%) have extractable text; ~46%
   are images/unsupported. And **PowerPoint dominates by count + size but is the least text-dense — PDFs
   hold the real content.**
-- **The recommendation: keep 4 attachments + a ~24k-token budget** → **95% of tickets fit untouched and
-  99% of their content is kept**. 16k (lean/fast, 86% fit) and 32k (generous, 98%) are the alternatives;
-  the attachment cap stays 4 in every case.
-- **Why this combo:** the token budget is the real lever (the attachment cap barely changes coverage),
-  and keeping 3–4 attachments already retains ~all the content.
+- **The recommendation: a ~24k-token budget, packed greedily across attachments — no fixed count cap.**
+  At ~24k, **95% of tickets fit untouched**; 16k (lean/fast, 86%) and 32k (generous, 98%) are the other
+  operating points.
+- **Why budget, not a count:** the token budget is the real lever (a fixed attachment count barely
+  changes coverage). So instead of "keep 4," we **pack greedily**: description first, then each
+  attachment takes up to the remaining budget — small attachments don't waste their share, big ones
+  aren't over-truncated, and the **5th/6th attachment is included whenever it still fits** (6-attachment
+  tickets average ~24k, so they usually do).
 
 ---
 
@@ -112,7 +115,8 @@ Of **1,579** total attachments across the corpus:
 - **~726 (46%) are images or unsupported types** — no text at all (screenshots, diagrams, etc.).
 - **13 are empty** (supported but no extractable text).
 - **0 idea-card attachments were detected** — worth a flag: the "idea-card-first" selection rule never
-  fires on this corpus (the filename pattern isn't matching), so condense always falls back to top-4.
+  fires on this corpus (the filename pattern isn't matching), so condense always uses the ranked
+  attachments packed into the budget.
 
 ---
 
@@ -157,13 +161,15 @@ How much of a ticket's attachment text survives each cap:
 - **Keep 3 — 97%**, **Keep 4 — 99%:** retains essentially everything — the knee.
 - **Keep 5 / all — 100%:** the 5th-plus attachment adds under 3% — not worth the extra tokens.
 
-So **cap at 4** keeps virtually all the content while letting us drop the big, low-value tail.
+So roughly **3–4 attachments' worth of budget keeps ~all the content** — which is why the greedy
+budget-packing in section 9 (which naturally fits ~that many before the budget bites) loses almost
+nothing, without needing a hard count cap.
 
 ---
 
-## 9. Recommended operating points
+## 9. The strategy: greedy budget-packing (no fixed count)
 
-With the cap fixed at **4 attachments** (99% content kept), the budget sets coverage:
+The budget sets coverage:
 
 | Budget | Tickets that fit | Truncated | Best for |
 |---|---|---|---|
@@ -172,13 +178,23 @@ With the cap fixed at **4 attachments** (99% content kept), the budget sets cove
 | **24k** | **95%** | 5% | **balanced (recommended)** |
 | 32k | 98% | 2% | most generous |
 
-**Recommendation: keep 4 attachments + a 24k-token budget** — 95% of tickets fit untouched, 99% of their
-content is kept, and the 5% that exceed it are the genuinely huge decks (truncated at the budget rather
-than dropping a whole attachment). The **same budget should apply to historical tickets** shown as
-precedent, so a giant past ticket can't blow up the prompt.
+**How the budget is applied — greedily, not as a fixed attachment count:**
 
-*(For reference, the current condense step uses a 40k-character budget ≈ 10k tokens + top-4 — top-4 is
-already right; moving the budget to ~24k tokens fits far more raw text untouched.)*
+1. **Description** first (always, full) — it counts against the budget.
+2. **Attachments** in ranked order (text-rich formats first): each takes up to the **remaining**
+   budget; stop when the budget is exhausted.
+
+This is better than the old "keep top-4, split the budget evenly":
+- a single big deck gets the room it needs instead of an arbitrary 1/N slice;
+- small attachments don't waste their slice;
+- the **5th/6th attachment is included when it still fits** (a 6-attachment ticket averages ~24k, so it
+  usually does) — the old cap-4 would have thrown those away.
+
+The **same budget applies to historical tickets** shown as precedent, so a giant past ticket can't blow
+up the prompt.
+
+**Implemented:** `CondenseConfig.doc_char_budget = 96_000` (~24k tokens), greedy packing in
+`_consolidate`, `max_attachments = 8` (download/extract cap — the budget, not this count, caps content).
 
 ---
 
