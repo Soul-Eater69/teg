@@ -183,6 +183,11 @@ def build() -> None:
     t = doc.add_table(rows=1, cols=4); t.style = "Light Grid Accent 1"
     for c, h in zip(t.rows[0].cells, ["Measure (per ticket)", "Show 6", "Show 8", "Show 10"]):
         c.text = h
+    # explicit count row: avg correct streams surfaced per ticket (of ~3.2)
+    cells = t.add_row().cells
+    cells[0].text = "Streams found per ticket (of ~3.2 correct)"
+    for i, r in enumerate(d["recall"]):
+        cells[i + 1].text = f"~{r * 3.21:.1f}"
     for label, key in [("Avg coverage (fraction of streams found)", "recall"),
                        ("Found at least one correct stream", "hit"),
                        ("Found EVERY correct stream", "fully_covered")]:
