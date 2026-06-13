@@ -139,6 +139,22 @@ def main(cache_path: str, out_path: str) -> None:
         print(f"  truncate @ {b:>6,} : {captured/total_raw:>4.0%} of all content kept   "
               f"({_pct(untouched, n)} tickets untouched)")
 
+    # CHUNKING alternative (multi-vector, no content loss): 1 chunk per description + per attachment,
+    # sub-chunk any attachment over the embedding limit. How many vectors does that cost?
+    import math
+    embed_limit = 7_500  # ~30k-char embedding cap
+    att_toks = [int(a.get("tokenEst", 0)) for t in tickets.values() for a in t["attachments"]]
+    n_desc = sum(1 for t in tickets.values() if t["desc"])
+    under = sum(1 for v in att_toks if v <= embed_limit)
+    over = [v for v in att_toks if v > embed_limit]
+    sub = sum(math.ceil(v / embed_limit) for v in over)
+    total_chunks = n_desc + under + sub
+    print(f"\nChunking (1 vector per description + per attachment; sub-chunk if > {embed_limit:,} tokens):")
+    print(f"  attachments that fit one vector : {under}/{len(att_toks)} ({_pct(under, len(att_toks))})")
+    print(f"  attachments needing sub-chunks  : {len(over)} ({_pct(len(over), len(att_toks))})")
+    print(f"  total vectors in the index      : ~{total_chunks} (vs {n} single-vector = {total_chunks/n:.1f}x)")
+    print(f"  -> captures 100% of content, no summarization, each chunk fully embeddable")
+
     print(f"\nAvg RAW tokens by attachment count (description + all attachments):")
     by_count: dict[int, list[int]] = {}
     for p in per_ticket:
