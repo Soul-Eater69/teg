@@ -14,6 +14,9 @@ and costlier).*
   (max ~89k), driven by big PowerPoint decks.
 - **18% of tickets have no attachments** — they run on the short description alone (median ~358 tokens),
   a low-context cohort worth flagging.
+- **Only ~half of attachments carry text** — of 1,579 attachments, 840 (53%) have extractable text; ~46%
+  are images/unsupported. And **PowerPoint dominates by count + size but is the least text-dense — PDFs
+  hold the real content.**
 - **The recommendation: keep 4 attachments + a ~24k-token budget** → **95% of tickets fit untouched and
   99% of their content is kept**. 16k (lean/fast, 86% fit) and 32k (generous, 98%) are the alternatives;
   the attachment cap stays 4 in every case.
@@ -31,6 +34,13 @@ half the tickets are smaller. The top 10% reach ~19k, the top 5% ~26k, and the s
 **~89k** (one giant deck). The description alone is tiny (median ~358 tokens) — **attachments are what
 make a ticket big, and only for a minority.**
 
+The full distribution across all 374 tickets:
+
+![Combined text size per ticket](token_charts/text_dist.png)
+
+**142 of 374 tickets** have under 2k tokens of text; the bulk are under 8k; only **53 tickets** are over
+16k (the big-deck minority). The shape is a steep drop with a long right tail.
+
 ---
 
 ## 2. How many attachments does a ticket have?
@@ -43,12 +53,63 @@ Each bar is how many tickets have that many attachments:
 - **1–4 — 269 tickets (72%):** most tickets.
 - **5+ — 38 tickets (10%):** the content-heavy minority.
 
-Attachments are mostly **PowerPoint (49%)**, then PDF (33%) and Word (18%) — PowerPoint decks are why
-the size tail is so long (a single deck can be tens of thousands of tokens).
+---
+
+## 3. How big is each attachment?
+
+**By text (tokens):**
+
+![Per-attachment text size](token_charts/att_token_dist.png)
+
+Most attachments are small — **290 carry under 1k tokens, 204 are 1–2k.** Only 75 attachments are over
+8k tokens. So the typical attachment is light; a handful of big ones drive the tail.
+
+**By file size (on disk):**
+
+![Per-attachment file size](token_charts/att_byte_dist.png)
+
+Plenty of small files, but **226 attachments are over 2 MB** — the big PowerPoint decks. Median
+attachment is ~550 KB, but the largest is ~10 MB.
 
 ---
 
-## 3. More attachments → more tokens (and a jump at 5)
+## 4. PowerPoint is most common, but PDF carries the most text
+
+![File type: count vs text](token_charts/file_type_text.png)
+
+This is the standout finding. Comparing the three file types:
+
+| Type | How many | Avg text per file | File size | Text density |
+|---|---|---|---|---|
+| **PowerPoint** | 410 (most common) | 2,158 tokens | 2.42 MB (biggest) | **893 tokens/MB** (lowest) |
+| **PDF** | 277 | **5,908 tokens** (most) | 1.16 MB | **5,091 tokens/MB** (highest) |
+| **Word** | 153 | 1,051 tokens | 0.47 MB | 2,243 tokens/MB |
+
+- **PowerPoint dominates by count and by disk size, but is the *least* text-dense** — decks are mostly
+  images and layout, so a big 2.4 MB file yields only ~2.2k tokens.
+- **PDFs carry the most actual text** (5.9k tokens/file, 6× the density of PowerPoint). The real content
+  lives in the PDFs.
+
+*Implication: if attachments ever need trimming, dropping a big low-text PowerPoint costs little content;
+dropping a PDF costs a lot.*
+
+---
+
+## 5. Only half of attachments actually carry text
+
+![Extraction health](token_charts/extraction_health.png)
+
+Of **1,579** total attachments across the corpus:
+
+- **840 (53%) carry extracted text** — the PDFs, PowerPoints, and Word docs.
+- **~726 (46%) are images or unsupported types** — no text at all (screenshots, diagrams, etc.).
+- **13 are empty** (supported but no extractable text).
+- **0 idea-card attachments were detected** — worth a flag: the "idea-card-first" selection rule never
+  fires on this corpus (the filename pattern isn't matching), so condense always falls back to top-4.
+
+---
+
+## 6. More attachments → more tokens (and a jump at 5)
 
 ![Avg tokens by attachment count](token_charts/tokens_by_count.png)
 
@@ -63,7 +124,7 @@ budget together (next).
 
 ---
 
-## 4. The decision — budget is the real lever, not the cap
+## 7. The decision — budget is the real lever, not the cap
 
 ![Coverage vs budget](token_charts/coverage_curves.png)
 
@@ -79,7 +140,7 @@ the % of tickets whose text fits under it (no truncation).
 
 ---
 
-## 5. Keeping 3–4 attachments retains ~all the content
+## 8. Keeping 3–4 attachments retains ~all the content
 
 ![Content kept by cap](token_charts/content_kept.png)
 
@@ -93,7 +154,7 @@ So **cap at 4** keeps virtually all the content while letting us drop the big, l
 
 ---
 
-## 6. Recommended operating points
+## 9. Recommended operating points
 
 With the cap fixed at **4 attachments** (99% content kept), the budget sets coverage:
 
