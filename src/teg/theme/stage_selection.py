@@ -113,7 +113,35 @@ async def select_stages_for_all_traced(
         entry = by_vs.get(vs_id)
         resolved[vs_id] = _resolve(entry, i.stages)
         raw_picks[vs_id] = [item.stage_id for item in (entry.selected_stages if entry else [])]
+
+    # Salvage cross-VS mislinks: a stage id is globally unique to one value stream, so a pick that
+    # the model put under the WRONG value stream is reassigned to its true owner (if that VS is in
+    # the batch and doesn't already have it). The prompt's strict isolation should make this a no-op;
+    # this is the safety net so a mislinked-but-valid stage is recovered, not lost. Salvaged stages
+    # carry an empty reason (they were not reasoned under their owner).
+    _salvage_mislinks(active, raw_picks, resolved)
     return resolved, raw_picks
+
+
+def _salvage_mislinks(
+    active: list[StageSelectionInput],
+    raw_picks: dict[str, list[str]],
+    resolved: dict[str, list[SelectedStage]],
+) -> None:
+    owner_of = {s.stage_id: i for i in active for s in i.stages}  # stage id -> its owning input
+    for picker_vs, picks in raw_picks.items():
+        for stage_id in picks:
+            owner = owner_of.get(stage_id)
+            if owner is None or owner.value_stream.value_stream_id == picker_vs:
+                continue  # invalid id, or correctly placed - nothing to salvage
+            owner_vs = owner.value_stream.value_stream_id
+            current = resolved.get(owner_vs, [])
+            if any(s.stage_id == stage_id for s in current):
+                continue  # the owner already has it
+            stage = next(s for s in owner.stages if s.stage_id == stage_id)
+            resolved[owner_vs] = current + [
+                SelectedStage(stage_id=stage_id, stage_name=stage.stage_name, reason="")
+            ]
 
 
 async def select_stages(

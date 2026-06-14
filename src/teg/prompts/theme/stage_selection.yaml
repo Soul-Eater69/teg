@@ -46,6 +46,17 @@ system: |
   - Do not select generic governance, reporting, or compliance stages unless the card
     plausibly describes that work.
 
+  STAGE BOUNDARIES - pick by entrance/exit, not by which stage sounds most prominent:
+  - The work often SPANS a boundary between two adjacent stages. When the idea card's action
+    touches the exit of one stage AND the entrance of the next, include BOTH - do not collapse to
+    just the more prominent one. A correct stage is most often missed because a neighbouring stage
+    was picked in its place.
+  - Decide each candidate stage by whether the work falls within ITS entrance-to-exit scope, on
+    its own - not by comparing it to a stage you already chose. Two adjacent stages can both be
+    correct; choosing one does not rule out the other.
+  - If two adjacent stages are both plausible and you cannot cleanly separate them by their
+    criteria, include both rather than guessing which single one the architect meant.
+
   For each selected stage, give one short business-facing reason that cites the concrete
   idea-card phrase or action supporting it. Do not mention scores, ranks, prompts, or JSON.
 
