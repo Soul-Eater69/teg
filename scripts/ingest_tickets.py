@@ -102,12 +102,19 @@ async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: boo
         ingestion = build_idmt_ingestion(settings, catalogue_path=catalogue_path, embed=True)
         sem = asyncio.Semaphore(concurrency)
         results = await asyncio.gather(*(_ingest_one(ingestion, t, sem, failed, moved) for t in todo))
+        timings: list[dict] = []
         for result in results:
             if result is None:
                 continue
             idmt_docs.append(result.idmt_document)
             theme_docs.extend(result.theme_documents)
             historical_docs.append(result.historical_index_document)
+            timings.append({
+                "ticket_id": result.idmt_document.get("key") or "",
+                "extraction_seconds": result.extraction_seconds,
+                "summarization_seconds": result.summarization_seconds,
+            })
+        _report_timings(timings, out)
 
     # Persist BEFORE upload so the fetch+condense work is never lost to an upload failure.
     _write(out / "cosmos_idmt.json", idmt_docs)
@@ -143,6 +150,36 @@ async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: boo
 
 def _write(path: Path, docs: list[dict]) -> None:
     path.write_text(json.dumps(docs, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _stats(values: list[float]) -> dict:
+    """avg / min / median / p95 / max for a phase's per-ticket seconds."""
+    if not values:
+        return {}
+    s = sorted(values)
+    n = len(s)
+    return {
+        "n": n, "total": round(sum(s), 1), "avg": round(sum(s) / n, 2),
+        "min": round(s[0], 2), "median": round(s[n // 2], 2),
+        "p95": round(s[min(n - 1, int(0.95 * n))], 2), "max": round(s[-1], 2),
+    }
+
+
+def _report_timings(timings: list[dict], out: Path) -> None:
+    """Print + persist the extraction vs summarization phase timings for the run."""
+    if not timings:
+        return
+    extraction = _stats([t["extraction_seconds"] for t in timings])
+    summarization = _stats([t["summarization_seconds"] for t in timings])
+    print(f"\nper-ticket phase timing (n={extraction['n']}):")
+    print(f"  extraction     avg={extraction['avg']}s  median={extraction['median']}s  "
+          f"p95={extraction['p95']}s  max={extraction['max']}s  (total {extraction['total']}s)")
+    print(f"  summarization  avg={summarization['avg']}s  median={summarization['median']}s  "
+          f"p95={summarization['p95']}s  max={summarization['max']}s  (total {summarization['total']}s)")
+    (out / "ingest_timing.json").write_text(
+        json.dumps({"extraction": extraction, "summarization": summarization,
+                    "per_ticket": timings}, indent=2), encoding="utf-8")
+    print(f"  -> {out}/ingest_timing.json")
 
 
 if __name__ == "__main__":

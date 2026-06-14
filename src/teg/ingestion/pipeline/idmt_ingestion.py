@@ -31,6 +31,8 @@ class IngestedTicket:
     idmt_document: dict  # Cosmos IDMT/ER doc
     theme_documents: list[dict]  # Cosmos Theme docs
     historical_index_document: dict  # idp_teg_data search doc
+    extraction_seconds: float = 0.0  # condense phase timings (diagnostics)
+    summarization_seconds: float = 0.0
 
 
 class IdmtIngestion:
@@ -82,4 +84,6 @@ class IdmtIngestion:
             idmt_document=idmt_doc,
             theme_documents=theme_docs,
             historical_index_document=historical_doc,
+            extraction_seconds=condense_response.extraction_seconds,
+            summarization_seconds=condense_response.summarization_seconds,
         )

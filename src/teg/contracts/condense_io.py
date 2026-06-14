@@ -21,6 +21,10 @@ class CondenseResponse(CamelModel):
     condensed: CondensedTicket
     model: str
     prompt_version: str
+    # Per-phase wall-clock (diagnostics; like ThemeGenerationResponse.latency_ms). Extraction =
+    # attachment download + text extract + consolidate; summarization = the condense LLM pass.
+    extraction_seconds: float = 0.0
+    summarization_seconds: float = 0.0
 
 
 __all__ = ["CondenseRequest", "CondenseResponse", "CondensedTicket"]
