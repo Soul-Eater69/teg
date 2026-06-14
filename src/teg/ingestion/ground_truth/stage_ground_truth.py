@@ -43,6 +43,7 @@ PARENT_LINK_FIELD = "customfield_11401"
 STAGE_FIELD = "customfield_18700"
 
 _FUZZY_THRESHOLD = 0.86  # min ratio to accept a fuzzy stage-name match (summary fallback only)
+_CANCELLED_STATUSES = {"cancelled", "canceled", "rejected"}  # themes/epics in these states are skipped
 
 
 @dataclass(frozen=True)
@@ -150,13 +151,16 @@ async def _build_theme(
 ) -> ThemeStageGroundTruth | None:
     theme = await jira.get_issue(
         theme_key,
-        fields=["summary", "description", "issuelinks", value_stream_field,
+        fields=["summary", "description", "status", "issuelinks", value_stream_field,
                 fields.business_needs, fields.l2_capability, fields.l3_capability],
     )
     tf = theme.get("fields") or {}
     vs = parse_value_stream(tf.get(value_stream_field))
     if not vs:
         return None  # not a Value Stream theme - skip (e.g. a plain related issue)
+    if _is_cancelled(theme):
+        warnings.append(f"{theme_key}: skipped - theme status is {_status(theme)!r}")
+        return None
     vs_name, vs_id = vs
 
     catalogue_stages = stages_by_vs.get(vs_id) or []
@@ -195,7 +199,7 @@ async def _fetch_child_epics(
     ):
         for epic in await _safe_search(jira, jql, epic_fields):
             key = _clean(epic.get("key")).upper()
-            if key and key not in by_key and _issue_type(epic).lower() == "epic":
+            if key and key not in by_key and _issue_type(epic).lower() == "epic" and not _is_cancelled(epic):
                 by_key[key] = epic
 
     # Issue-link Epics on the Theme (implement links + plain Epic links). These come back
@@ -203,7 +207,7 @@ async def _fetch_child_epics(
     for link in _epic_link_keys(theme):
         if link not in by_key:
             epic = await _safe_get(jira, link, epic_fields)
-            if epic and _issue_type(epic).lower() == "epic":
+            if epic and _issue_type(epic).lower() == "epic" and not _is_cancelled(epic):
                 by_key[link] = epic
 
     return sorted(by_key.values(), key=lambda e: _clean(e.get("key")))
@@ -374,6 +378,15 @@ def _link_type_text(link_type: dict) -> str:
 def _issue_type(issue: dict) -> str:
     it = (issue.get("fields") or {}).get("issuetype") or issue.get("issuetype") or {}
     return _clean(it.get("name")) if isinstance(it, dict) else _clean(it)
+
+
+def _status(issue: dict) -> str:
+    st = (issue.get("fields") or {}).get("status") or issue.get("status") or {}
+    return _clean(st.get("name")) if isinstance(st, dict) else _clean(st)
+
+
+def _is_cancelled(issue: dict) -> bool:
+    return _status(issue).lower() in _CANCELLED_STATUSES
 
 
 def _option_text(value: dict) -> str:
