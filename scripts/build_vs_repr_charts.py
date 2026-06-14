@@ -23,10 +23,20 @@ ROWS = [
     ("raw + raw@1500", "raw", "raw@1500", "summary", 0.781, 26, 5.6, 0.902),
     ("raw + raw@3000", "raw", "raw@3000", "summary", 0.768, 24, 6.3, 0.902),
     ("raw + description", "raw", "description", "summary", 0.780, 31, 4.4, 0.902),
-    ("raw + raw@7k", "raw", "raw@7k", "summary", 0.780, 30, 9.4, 0.902),
-    ("raw@7k INDEX", "raw", "raw@7k", "raw@7k", 0.754, 23, 13.9, 0.843),
+    ("raw@7k retrieval", "raw@7k", "raw@3k", "raw@7k", 0.742, 23, 6.6, 0.840),
 ]
 _WINNER = "raw + summary"
+
+# New-ticket prompt budget (summary retrieval + summary historic; only the new ticket's raw cap
+# changes): the full ~24k raw beats a 7k cap - the extra context helps the LLM decide.
+PROMPT_BUDGET = [("raw @7k", 0.759, 26), ("raw @24k (full)", 0.780, 31)]
+
+# Latency split (retrieval vs the LLM-selection call) - retrieval is sub-second; the LLM call is
+# the whole cost and it tracks the historic block size.
+LATENCY_SPLIT = [
+    ("winner\n(summary historic)", 0.38, 3.7),
+    ("raw@3k historic", 0.79, 5.8),
+]
 
 
 def _bar(ax, labels, values, ylabel, title, fmt="{:.3f}", highlight=None, color="#4C78A8"):
@@ -73,7 +83,33 @@ def latency() -> None:
     fig.tight_layout(); fig.savefig(_OUT / "latency.png", dpi=130); plt.close(fig)
 
 
+def prompt_budget() -> None:
+    labels = [r[0] for r in PROMPT_BUDGET]
+    fig, ax = plt.subplots(figsize=(6, 4.2))
+    _bar(ax, labels, [r[1] for r in PROMPT_BUDGET], "micro F1",
+         "New-ticket prompt: full raw beats a 7k cap", highlight="raw @24k (full)")
+    ax.set_ylim(0.74, 0.79)
+    fig.tight_layout(); fig.savefig(_OUT / "prompt_budget.png", dpi=130); plt.close(fig)
+
+
+def latency_split() -> None:
+    labels = [r[0] for r in LATENCY_SPLIT]
+    retr = [r[1] for r in LATENCY_SPLIT]
+    llm = [r[2] for r in LATENCY_SPLIT]
+    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    x = range(len(labels))
+    ax.bar(x, retr, label="retrieval", color="#54A24B")
+    ax.bar(x, llm, bottom=retr, label="LLM selection", color="#4C78A8")
+    ax.set_xticks(list(x)); ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("seconds"); ax.set_title("Where the time goes (retrieval vs LLM)",
+                                           fontsize=12, weight="bold")
+    for i, (r, l) in enumerate(zip(retr, llm)):
+        ax.text(i, r + l, f"{r + l:.1f}s", ha="center", va="bottom", fontsize=9)
+    ax.legend(); ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout(); fig.savefig(_OUT / "latency_split.png", dpi=130); plt.close(fig)
+
+
 if __name__ == "__main__":
     _OUT.mkdir(parents=True, exist_ok=True)
-    f1_ladder(); retrieval_compare(); latency()
+    f1_ladder(); retrieval_compare(); latency(); prompt_budget(); latency_split()
     print(f"wrote charts to {_OUT}/")

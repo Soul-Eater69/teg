@@ -31,9 +31,11 @@ These are independent. The ladder below varies one at a time.
 | raw + raw@3000 | raw | raw@3000 | summary | 0.768 | 24% | 6.3s |
 | raw + description | raw | description | summary | 0.780 | 31% | 4.4s |
 | raw + raw@7k | raw | raw@7k | summary | 0.780 | 30% | 9.4s |
-| raw@7k INDEX | raw | raw@7k | **raw@7k** | 0.754* | 23% | 13.9s |
+| **raw@7k retrieval** | raw@7k | raw@7k | **raw@7k** | **0.742** | 23% | 6.6s |
 
-*raw@7k-index on 98 tickets (2 lost to an Azure Search timeout, scored as misses → ~1–2pts low).
+The last row drops the summary entirely (raw-embedded index + raw everything). On a clean 100/100
+with cheap raw@3k historic it lands at **0.742** — below the pack. (An earlier raw@7k-*historic*
+variant cost 13.9s avg / 132s max latency; dropping it to 3k fixed the latency but not the quality.)
 
 **How to read it:** the big step is summary→raw on the **new-ticket prompt** (0.715 → 0.786). After
 that, swapping the **historic block** representation barely moves F1 (0.768–0.786) — and the last
@@ -67,6 +69,24 @@ of a big ticket, so it retrieves **worse neighbours**. Since precedent drives re
 historic is picked ~0.82, *not-backed* only ~0.38), worse precedent → lower recall → ~3 F1 points
 lost. **Dropping the summary costs quality.**
 
+## Finding 4 — feed the new ticket's FULL raw; don't cap it
+
+![Prompt budget](vs_repr_charts/prompt_budget.png)
+
+Holding everything else at the winner (summary retrieval + summary historic) and changing only the
+new ticket's raw cap: the **full ~24k raw** scores **0.780** vs **0.759** at a 7k cap — capping loses
+~2 points and drops exact-set 31% → 26%. The extra context genuinely helps the LLM decide, and
+latency was identical (~4s) either way, so **there's no reason to cap the new-ticket prompt.**
+
+## Where the time goes (latency split)
+
+![Latency split](vs_repr_charts/latency_split.png)
+
+**How to read it:** splitting prediction latency into retrieval vs the LLM call shows **retrieval is
+sub-second** (0.38–0.79s) — never the bottleneck. The **LLM call is the whole cost**, and it tracks
+the **historic block size**: summary historic 3.7s vs raw@3k historic 5.8s. So the cheap lever for
+latency is the historic representation (keep it summary), not the new-ticket prompt.
+
 ## Latency / cost
 
 ![Latency by representation](vs_repr_charts/latency.png)
@@ -77,10 +97,32 @@ big-neighbour tickets. This is a *second* cost axis, independent of the summary 
 keep summaries, **never ship raw@7k historic** — it's ~4–5× the runtime token cost for zero quality.
 
 ## Verdict
-**Locked config: summary retrieval + raw new-ticket prompt + summary historic — F1 0.786.**
+**Locked config: summary retrieval + FULL ~24k raw new-ticket prompt + summary historic — F1 ≈0.78–0.79.**
 
 - The summary you "can't eliminate" turns out to be the thing buying your best retrieval.
-- Dropping summarization (raw@7k retrieval) is **worse on every quality axis and 2.4× slower** — not
-  a marginal trade, a regression. The summary-free idea is dead.
-- The new-ticket **raw** prompt is the real win (+0.07); keep it.
-- Use the **cheapest** historic block (summary) — raw/description add cost for nothing.
+- Dropping summarization (raw@7k retrieval) is a **regression** (0.780 → 0.742, historic-lane R
+  0.902 → 0.840), not a marginal trade. The summary-free idea is dead.
+- The new-ticket **raw** prompt is the real win (+0.07) — and feed it **in full**; a 7k cap costs ~2pts.
+- Use the **cheapest** historic block (summary): same quality as raw, and it's what keeps the LLM
+  call (the only real latency) at ~3.7s. Retrieval is sub-second regardless.
+
+## Final config (locked) — the per-ticket flow
+
+```
+1. New ticket raw, consolidated to <=24k tokens
+2. Summarize it (condense LLM)  -> summary fields
+3. Embed the summary -> search the index -> retrieve the 6 nearest past tickets
+4. Build the selection prompt:
+      - the new ticket's FULL raw (~24k)                 ("raw to decide")
+      - the 6 neighbours' summaries + their VS labels     ("summaries as precedent")
+      - the 50-VS catalogue
+5. LLM picks the VS  (count = requested; evidence mode, Recall prompt)
+```
+
+The two uses of "summary" are different field sets, by design:
+- **Retrieval query** embeds **all six** summary fields (generatedSummary + businessProblem +
+  businessCapability + keyTerms + stakeholders + systemsAndProducts).
+- **Historic block** shows each neighbour's **generatedSummary only** + its VS labels.
+
+So every new ticket contributes **both** its summary (to *find* precedent) and its full raw (to
+*decide*) — which is exactly why summarization stays in the pipeline. **No further changes.**
