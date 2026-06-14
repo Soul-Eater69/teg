@@ -86,9 +86,12 @@ def _fixture() -> FakeJira:
     # EPIC-X cancelled -> skipped. EPIC-T is To Do -> KEPT (a planned stage is still valid GT).
     epic_x = _epic("EPIC-X", "x", stage_field=stage_select, status="Cancelled")
     epic_t = _epic("EPIC-T", "t", stage_field=stage_select, status="To Do")
+    # EPIC-OLD: a field stage whose id is NOT in the catalogue (retired) -> dropped from GT.
+    epic_old = _epic("EPIC-OLD", "old",
+                     stage_field=_stage_select("Resolve Appeal {VSR001}", "Retired Stage {ST_OLD}"))
     return FakeJira(
         issues={"IDMT-1": ticket, "GROUP-9": theme, "REL-5": rel, "EPIC-3": epic3},
-        searches={'"Parent Link" = GROUP-9 AND issuetype = Epic': [epic2, epic_x, epic_t]},
+        searches={'"Parent Link" = GROUP-9 AND issuetype = Epic': [epic2, epic_x, epic_t, epic_old]},
     )
 
 

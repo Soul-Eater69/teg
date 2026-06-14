@@ -174,6 +174,14 @@ async def _build_theme(
         _stage_from_epic(epic, catalogue_stages=catalogue_stages, vs_name=vs_name, fields=fields)
         for epic in epics
     ]
+    # Drop GT stages whose id is not in the approved catalogue for this VS - they are retired /
+    # out-of-catalogue stages the model could never pick, so they are not fair GT. Unresolved
+    # (no id) stages are also dropped. This keeps coverage at 100% by construction.
+    allowed = {s.stage_id for s in catalogue_stages}
+    kept = [s for s in stages if s.stage_id and s.stage_id in allowed]
+    dropped = len(stages) - len(kept)
+    if dropped:
+        warnings.append(f"{theme_key}: dropped {dropped} GT stage(s) not in the approved catalogue")
     return ThemeStageGroundTruth(
         theme_key=theme_key,
         group_key=theme_key,  # the Theme is the GROUP-#### issue
@@ -183,7 +191,7 @@ async def _build_theme(
         business_needs=_coerce_text(tf.get(fields.business_needs)),
         l2_capabilities=parse_capabilities(tf.get(fields.l2_capability)),
         l3_capabilities=parse_capabilities(tf.get(fields.l3_capability)),
-        stages=stages,
+        stages=kept,
     )
 
 
