@@ -46,12 +46,24 @@ class HttpxJiraClient:
         return resp.json() or {}
 
     async def search(self, jql: str, *, fields: Sequence[str]) -> list[dict]:
-        resp = await self._http.get(
-            f"/rest/api/{self._api}/search",
-            params={"jql": jql, "maxResults": "100", "fields": ",".join(fields)},
-        )
-        resp.raise_for_status()
-        return list((resp.json() or {}).get("issues") or [])
+        # Page through ALL results - a theme can have >100 child epics, and a single 100-cap page
+        # would silently drop the rest. Loop startAt until we've fetched 'total'.
+        issues: list[dict] = []
+        start = 0
+        while True:
+            resp = await self._http.get(
+                f"/rest/api/{self._api}/search",
+                params={"jql": jql, "startAt": str(start), "maxResults": "100",
+                        "fields": ",".join(fields)},
+            )
+            resp.raise_for_status()
+            body = resp.json() or {}
+            page = body.get("issues") or []
+            issues.extend(page)
+            total = int(body.get("total") or 0)
+            start += len(page)
+            if not page or start >= total:
+                return issues
 
     async def discover_field_id(self, field_name: str) -> str:
         resp = await self._http.get(f"/rest/api/{self._api}/field")
