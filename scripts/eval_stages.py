@@ -135,7 +135,9 @@ def _load_gt(path: str) -> dict[str, dict[str, dict]]:
     return out
 
 
-def _condensed_context(props: dict, *, raw: bool, raw_budget: int) -> CondensedContext:
+def _condensed_context(
+    props: dict, *, raw: bool, raw_budget: int, signals: dict | None = None
+) -> CondensedContext:
     if raw:
         fields = SummaryFields(
             generated_summary=str(props.get("rawText") or "")[:raw_budget],
@@ -150,7 +152,9 @@ def _condensed_context(props: dict, *, raw: bool, raw_budget: int) -> CondensedC
             stakeholders=list(props.get("stakeholders") or []),
             systems_and_products=list(props.get("systemsAndProducts") or []),
         )
-    return CondensedContext(summary_fields=fields, generation_signals=GenerationSignals())
+    # Generation signals from the sidecar (extract_signals.py); empty when absent -> blind selection.
+    gen = GenerationSignals.model_validate(signals) if signals else GenerationSignals()
+    return CondensedContext(summary_fields=fields, generation_signals=gen)
 
 
 # ---------------------------------------------------------------------------- #
@@ -168,10 +172,11 @@ def _pair_row(predicted: list, gt: set[str], candidate_ids: set[str]) -> dict:
 
 async def _eval_ticket(
     ticket_id: str, props: dict, gt_by_vs: dict[str, dict], *,
-    catalogue: StageCatalogue, llm, args, sem,
+    catalogue: StageCatalogue, llm, args, sem, signals: dict | None = None,
 ) -> dict:
     async with sem:
-        ctx = _condensed_context(props, raw=(args.input == "raw"), raw_budget=args.raw_budget)
+        ctx = _condensed_context(props, raw=(args.input == "raw"), raw_budget=args.raw_budget,
+                                 signals=signals)
         inputs: list[StageSelectionInput] = []
         gt_ids: dict[str, set[str]] = {}
         cand_ids: dict[str, set[str]] = {}
@@ -226,6 +231,12 @@ async def main(args: argparse.Namespace) -> None:
     condensed = _load_condensed(args.condensed)
     gt = _load_gt(args.gt)
     catalogue = StageCatalogue.from_catalogue(load_value_stream_catalogue(args.catalogue))
+    signals_by_key: dict[str, dict] = (
+        json.loads(Path(args.signals).read_text(encoding="utf-8")) if args.signals
+        and Path(args.signals).exists() else {}
+    )
+    if args.signals:
+        print(f"generation signals: {len(signals_by_key)} tickets loaded from {args.signals}")
 
     tickets = [t for t in gt if t in condensed]
     # Only tickets with enough GT to be discriminating: >= --min-vs value streams that carry stages,
@@ -277,7 +288,8 @@ async def main(args: argparse.Namespace) -> None:
         run_args = argparse.Namespace(**{**vars(args), "input": input_repr})
         print(f"\n=== input={input_repr} | mode={args.mode} | {len(tickets)} tickets ===")
         rows = await asyncio.gather(*(
-            _eval_ticket(t, condensed[t], gt[t], catalogue=catalogue, llm=llm, args=run_args, sem=sem)
+            _eval_ticket(t, condensed[t], gt[t], catalogue=catalogue, llm=llm, args=run_args,
+                         sem=sem, signals=signals_by_key.get(t))
             for t in tickets
         ))
         # Coverage = the recall ceiling: are the GT stage ids even in the catalogue the LLM picks
@@ -330,6 +342,8 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate stage selection vs Jira stage GT.")
     p.add_argument("condensed", help="condensed/index docs json (e.g. out/idmt/cosmos_idmt.json)")
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json")
+    p.add_argument("--signals", default="", help="generation-signals sidecar (extract_signals.py); "
+                   "populates businessSolutionObjectives - without it stage selection is blind")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
     p.add_argument("--mode", choices=["per_vs", "one_call", "both"], default="both")
     p.add_argument("--input", choices=["summary", "raw", "both"], default="summary")
