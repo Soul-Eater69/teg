@@ -72,3 +72,109 @@ async def explain_drops(
     )
     result = await llm_client.complete(system=_SYSTEM, user=user, schema=DropExplanations)
     return {e.entity_id: e for e in result.explanations}
+
+
+# --------------------------------------------------------------------------- #
+# Level B: score EVERY candidate, so we can see how close a dropped GT was to the cut
+# --------------------------------------------------------------------------- #
+
+_SCORE_SYSTEM = (
+    "You are scoring how relevant each value-stream candidate is to a ticket, independently. "
+    "For EVERY candidate id below, give a relevance score from 0.0 (irrelevant) to 1.0 (clearly "
+    "central to this ticket's work). Score each on its own merits - do NOT limit how many are "
+    "high. Judge only from the ticket and the candidate blocks shown."
+)
+
+
+class CandidateScore(CamelModel):
+    entity_id: str
+    score: float = 0.0
+
+
+class CandidateScores(CamelModel):
+    scores: list[CandidateScore] = Field(default_factory=list)
+
+
+async def score_candidates(
+    *,
+    query: str,
+    review_pool: list[ValueStreamCandidate],
+    llm_client: LLMClient,
+) -> dict[str, float]:
+    """Return {entity_id: 0..1 relevance} for every pool candidate (independent scoring).
+
+    Lets eval compute a dropped GT's MARGIN to the cut: if a dropped GT scores >= a candidate the
+    model actually picked, the selection contradicted its own relevance judgement (a near-miss the
+    prompt can likely recover); if it scores far below, the drop is a genuine low-relevance call.
+    """
+    if not review_pool:
+        return {}
+    user = (
+        f"TICKET:\n{query}\n\n"
+        f"CANDIDATE BLOCKS:\n{render_candidate_blocks(review_pool)}\n\n"
+        f"Score every candidate id (0.0-1.0)."
+    )
+    result = await llm_client.complete(system=_SCORE_SYSTEM, user=user, schema=CandidateScores)
+    return {s.entity_id: max(0.0, min(1.0, s.score)) for s in result.scores}
+
+
+# --------------------------------------------------------------------------- #
+# Level C: comparative probe - why these picks over THIS dropped GT, specifically
+# --------------------------------------------------------------------------- #
+
+SwapReason = Literal[
+    "picks_more_specific",  # the picks match the ticket more precisely than the dropped GT
+    "dropped_too_broad",  # the dropped GT is broad/downstream, only loosely implied
+    "no_evidence_for_dropped",  # nothing in the ticket points to the dropped GT
+    "picks_more_prominent",  # the ticket emphasises the picks' area, the dropped GT is secondary
+    "dropped_is_valid_should_have_picked",  # on reflection the dropped GT is as applicable as a pick
+    "other",
+]
+
+_SWAP_SYSTEM = (
+    "You are auditing one value-stream selection. The model picked some value streams for a ticket "
+    "and left out one that was actually correct (ground truth). Explain, grounded in THIS ticket's "
+    "evidence, why the picks won out over the left-out one. Choose the single best code: "
+    "picks_more_specific (picks match the ticket more precisely), dropped_too_broad (the left-out "
+    "one is broad/downstream, only loosely implied), no_evidence_for_dropped (nothing in the ticket "
+    "points to it), picks_more_prominent (the ticket emphasises the picks' area), "
+    "dropped_is_valid_should_have_picked (it is genuinely as applicable as a pick - a real miss), "
+    "other. Add a one-line note citing the ticket."
+)
+
+
+class SwapExplanation(CamelModel):
+    dropped_id: str
+    reason_code: SwapReason = "other"
+    note: str = ""
+
+
+class SwapExplanations(CamelModel):
+    explanations: list[SwapExplanation] = Field(default_factory=list)
+
+
+async def explain_swaps(
+    *,
+    query: str,
+    review_pool: list[ValueStreamCandidate],
+    picked_ids: list[str],
+    dropped_ids: list[str],
+    llm_client: LLMClient,
+) -> dict[str, SwapExplanation]:
+    """Comparative: for each dropped GT, why the picks beat IT (richer than the post-hoc bucket)."""
+    if not dropped_ids:
+        return {}
+    by_id = {c.value_stream_id: c for c in review_pool}
+    picked = [by_id[i].value_stream_name for i in picked_ids if i in by_id]
+    asked = [f"{i} ({by_id[i].value_stream_name})" for i in dropped_ids if i in by_id]
+    if not asked or not picked:
+        return {}
+    user = (
+        f"TICKET:\n{query}\n\n"
+        f"PICKED value streams: {', '.join(picked)}\n\n"
+        f"CANDIDATE BLOCKS (what the model saw):\n{render_candidate_blocks(review_pool)}\n\n"
+        f"For each of these CORRECT-but-left-out value streams, explain why the picks beat it:\n"
+        + "\n".join(asked)
+    )
+    result = await llm_client.complete(system=_SWAP_SYSTEM, user=user, schema=SwapExplanations)
+    return {e.dropped_id: e for e in result.explanations}
