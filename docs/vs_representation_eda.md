@@ -54,15 +54,15 @@ raw — they go to different places:
 
 Columns = the form used in each of the three places (see the terms table above).
 
-| run | new-ticket prompt | historic block | retrieval query | **F1** | exact-set | avg latency |
-|---|---|---|---|---|---|---|
-| all-summary | summary | summary | summary | 0.715 | 23% | 4.2s |
-| **raw + summary** | **raw** | **summary** | **summary** | **0.786** | **36%** | 5.8s |
-| raw + raw@1500 | raw | raw@1500 | summary | 0.781 | 26% | 5.6s |
-| raw + raw@3000 | raw | raw@3000 | summary | 0.768 | 24% | 6.3s |
-| raw + description | raw | description | summary | 0.780 | 31% | 4.4s |
-| raw + raw@7k | raw | raw@7k | summary | 0.780 | 30% | 9.4s |
-| **raw@7k retrieval** | raw@7k | raw@7k | **raw@7k** | **0.742** | 23% | 6.6s |
+| run | new-ticket prompt | historic block | retrieval query | **F1 (= P = R)** | avg latency |
+|---|---|---|---|---|---|
+| all-summary | summary | summary | summary | 0.715 | 4.2s |
+| **raw + summary** | **raw** | **summary** | **summary** | **0.786** | 5.8s |
+| raw + raw@1500 | raw | raw@1500 | summary | 0.781 | 5.6s |
+| raw + raw@3000 | raw | raw@3000 | summary | 0.768 | 6.3s |
+| raw + description | raw | description | summary | 0.780 | 4.4s |
+| raw + raw@7k | raw | raw@7k | summary | 0.780 | 9.4s |
+| **raw@7k retrieval** | raw@7k | raw@7k | **raw@7k** | **0.742** | 6.6s |
 
 The last row drops the summary entirely (raw-embedded index + raw everything). On a clean 100/100
 with cheap raw@3k historic it lands at **0.742** — below the pack. (An earlier raw@7k-*historic*
@@ -73,35 +73,14 @@ that, swapping the **historic block** representation barely moves F1 (0.768–0.
 bar (raw@7k *retrieval*) drops *below* the pack. So the prompt is the lever, the historic block is a
 wash, and raw retrieval is a regression.
 
-## Precision, recall & exact-set
-
-**At `count=gt`, micro F1 = precision = recall.** The model returns exactly the GT count, so the
-predicted set is the same size as GT → `tp+fp = tp+fn` → P = R = F1. **So every F1 above is also that
-run's precision and recall** (winner: P = R = F1 = 0.786). That's *why* we use `count=gt` — one
-honest number, no count-generosity inflating recall.
-
-**exact-set** = the share of tickets where the predicted VS set is **exactly** the GT set — every
-correct VS picked and **zero** wrong (`fp = 0` *and* `fn = 0`). It's all-or-nothing per ticket, so
-it's far stricter than F1 (which gives partial credit for getting *some* of the VS right). The winner
-scores F1 0.786 but only **36% perfectly right** — on the other ~64% it's partially correct.
-
-The **rank metrics P@6 / R@6** *do* differ from F1 — precision/recall of the GT inside the top-6
-retrieved candidates (a retrieval-quality view, before the LLM's final pick):
-
-| run | F1 (= P = R) | P@6 | R@6 | exact-set |
-|---|---|---|---|---|
-| all-summary | 0.715 | 0.741 | 0.648 | 23% |
-| **raw + summary (winner)** | **0.786** | **0.815** | **0.715** | **36%** |
-| raw + raw@1500 | 0.781 | 0.792 | 0.697 | 26% |
-| raw + raw@3000 | 0.768 | 0.779 | 0.683 | 24% |
-| raw + description | 0.780 | 0.809 | 0.708 | 31% |
-| raw + raw@7k | 0.780 | 0.796 | 0.697 | 30% |
-| raw@7k retrieval | 0.742 | 0.762 | 0.663 | 23% |
+> **Note on the numbers:** because we request exactly the GT count (`count=gt`), each **F1** above is
+> also that run's **precision and recall** (they're equal when the predicted set is the same size as
+> GT). So "F1 0.786" means P = R = F1 = 0.786.
 
 ## Finding 1 — the lever is the NEW-TICKET prompt
-Feeding the new ticket's **raw text** instead of its summary is **+0.071 F1 (0.715 → 0.786)** and
-nearly doubles exact-set (23% → 36%). Retrieval is already perfect at surfacing candidates (every GT
-reaches the LLM), so all of this gain is the LLM *choosing* better when it sees the full ticket.
+Feeding the new ticket's **raw text** instead of its summary is **+0.071 F1 (0.715 → 0.786)**.
+Retrieval is already perfect at surfacing candidates (every GT reaches the LLM), so all of this gain
+is the LLM *choosing* better when it sees the full ticket.
 
 ## Finding 2 — the historic block representation is a wash (so use the cheapest)
 Among the raw-prompt runs the historic block spans only 0.768–0.786: summary (0.786) ≈ description
@@ -131,8 +110,8 @@ lost. **Dropping the summary costs quality.**
 
 Holding everything else at the winner (summary retrieval + summary historic) and changing only the
 new ticket's raw cap: the **full ~24k raw** scores **0.780** vs **0.759** at a 7k cap — capping loses
-~2 points and drops exact-set 31% → 26%. The extra context genuinely helps the LLM decide, and
-latency was identical (~4s) either way, so **there's no reason to cap the new-ticket prompt.**
+~2 points of F1. The extra context genuinely helps the LLM decide, and latency was identical (~4s)
+either way, so **there's no reason to cap the new-ticket prompt.**
 
 ## Where the time goes (latency split)
 
