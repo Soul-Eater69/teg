@@ -40,7 +40,18 @@ def test_parse_value_stream_stage_takes_the_stage_segment() -> None:
     assert parse_value_stream_stage({"value": "A {V1} - B {S2}"}) == ("B", "S2")
 
 
+def test_parse_value_stream_stage_cascading_select() -> None:
+    # The real field shape: a cascading select - parent = VS, child = stage. Take the CHILD.
+    raw = {
+        "value": "Fulfill Value-Based Care Arrangement {VSR00074595}",
+        "id": "42532",
+        "child": {"value": "Determine Payment and Funding {VSS00074635}", "id": "42600"},
+    }
+    assert parse_value_stream_stage(raw) == ("Determine Payment and Funding", "VSS00074635")
+
+
 def test_parse_value_stream_stage_none_without_a_stage() -> None:
     assert parse_value_stream_stage(None) is None
     assert parse_value_stream_stage("Resolve Appeal {VSR001}") is None  # VS only, no stage segment
+    assert parse_value_stream_stage({"value": "Resolve Appeal {VSR001}"}) is None  # parent only, no child
     assert parse_value_stream_stage("no braces") is None

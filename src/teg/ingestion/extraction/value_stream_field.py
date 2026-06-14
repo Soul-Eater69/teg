@@ -37,11 +37,11 @@ def parse_value_stream(raw: object) -> tuple[str, str] | None:
 def parse_value_stream_stage(raw: object) -> tuple[str, str] | None:
     """Return (stage name, stage id) from an Epic's "Value Stream Stage" field, or None.
 
-    The field carries both the value stream and its stage as
-    ``<vs name> {<vs id>} - <stage name> {<stage id>}`` (e.g.
-    ``Configure Price {VS1024} - Quote Setup {VSS5}``). We want the STAGE - the last segment. A
-    lone segment is the value stream only (no stage selected), so returns None. Tolerates a Jira
-    select object / list like :func:`parse_value_stream`.
+    The field is a Jira CASCADING SELECT: the parent option is the value stream and the child
+    option is the stage, so the value comes back as
+    ``{"value": "<vs> {vs_id}", "child": {"value": "<stage> {stage_id}"}}`` - the stage is the
+    CHILD. It also tolerates the flat string form ``<vs> {vs_id} - <stage> {stage_id}`` (stage =
+    the last segment) and a list (first that parses). Returns None when no stage is present.
     """
     if raw is None:
         return None
@@ -52,10 +52,22 @@ def parse_value_stream_stage(raw: object) -> tuple[str, str] | None:
                 return parsed
         return None
     if isinstance(raw, dict):
+        child = raw.get("child")
+        if isinstance(child, dict):  # cascading select: the stage is the child option
+            return _parse_segment(child.get("value") or child.get("name") or "")
+        # No child -> only the value stream is selected (no stage), unless the flat string carries both.
         raw = raw.get("value") or raw.get("name") or ""
     segments = list(_SEGMENT.finditer(str(raw)))
-    if len(segments) < 2:  # need both VS and stage; one segment = VS only, no stage
+    if len(segments) < 2:  # one segment = VS only, no stage
         return None
     last = segments[-1]
     name = re.sub(r"^\s*[-–—]\s*", "", last.group("name").strip())  # drop the " - " lead
     return name.strip(), last.group("id").strip()
+
+
+def _parse_segment(text: object) -> tuple[str, str] | None:
+    """Parse a single "<name> {<id>}" (e.g. a cascading child option) into (name, id)."""
+    match = _SEGMENT.search(str(text or ""))
+    if not match:
+        return None
+    return match.group("name").strip(), match.group("id").strip()

@@ -46,10 +46,15 @@ class FakeJira:
         return self._searches.get(jql, [])
 
 
-def _epic(key: str, summary: str, *, stage_field: str | None = None, status: str = "In Progress") -> dict:
+def _stage_select(vs: str, stage: str) -> dict:
+    """The Value Stream Stage field's cascading-select shape: parent = VS, child = stage."""
+    return {"value": vs, "child": {"value": stage}}
+
+
+def _epic(key: str, summary: str, *, stage_field: object = None, status: str = "In Progress") -> dict:
     return {"key": key, "fields": {
         "summary": summary, "issuetype": {"name": "Epic"}, "status": {"name": status},
-        "customfield_18700": stage_field,  # Value Stream Stage field
+        "customfield_18700": stage_field,  # Value Stream Stage (cascading select)
     }}
 
 
@@ -73,16 +78,14 @@ def _fixture() -> FakeJira:
         ],
     }}
     rel = {"key": "REL-5", "fields": {"summary": "unrelated", "Business Value Stream": None}}
-    # EPIC-2: stage read straight from the Value Stream Stage field (authoritative).
-    epic2 = _epic("EPIC-2", "Some unrelated epic title",
-                  stage_field="Resolve Appeal {VSR001} - Intake & Triage {ST1}")
+    stage_select = _stage_select("Resolve Appeal {VSR001}", "Intake & Triage {ST1}")
+    # EPIC-2: stage read straight from the Value Stream Stage cascading field (authoritative).
+    epic2 = _epic("EPIC-2", "Some unrelated epic title", stage_field=stage_select)
     # EPIC-3: field empty -> falls back to canonicalizing the summary against the catalogue.
     epic3 = _epic("EPIC-3", "Resolve Appeal Decision")
     # EPIC-X cancelled -> skipped. EPIC-T is To Do -> KEPT (a planned stage is still valid GT).
-    epic_x = _epic("EPIC-X", "x", stage_field="Resolve Appeal {VSR001} - Intake & Triage {ST1}",
-                   status="Cancelled")
-    epic_t = _epic("EPIC-T", "t", stage_field="Resolve Appeal {VSR001} - Intake & Triage {ST1}",
-                   status="To Do")
+    epic_x = _epic("EPIC-X", "x", stage_field=stage_select, status="Cancelled")
+    epic_t = _epic("EPIC-T", "t", stage_field=stage_select, status="To Do")
     return FakeJira(
         issues={"IDMT-1": ticket, "GROUP-9": theme, "REL-5": rel, "EPIC-3": epic3},
         searches={'"Parent Link" = GROUP-9 AND issuetype = Epic': [epic2, epic_x, epic_t]},
