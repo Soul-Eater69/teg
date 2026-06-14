@@ -69,9 +69,14 @@ class HttpxJiraClient:
         resp = await self._http.get(f"/rest/api/{self._api}/field")
         resp.raise_for_status()
         wanted = field_name.strip().lower()
-        for field in resp.json() or []:
-            if str(field.get("name") or "").strip().lower() == wanted:
-                return str(field.get("id") or "")
+        catalogue = [(str(f.get("id") or ""), str(f.get("name") or "").strip()) for f in resp.json() or []]
+        # Exact name match first, then a forgiving substring match (registry names vary slightly).
+        for fid, name in catalogue:
+            if name.lower() == wanted:
+                return fid
+        for fid, name in catalogue:
+            if wanted in name.lower():
+                return fid
         return ""
 
 
