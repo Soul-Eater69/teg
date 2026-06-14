@@ -175,10 +175,15 @@ async def _eval_ticket(
         inputs: list[StageSelectionInput] = []
         gt_ids: dict[str, set[str]] = {}
         cand_ids: dict[str, set[str]] = {}
+        coverage: list[tuple[int, int]] = []  # (GT stages in the catalogue, GT stages total) per VS
+        skipped_vs = 0  # VS whose id has no catalogue entry at all
         for vs_id, entry in gt_by_vs.items():
             stages = catalogue.stages_for(vs_id)
             if not stages:  # no catalogue entry -> can't predict/score this VS
+                skipped_vs += 1
                 continue
+            cand = {s.stage_id for s in stages}
+            coverage.append((len(entry["stages"] & cand), len(entry["stages"])))
             inputs.append(StageSelectionInput(
                 value_stream=ApprovedValueStream(value_stream_id=vs_id, value_stream_name=entry["name"]),
                 value_stream_description=catalogue.description_for(vs_id),
@@ -186,11 +191,13 @@ async def _eval_ticket(
                 stages=stages,
             ))
             gt_ids[vs_id] = entry["stages"]
-            cand_ids[vs_id] = {s.stage_id for s in stages}
+            cand_ids[vs_id] = cand
+        base = {"ticket_id": ticket_id, "per_vs": [], "one_call": [], "mislink": [],
+                "coverage": coverage, "skipped_vs": skipped_vs}
         if not inputs:
-            return {"ticket_id": ticket_id, "per_vs": [], "one_call": [], "mislink": []}
+            return base
 
-        result: dict = {"ticket_id": ticket_id, "per_vs": [], "one_call": [], "mislink": []}
+        result: dict = base
         if args.mode in ("per_vs", "both"):
             per = await asyncio.gather(*(
                 select_stages(condensed=ctx, value_stream=i.value_stream,
@@ -238,6 +245,19 @@ async def main(args: argparse.Namespace) -> None:
             _eval_ticket(t, condensed[t], gt[t], catalogue=catalogue, llm=llm, args=run_args, sem=sem)
             for t in tickets
         ))
+        # Coverage = the recall ceiling: are the GT stage ids even in the catalogue the LLM picks
+        # from? Low coverage = a stage-id mismatch between the GT field and the catalogue, not a
+        # model failure - so we print it BEFORE the metrics.
+        cov = [c for r in rows for c in r.get("coverage", [])]
+        in_cat = sum(a for a, _ in cov)
+        gt_total = sum(b for _, b in cov)
+        skipped = sum(r.get("skipped_vs", 0) for r in rows)
+        print(f"  GT-in-catalogue coverage: {in_cat}/{gt_total} stage ids "
+              f"({_div(in_cat, gt_total):.0%}) across {len(cov)} scored VS; "
+              f"{skipped} VS skipped (id not in catalogue)")
+        if gt_total and _div(in_cat, gt_total) < 0.5:
+            print("  [!] LOW coverage - GT stage ids mostly absent from the catalogue: likely an "
+                  "id-space mismatch (the eval can't credit a GT stage the LLM can't pick).")
         for mode in (("per_vs", "one_call") if args.mode == "both" else (args.mode,)):
             pairs = [p for r in rows for p in r[mode]]
             if not pairs:
