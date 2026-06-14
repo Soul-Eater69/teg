@@ -43,7 +43,8 @@ PARENT_LINK_FIELD = "customfield_11401"
 STAGE_FIELD = "customfield_18700"
 
 _FUZZY_THRESHOLD = 0.86  # min ratio to accept a fuzzy stage-name match (summary fallback only)
-_CANCELLED_STATUSES = {"cancelled", "canceled", "rejected"}  # themes/epics in these states are skipped
+# Themes/epics in these states are NOT real GT: cancelled = dropped; to do = not yet committed.
+_SKIP_STATUSES = {"cancelled", "canceled", "to do", "todo"}
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,7 @@ async def _build_theme(
     vs = parse_value_stream(tf.get(value_stream_field))
     if not vs:
         return None  # not a Value Stream theme - skip (e.g. a plain related issue)
-    if _is_cancelled(theme):
+    if _skip_status(theme):
         warnings.append(f"{theme_key}: skipped - theme status is {_status(theme)!r}")
         return None
     vs_name, vs_id = vs
@@ -199,7 +200,7 @@ async def _fetch_child_epics(
     ):
         for epic in await _safe_search(jira, jql, epic_fields):
             key = _clean(epic.get("key")).upper()
-            if key and key not in by_key and _issue_type(epic).lower() == "epic" and not _is_cancelled(epic):
+            if key and key not in by_key and _issue_type(epic).lower() == "epic" and not _skip_status(epic):
                 by_key[key] = epic
 
     # Issue-link Epics on the Theme (implement links + plain Epic links). These come back
@@ -207,7 +208,7 @@ async def _fetch_child_epics(
     for link in _epic_link_keys(theme):
         if link not in by_key:
             epic = await _safe_get(jira, link, epic_fields)
-            if epic and _issue_type(epic).lower() == "epic" and not _is_cancelled(epic):
+            if epic and _issue_type(epic).lower() == "epic" and not _skip_status(epic):
                 by_key[link] = epic
 
     return sorted(by_key.values(), key=lambda e: _clean(e.get("key")))
@@ -385,8 +386,9 @@ def _status(issue: dict) -> str:
     return _clean(st.get("name")) if isinstance(st, dict) else _clean(st)
 
 
-def _is_cancelled(issue: dict) -> bool:
-    return _status(issue).lower() in _CANCELLED_STATUSES
+def _skip_status(issue: dict) -> bool:
+    """True if the issue's status means it isn't real GT (cancelled or not-yet-committed To Do)."""
+    return _status(issue).lower() in _SKIP_STATUSES
 
 
 def _option_text(value: dict) -> str:

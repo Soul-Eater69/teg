@@ -78,11 +78,12 @@ def _fixture() -> FakeJira:
                   stage_field="Resolve Appeal {VSR001} - Intake & Triage {ST1}")
     # EPIC-3: field empty -> falls back to canonicalizing the summary against the catalogue.
     epic3 = _epic("EPIC-3", "Resolve Appeal Decision")
-    # EPIC-X: a cancelled child Epic - must be skipped entirely.
+    # EPIC-X cancelled, EPIC-T still To Do - both must be skipped (not real GT).
     epic_x = _epic("EPIC-X", "Resolve Appeal {VSR001} - Intake & Triage {ST1}", status="Cancelled")
+    epic_t = _epic("EPIC-T", "Resolve Appeal {VSR001} - Intake & Triage {ST1}", status="To Do")
     return FakeJira(
         issues={"IDMT-1": ticket, "GROUP-9": theme, "REL-5": rel, "EPIC-3": epic3},
-        searches={'"Parent Link" = GROUP-9 AND issuetype = Epic': [epic2, epic_x]},
+        searches={'"Parent Link" = GROUP-9 AND issuetype = Epic': [epic2, epic_x, epic_t]},
     )
 
 
@@ -104,7 +105,8 @@ def test_build_ticket_stage_ground_truth_end_to_end() -> None:
     assert theme.l3_capabilities == ["Case Intake", "Triage Routing"]
 
     by_key = {s.epic_key: s for s in theme.stages}
-    assert set(by_key) == {"EPIC-2", "EPIC-3"}  # parent-link + issue-link Epic; EPIC-X cancelled, skipped
+    # parent-link + issue-link Epic; EPIC-X (cancelled) and EPIC-T (to do) skipped; deduped by key.
+    assert set(by_key) == {"EPIC-2", "EPIC-3"}
 
     # EPIC-2: stage from the Value Stream Stage field (authoritative) - id+name direct, no fuzzy.
     s2 = by_key["EPIC-2"]
