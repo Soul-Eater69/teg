@@ -71,14 +71,30 @@ def _attach_gt_from_themes(idmt_docs: list[dict], idmt_path: Path) -> None:
         doc.setdefault("properties", {})["themes"] = by_parent.get(doc.get("sourceId"), [])
 
 
+_EMBED_TOKEN_CAP = 8000  # under the embedding model's ~8191-token hard limit
+_ENC = None
+
+
+def _truncate_tokens(text: str, max_tokens: int) -> str:
+    """Truncate to actual cl100k_base tokens (the text-embedding-3 tokenizer); lazy-loaded."""
+    global _ENC
+    if _ENC is None:
+        import tiktoken
+        _ENC = tiktoken.get_encoding("cl100k_base")
+    toks = _ENC.encode(text)
+    return text if len(toks) <= max_tokens else _ENC.decode(toks[:max_tokens])
+
+
 def _summary_fields(props: dict, *, raw_text: bool, query_budget: int = 0) -> SummaryFields:
     # New schema: the LLM summary is businessSummary (properties.summary is the ticket title).
     # Fall back to summary for any pre-rename file.
     llm_summary = props.get("businessSummary") or props.get("summary", "")
     if raw_text:
         text = props.get("rawText", "") or llm_summary
-        if query_budget:  # truncate the raw query to ~N tokens (the 7k-raw experiment); ~4 chars/token
-            text = text[:query_budget * 4]
+        # This text is EMBEDDED for retrieval (raw_text here = the retrieval representation), so it
+        # must stay under the model's hard ~8191-token cap. Token-accurate truncate (a chars
+        # heuristic overshoots on dense text and 400s the embeddings endpoint).
+        text = _truncate_tokens(text, min(query_budget or _EMBED_TOKEN_CAP, _EMBED_TOKEN_CAP))
         return SummaryFields(generated_summary=text, business_problem="", business_capability="")
     return SummaryFields(
         generated_summary=llm_summary,

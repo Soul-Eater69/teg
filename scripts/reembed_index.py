@@ -21,11 +21,21 @@ import asyncio
 import json
 from pathlib import Path
 
+import tiktoken
+
 from teg.config.settings import load_settings
 from teg.integrations.embeddings import build_embeddings_client
 from teg.ingestion.upload.search_uploader import build_search_uploader
 
-_EMBED_CHAR_CAP = 30_000  # keep under the embedding model's input limit (~7.5k tokens)
+# The embedding model has a hard ~8191-token input limit; truncate by ACTUAL tokens (cl100k_base,
+# the text-embedding-3 tokenizer) not chars - a chars heuristic overshoots on dense text and 400s.
+_ENC = tiktoken.get_encoding("cl100k_base")
+_EMBED_TOKEN_CAP = 8000  # safety ceiling under the model limit, regardless of --budget
+
+
+def _truncate_tokens(text: str, max_tokens: int) -> str:
+    toks = _ENC.encode(text)
+    return text if len(toks) <= max_tokens else _ENC.decode(toks[:max_tokens])
 
 
 def _raw_by_source(idmt_docs: list[dict]) -> dict[str, str]:
@@ -41,9 +51,9 @@ def _raw_by_source(idmt_docs: list[dict]) -> dict[str, str]:
 
 def _search_text(doc: dict, repr_: str, budget: int, raw_by_source: dict[str, str]) -> str:
     if repr_ == "summary":
-        return str(doc.get("searchText") or "")  # already the summary retrieval text
+        return _truncate_tokens(str(doc.get("searchText") or ""), _EMBED_TOKEN_CAP)
     raw = raw_by_source.get(str(doc.get("sourceId"))) or raw_by_source.get(str(doc.get("key"))) or ""
-    return raw[:min(budget * 4, _EMBED_CHAR_CAP)]  # ~4 chars/token, capped to the embed limit
+    return _truncate_tokens(raw, min(budget, _EMBED_TOKEN_CAP))  # token-accurate, under the model cap
 
 
 async def main(args: argparse.Namespace) -> None:
