@@ -202,7 +202,7 @@ async def _collect_predictions(service, args, jobs, sem) -> dict[str, list[str]]
         async with sem:
             req = ValueStreamRequest(
                 ticket_id=ticket_id,
-                summary_fields=_summary_fields(doc.get("properties", {}), raw_text=False),  # retrieval = summary
+                summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_retrieval, query_budget=args.retrieval_budget),  # retrieval repr
                 prompt_text=_prompt_text(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
                 requested_count=_requested_count(args, gt),
                 exclude_ticket_ids=[ticket_id],
@@ -266,7 +266,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     async with sem:
         request = ValueStreamRequest(
             ticket_id=ticket_id,
-            summary_fields=_summary_fields(doc.get("properties", {}), raw_text=False),  # retrieval = summary
+            summary_fields=_summary_fields(doc.get("properties", {}), raw_text=args.raw_retrieval, query_budget=args.retrieval_budget),  # retrieval repr
             prompt_text=_prompt_text(doc.get("properties", {}), raw_text=args.raw_text, query_budget=args.query_budget),
             requested_count=_requested_count(args, gt),
             exclude_ticket_ids=[ticket_id],  # leave-one-out
@@ -788,6 +788,11 @@ if __name__ == "__main__":
     parser.add_argument("--concurrency", type=int, default=3, help="tickets evaluated in parallel")
     parser.add_argument("--semantic-only", action="store_true", help="ablation: drop the historic lane entirely")
     parser.add_argument("--raw-text", action="store_true", help="use rawText instead of summaryFields")
+    parser.add_argument("--raw-retrieval", action="store_true",
+                        help="retrieve with rawText (truncated to --retrieval-budget) instead of the "
+                             "summary - ONLY valid against a raw-embedded index (see reembed_index.py)")
+    parser.add_argument("--retrieval-budget", type=int, default=7000,
+                        help="token budget for the raw retrieval query (with --raw-retrieval)")
     parser.add_argument("--window", type=int, default=0,
                         help="override the LLM review-pool size (how many candidates the LLM sees; "
                              "default config=18). Decoupled from output count, so count=gt stays honest.")
