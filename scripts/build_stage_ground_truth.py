@@ -91,12 +91,7 @@ async def main(args: argparse.Namespace) -> None:
 
     settings = load_settings()
     catalogue = load_value_stream_catalogue(args.catalogue)
-    fields = StageGtFields(
-        business_needs=args.business_needs_field or StageGtFields().business_needs,
-        l2_capability=args.l2_field or StageGtFields().l2_capability,
-        l3_capability=args.l3_field or StageGtFields().l3_capability,
-        stage=args.stage_field or StageGtFields().stage,
-    )
+    defaults = StageGtFields()
 
     http = httpx.AsyncClient(
         base_url=settings.jira_base_url,
@@ -106,6 +101,14 @@ async def main(args: argparse.Namespace) -> None:
     )
     try:
         jira = HttpxJiraClient(http, api=settings.jira_api_version)
+
+        async def _resolve(explicit: str, display_name: str, fallback: str) -> str:
+            # explicit flag wins; else discover by display name (ids drift between Jira instances);
+            # else the hardcoded default.
+            if explicit:
+                return explicit
+            return await jira.discover_field_id(display_name) or fallback
+
         vs_field = settings.jira_value_stream_field or await jira.discover_field_id(
             settings.jira_value_stream_field_name
         )
@@ -114,6 +117,12 @@ async def main(args: argparse.Namespace) -> None:
                 f"could not resolve the '{settings.jira_value_stream_field_name}' field id; "
                 "set jira_value_stream_field in .env"
             )
+        fields = StageGtFields(
+            stage=await _resolve(args.stage_field, "Value Stream Stage", defaults.stage),
+            business_needs=await _resolve(args.business_needs_field, "Business Needs", defaults.business_needs),
+            l2_capability=await _resolve(args.l2_field, "L2 Business Capability Model", defaults.l2_capability),
+            l3_capability=await _resolve(args.l3_field, "L3 Business Capability Model", defaults.l3_capability),
+        )
         print(f"Business Value Stream field: {vs_field}")
         print(f"stage field (Epic): {fields.stage}  | L2={fields.l2_capability} "
               f"L3={fields.l3_capability} | business needs={fields.business_needs}")
@@ -141,11 +150,19 @@ async def main(args: argparse.Namespace) -> None:
     finally:
         await http.aclose()
 
-    # Capability-field health: flag a field that never populated (likely the wrong id).
+    # Field health: flag a field that never populated (likely the wrong id).
+    all_stages = [s for t in tickets for th in t.themes for s in th.stages]
+    by_method: dict[str, int] = {}
+    for s in all_stages:
+        by_method[s.match_method] = by_method.get(s.match_method, 0) + 1
+    print(f"\n  stage match methods: {by_method}")
+    if all_stages and not by_method.get("field"):
+        print(f"  NOTE: the Value Stream Stage field {fields.stage} resolved 0 stages - likely the "
+              "wrong id. Run: inspect_jira_fields.py <an-epic-key> --grep stream  and pass --stage-field")
     l2_seen = any(th.l2_capabilities for t in tickets for th in t.themes)
     l3_seen = any(th.l3_capabilities for t in tickets for th in t.themes)
     if not l2_seen:
-        print(f"\n  NOTE: L2 field {fields.l2_capability} was empty for every Theme "
+        print(f"  NOTE: L2 field {fields.l2_capability} was empty for every Theme "
               "- verify the id with --l2-field")
     if not l3_seen:
         print(f"  NOTE: L3 field {fields.l3_capability} was empty for every Theme "
