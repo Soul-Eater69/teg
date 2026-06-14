@@ -1,17 +1,17 @@
-"""Evaluate generated theme descriptions - REFERENCE-FREE, against the source context only.
+"""Evaluate generated theme descriptions - REFERENCE-FREE, against the RAW ticket text only.
 
-We do NOT score against the GT description (each is free-form; matching it penalises style not
-substance). For each ticket we generate the theme description per GT value stream (shared body +
-per-VS framing), then judge it ONLY against the source context the generator saw:
+Theme generation uses the raw idea card (no summary, no generation signals - consistent with the
+locked VS/stage decision). We do NOT score against the GT description (each is free-form; matching
+it penalises style not substance). For each ticket we generate the theme description per GT value
+stream (shared body + per-VS framing) from the RAW text, then judge it ONLY against that raw text:
 
-  faithfulness  : claims grounded in the source (no invention)  -> supported / total
+  faithfulness  : claims grounded in the raw ticket (no invention)  -> supported / total
   hallucination : 1 - faithfulness (the unsupported claims are listed)
-  coverage      : the source's key facts reflected in the description -> covered / total
+  coverage      : the raw ticket's key facts reflected in the description -> covered / total
 
 The GT file is used only to pick which value streams to generate for, never to score.
 
 Usage (needs the LLM gateway):
-  uv run python scripts/eval_description.py out/idmt/cosmos_idmt.json --signals out/stage_eval/signals.json
   uv run python scripts/eval_description.py out/idmt/cosmos_idmt.json --sample 50 --min-vs 2
 """
 
@@ -28,7 +28,6 @@ from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
 from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
-from teg.theme.context import render_generation_signals, render_ticket_context
 from teg.theme.description import (
     assemble_description,
     generate_description_body,
@@ -37,15 +36,7 @@ from teg.theme.description import (
 from teg.theme.description_judges import judge_coverage, judge_faithfulness
 from teg.theme.stage_catalogue import StageCatalogue
 
-# Signals the description generator reads (mirror theme.description._DESCRIPTION_SIGNALS) - the
-# source we judge faithfulness/coverage against is the same context the generator saw.
-_ALL_SIGNALS = [
-    "marketSegments", "fundingModelSignals", "marketOpportunity", "businessSolutionObjectives",
-    "valueProposition", "estimatedBenefits", "dependencies", "resourcesNeeded",
-    "digitalExperienceSignals", "productAvailabilitySignals", "planSignals", "networkSignals",
-    "productPairingSignals", "businessRules", "operationalSignals", "reportingSignals",
-    "trainingSignals", "notes",
-]
+_RAW_BUDGET_CHARS = 96_000  # ~24k tokens of raw ticket text (the locked theme-gen budget)
 
 
 def _load_condensed(path: str) -> dict[str, dict]:
@@ -68,28 +59,20 @@ def _load_gt_vs(path: str) -> dict[str, list[tuple[str, str]]]:
     return out
 
 
-def _condensed(props: dict, signals: dict | None) -> CondensedContext:
-    fields = SummaryFields(
-        generated_summary=str(props.get("businessSummary") or ""),
-        business_problem=str(props.get("businessProblem") or ""),
-        business_capability=str(props.get("businessCapability") or ""),
-        key_terms=list(props.get("keyTerms") or []),
-        stakeholders=list(props.get("stakeholders") or []),
-        systems_and_products=list(props.get("systemsAndProducts") or []),
+def _raw_context(props: dict, raw_budget: int) -> tuple[CondensedContext, str]:
+    """Build the generation context from the RAW text only (no summary, no signals), and return it
+    alongside the raw source string we judge faithfulness / coverage against."""
+    raw = str(props.get("rawText") or "")[:raw_budget]
+    ctx = CondensedContext(
+        summary_fields=SummaryFields(generated_summary=raw, business_problem="", business_capability=""),
+        generation_signals=GenerationSignals(),
     )
-    gen = GenerationSignals.model_validate(signals) if signals else GenerationSignals()
-    return CondensedContext(summary_fields=fields, generation_signals=gen)
+    return ctx, raw
 
 
-def _source_text(ctx: CondensedContext) -> str:
-    """The context the generator saw - what we judge faithfulness / coverage against."""
-    parts = [render_ticket_context(ctx), render_generation_signals(ctx, _ALL_SIGNALS)]
-    return "\n".join(p for p in parts if p and p.strip())
-
-
-async def _eval_ticket(ticket_id, props, vs_list, *, catalogue, llm, signals, sem) -> list[dict]:
+async def _eval_ticket(ticket_id, props, vs_list, *, catalogue, llm, raw_budget, sem) -> list[dict]:
     async with sem:
-        ctx = _condensed(props, signals)
+        ctx, source = _raw_context(props, raw_budget)  # raw text = both the input and the judged source
         approved = [ApprovedValueStream(value_stream_id=v, value_stream_name=n) for v, n in vs_list]
         vs_details = {v: (catalogue.description_for(v), catalogue.value_proposition_for(v))
                       for v, _ in vs_list}
@@ -99,7 +82,6 @@ async def _eval_ticket(ticket_id, props, vs_list, *, catalogue, llm, signals, se
             generate_vs_framings(condensed=ctx, approved_value_streams=approved,
                                  value_stream_details=vs_details, llm_client=llm),
         )
-        source = _source_text(ctx)
         rows: list[dict] = []
         for vs_id, vs_name in vs_list:
             description = assemble_description(framings.get(vs_id, ""), body)
@@ -125,8 +107,6 @@ async def main(args: argparse.Namespace) -> None:
     condensed = _load_condensed(args.condensed)
     gt_vs = _load_gt_vs(args.gt)
     catalogue = StageCatalogue.from_catalogue(load_value_stream_catalogue(args.catalogue))
-    signals = (json.loads(Path(args.signals).read_text(encoding="utf-8"))
-               if args.signals and Path(args.signals).exists() else {})
 
     tickets = [t for t in gt_vs if t in condensed and len(gt_vs[t]) >= args.min_vs]
     if args.sample and args.sample < len(tickets):
@@ -136,13 +116,13 @@ async def main(args: argparse.Namespace) -> None:
         tickets = tickets[:args.count]
     if not tickets:
         raise SystemExit("no tickets to evaluate")
-    print(f"evaluating {len(tickets)} tickets (min_vs>={args.min_vs}); signals: {len(signals)}\n")
+    print(f"evaluating {len(tickets)} tickets (min_vs>={args.min_vs}; raw text only)\n")
 
     llm = build_llm_client(settings)
     sem = asyncio.Semaphore(args.concurrency)
     results = await asyncio.gather(*(
         _eval_ticket(t, condensed[t], gt_vs[t], catalogue=catalogue, llm=llm,
-                     signals=signals.get(t), sem=sem)
+                     raw_budget=args.raw_budget, sem=sem)
         for t in tickets
     ))
     rows = [r for ticket in results for r in ticket]
@@ -172,8 +152,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Reference-free description eval (faithfulness/coverage).")
     p.add_argument("condensed", help="index docs json (e.g. out/idmt/cosmos_idmt.json)")
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json", help="for the VS list only")
-    p.add_argument("--signals", default="", help="generation-signals sidecar (extract_signals.py)")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
+    p.add_argument("--raw-budget", type=int, default=_RAW_BUDGET_CHARS, help="raw text char budget")
     p.add_argument("--min-vs", type=int, default=1, help="min approved VS per ticket")
     p.add_argument("--sample", type=int, default=0)
     p.add_argument("--seed", type=int, default=13)
