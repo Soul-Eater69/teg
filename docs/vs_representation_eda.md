@@ -73,6 +73,31 @@ that, swapping the **historic block** representation barely moves F1 (0.768–0.
 bar (raw@7k *retrieval*) drops *below* the pack. So the prompt is the lever, the historic block is a
 wash, and raw retrieval is a regression.
 
+## Precision, recall & exact-set
+
+**At `count=gt`, micro F1 = precision = recall.** The model returns exactly the GT count, so the
+predicted set is the same size as GT → `tp+fp = tp+fn` → P = R = F1. **So every F1 above is also that
+run's precision and recall** (winner: P = R = F1 = 0.786). That's *why* we use `count=gt` — one
+honest number, no count-generosity inflating recall.
+
+**exact-set** = the share of tickets where the predicted VS set is **exactly** the GT set — every
+correct VS picked and **zero** wrong (`fp = 0` *and* `fn = 0`). It's all-or-nothing per ticket, so
+it's far stricter than F1 (which gives partial credit for getting *some* of the VS right). The winner
+scores F1 0.786 but only **36% perfectly right** — on the other ~64% it's partially correct.
+
+The **rank metrics P@6 / R@6** *do* differ from F1 — precision/recall of the GT inside the top-6
+retrieved candidates (a retrieval-quality view, before the LLM's final pick):
+
+| run | F1 (= P = R) | P@6 | R@6 | exact-set |
+|---|---|---|---|---|
+| all-summary | 0.715 | 0.741 | 0.648 | 23% |
+| **raw + summary (winner)** | **0.786** | **0.815** | **0.715** | **36%** |
+| raw + raw@1500 | 0.781 | 0.792 | 0.697 | 26% |
+| raw + raw@3000 | 0.768 | 0.779 | 0.683 | 24% |
+| raw + description | 0.780 | 0.809 | 0.708 | 31% |
+| raw + raw@7k | 0.780 | 0.796 | 0.697 | 30% |
+| raw@7k retrieval | 0.742 | 0.762 | 0.663 | 23% |
+
 ## Finding 1 — the lever is the NEW-TICKET prompt
 Feeding the new ticket's **raw text** instead of its summary is **+0.071 F1 (0.715 → 0.786)** and
 nearly doubles exact-set (23% → 36%). Retrieval is already perfect at surfacing candidates (every GT

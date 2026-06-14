@@ -205,6 +205,79 @@ variant cost 13.9s avg / 132s max latency; dropping it to 3k fixed the latency b
 that, swapping the <strong>historic block</strong> representation barely moves F1 (0.768–0.786) — and the last
 bar (raw@7k <em>retrieval</em>) drops <em>below</em> the pack. So the prompt is the lever, the historic block is a
 wash, and raw retrieval is a regression.</p>
+<h2 id="precision-recall-exact-set">Precision, recall &amp; exact-set</h2>
+<p><strong>At <code>count=gt</code>, micro F1 = precision = recall.</strong> The model returns exactly the GT count, so the
+predicted set is the same size as GT → <code>tp+fp = tp+fn</code> → P = R = F1. <strong>So every F1 above is also that
+run's precision and recall</strong> (winner: P = R = F1 = 0.786). That's <em>why</em> we use <code>count=gt</code> — one
+honest number, no count-generosity inflating recall.</p>
+<p><strong>exact-set</strong> = the share of tickets where the predicted VS set is <strong>exactly</strong> the GT set — every
+correct VS picked and <strong>zero</strong> wrong (<code>fp = 0</code> <em>and</em> <code>fn = 0</code>). It's all-or-nothing per ticket, so
+it's far stricter than F1 (which gives partial credit for getting <em>some</em> of the VS right). The winner
+scores F1 0.786 but only <strong>36% perfectly right</strong> — on the other ~64% it's partially correct.</p>
+<p>The <strong>rank metrics P@6 / R@6</strong> <em>do</em> differ from F1 — precision/recall of the GT inside the top-6
+retrieved candidates (a retrieval-quality view, before the LLM's final pick):</p>
+<table>
+<thead>
+<tr>
+<th>run</th>
+<th>F1 (= P = R)</th>
+<th>P@6</th>
+<th>R@6</th>
+<th>exact-set</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>all-summary</td>
+<td>0.715</td>
+<td>0.741</td>
+<td>0.648</td>
+<td>23%</td>
+</tr>
+<tr>
+<td><strong>raw + summary (winner)</strong></td>
+<td><strong>0.786</strong></td>
+<td><strong>0.815</strong></td>
+<td><strong>0.715</strong></td>
+<td><strong>36%</strong></td>
+</tr>
+<tr>
+<td>raw + raw@1500</td>
+<td>0.781</td>
+<td>0.792</td>
+<td>0.697</td>
+<td>26%</td>
+</tr>
+<tr>
+<td>raw + raw@3000</td>
+<td>0.768</td>
+<td>0.779</td>
+<td>0.683</td>
+<td>24%</td>
+</tr>
+<tr>
+<td>raw + description</td>
+<td>0.780</td>
+<td>0.809</td>
+<td>0.708</td>
+<td>31%</td>
+</tr>
+<tr>
+<td>raw + raw@7k</td>
+<td>0.780</td>
+<td>0.796</td>
+<td>0.697</td>
+<td>30%</td>
+</tr>
+<tr>
+<td>raw@7k retrieval</td>
+<td>0.742</td>
+<td>0.762</td>
+<td>0.663</td>
+<td>23%</td>
+</tr>
+</tbody>
+</table>
 <h2 id="finding-1-the-lever-is-the-new-ticket-prompt">Finding 1 — the lever is the NEW-TICKET prompt</h2>
 <p>Feeding the new ticket's <strong>raw text</strong> instead of its summary is <strong>+0.071 F1 (0.715 → 0.786)</strong> and
 nearly doubles exact-set (23% → 36%). Retrieval is already perfect at surfacing candidates (every GT
