@@ -15,6 +15,14 @@ system: |
   value stream - never assign a stage from one value stream to another. Return one result per
   value stream, keyed by its valueStreamId.
 
+  STRICT VALUE-STREAM ISOLATION (do not violate):
+  - The candidate stage lists are DISJOINT - a stage id appears under exactly one value stream.
+  - For a value stream, return ONLY stage ids printed under THAT value stream's "Candidate
+    stages". Never copy, borrow, or infer a stage from another value stream's list - if the work
+    truly fits, the matching stage is already in the correct value stream's own list.
+  - Judge each value stream on its own candidate list only; do not let one value stream's picks
+    influence another's. A stage id placed under the wrong value stream is dropped as invalid.
+
   Each value stream below is ALREADY approved as relevant, so it should receive stages - a
   business architect reviews and trims your picks, so it is better to predict a plausible
   stage than to leave a value stream empty.

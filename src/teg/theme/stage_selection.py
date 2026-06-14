@@ -52,6 +52,12 @@ class BatchedStageSelection(CamelModel):
     value_streams: list[VsStageSelection] = Field(default_factory=list)
 
 
+class SingleStageSelection(CamelModel):
+    """The single-value-stream selection LLM's structured output (the per_vs prompt)."""
+
+    selected_stages: list[StageSelectionItem] = Field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class StageSelectionInput:
     """One approved value stream and its governed candidate stages, for batched selection."""
@@ -119,13 +125,19 @@ async def select_stages(
     stages: list[CatalogueStage],
     llm_client: LLMClient,
 ) -> list[SelectedStage]:
-    """Stages for a single value stream (wraps the batched call with one input)."""
-    results = await select_stages_for_all(
-        condensed=condensed,
-        inputs=[StageSelectionInput(value_stream, value_stream_description, value_proposition, stages)],
-        llm_client=llm_client,
+    """Stages for a SINGLE value stream via its own focused prompt (no cross-VS concern)."""
+    if not stages:
+        return []
+    input_ = StageSelectionInput(value_stream, value_stream_description, value_proposition, stages)
+    prompt = load_prompt("theme/stage_selection_single")
+    system, user = prompt.render(
+        ticket_context=render_ticket_context(condensed),
+        generation_signals=render_generation_signals(condensed, _STAGE_SIGNALS),
+        value_stream=_vs_block(input_),
     )
-    return results.get(value_stream.value_stream_id, [])
+    result = await llm_client.complete(system=system, user=user, schema=SingleStageSelection)
+    return _resolve(VsStageSelection(value_stream_id=value_stream.value_stream_id,
+                                     selected_stages=result.selected_stages), stages)
 
 
 def _vs_block(i: StageSelectionInput) -> str:
