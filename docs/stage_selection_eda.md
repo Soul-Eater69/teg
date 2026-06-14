@@ -106,25 +106,26 @@ model change. The post-prune numbers are the **fair baseline**: the model agains
 
 ![Grounding](stage_charts/grounding.png)
 
-On the answerable stages (post-prune), the drops break down as:
+On the answerable stages (post-prune), the drops break down as (n = 259 classified; shares rounded):
 
-| grounding | share | meaning |
-|---|---|---|
-| **no_context_for_stage** | **41%** | no ticket evidence — the BA's outside-knowledge pick (label noise) |
-| context_present_but_dropped | 40% | evidence shown, dropped anyway |
-| weak_broad_context | 20% | borderline |
+| grounding | count | share | meaning |
+|---|---|---|---|
+| **no_context_for_stage** | 105 | **41%** | no ticket evidence — the BA's outside-knowledge pick (label noise) |
+| context_present_but_dropped | 103 | 40% | evidence shown, dropped anyway |
+| weak_broad_context | 51 | 20% | borderline |
 
 ![Swap reasons](stage_charts/swap.png)
 
-And *why* the picks won over each dropped stage:
+And *why* the picks won over each dropped stage (n = 264; shares rounded to whole numbers, so they
+sum to ~101%):
 
-| reason | share | read |
-|---|---|---|
-| picks_more_specific | 36% | the model picked a **better/narrower** stage — often the model being right |
-| no_evidence_for_dropped | 26% | nothing in the ticket points to the dropped stage |
-| dropped_too_broad | 24% | the GT stage is broad/adjacent, only loosely implied |
-| adjacent_stage_confusion | 11% | a neighbouring lifecycle stage picked instead (the one fixable lever) |
-| **dropped_is_valid_should_have_picked** | **4%** | **genuine model misses** |
+| reason | count | share | read |
+|---|---|---|---|
+| picks_more_specific | 94 | 36% | the model picked a **better/narrower** stage — often the model being right |
+| no_evidence_for_dropped | 69 | 26% | nothing in the ticket points to the dropped stage |
+| dropped_too_broad | 63 | 24% | the GT stage is broad/adjacent, only loosely implied |
+| adjacent_stage_confusion | 28 | 11% | a neighbouring lifecycle stage picked instead (the one fixable lever) |
+| **dropped_is_valid_should_have_picked** | **10** | **4%** | **genuine model misses** |
 
 **So ~40% of drops are un-derivable from the ticket, most of the rest is the model making defensible
 narrower picks, and only ~4% are genuine misses.** The one fixable lever — adjacent-stage confusion —

@@ -95,18 +95,20 @@ def grounding() -> None:
     fig.tight_layout(); fig.savefig(_OUT / "grounding.png", dpi=130); plt.close(fig)
 
 
-# Swap reasons after prune.
+# Swap reasons after prune - raw counts (n=264) so the bars are exact, not rounded to 101%.
 SWAP = [
-    ("picks_more\n_specific", 36), ("no_evidence\n_for_dropped", 26), ("dropped_too\n_broad", 24),
-    ("adjacent_stage\n_confusion", 11), ("genuine\nmiss", 4),
+    ("picks_more\n_specific", 94), ("no_evidence\n_for_dropped", 69), ("dropped_too\n_broad", 63),
+    ("adjacent_stage\n_confusion", 28), ("genuine\nmiss", 10),
 ]
+_SWAP_N = sum(v for _, v in SWAP)
 
 
 def swap() -> None:
     labels = [r[0] for r in SWAP]
+    pct = [100 * v / _SWAP_N for _, v in SWAP]
     fig, ax = plt.subplots(figsize=(8, 4.4))
-    _bar(ax, labels, [r[1] for r in SWAP], "% of drops",
-         "Why the picks beat each dropped stage", fmt="{:.0f}%",
+    _bar(ax, labels, pct, "% of drops",
+         f"Why the picks beat each dropped stage (n={_SWAP_N})", fmt="{:.0f}%",
          highlight="genuine\nmiss", color="#4C78A8")
     fig.tight_layout(); fig.savefig(_OUT / "swap.png", dpi=130); plt.close(fig)
 
