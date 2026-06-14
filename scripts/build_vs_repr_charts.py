@@ -124,6 +124,13 @@ DROP_REASONS = [
     ("near_duplicate\n(twin picked)", 9),
 ]
 
+# Evidence-grounding of dropped GT (count=gt, 131 drops): is the drop fixable or justified?
+GROUNDING = [
+    ("context present\nbut dropped\n(FIXABLE)", 47),
+    ("no context\n(justified /\nlabel noise)", 29),
+    ("weak/broad\ncontext\n(borderline)", 24),
+]
+
 
 def count_mode() -> None:
     labels = [r[0] for r in COUNT_MODE]
@@ -149,8 +156,17 @@ def drop_reasons() -> None:
     fig.tight_layout(); fig.savefig(_OUT / "drop_reasons.png", dpi=130); plt.close(fig)
 
 
+def grounding() -> None:
+    labels = [r[0] for r in GROUNDING]
+    fig, ax = plt.subplots(figsize=(7, 4.4))
+    _bar(ax, labels, [r[1] for r in GROUNDING], "% of dropped GT",
+         "Are the drops fixable? (evidence grounding)", fmt="{:.0f}%",
+         highlight=labels[0], color="#72B7B2")
+    fig.tight_layout(); fig.savefig(_OUT / "grounding.png", dpi=130); plt.close(fig)
+
+
 if __name__ == "__main__":
     _OUT.mkdir(parents=True, exist_ok=True)
     f1_ladder(); retrieval_compare(); latency(); prompt_budget(); latency_split()
-    count_mode(); drop_reasons()
+    count_mode(); drop_reasons(); grounding()
     print(f"wrote charts to {_OUT}/")
