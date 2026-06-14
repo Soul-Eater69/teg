@@ -10,20 +10,37 @@ text is used — and can we drop summarization to save cost?
   run) and no count-generosity bias.
 - evidence mode, the Recall selection prompt, K=6 historic neighbours, judge on.
 
-## The three places text is used
-| place | what it does | knob |
-|---|---|---|
-| **Retrieval** | finds the 6 similar past tickets (embedded + searched) | summary vs raw@7k index |
-| **New-ticket prompt** | the ticket context the LLM reads to pick VS | `--raw-text` (summary vs raw) |
-| **Historic block** | how each of the 6 neighbours is shown in the prompt | `--historic-repr` (summary/raw/description/snippet) |
+## Terms & token counts (read this first)
 
-These are independent. The ladder below varies one at a time.
+Every IDMT ticket produces **two forms of text**. The whole study is about which form goes where.
+
+| term | what it actually is | size |
+|---|---|---|
+| **raw** | the ticket's description **+** extracted attachment text, consolidated and capped during ingest | **≤ 24,000 tokens** (`doc_char_budget = 96k chars`) |
+| **summary** | the condense LLM's output from that raw — 6 fields: generatedSummary, businessProblem, businessCapability, keyTerms, stakeholders, systemsAndProducts | **~460 tokens** (all 6 concatenated) |
+| **description** | only the ticket's Jira description field (no attachments) | a few hundred tokens |
+| **snippet** | the first ~200 characters of a stored doc | ~50 tokens |
+| `raw@Nk` | the **raw** truncated to N-thousand tokens (e.g. `raw@7k` = first ~7,000 tokens of the raw) | N,000 tokens |
+
+These forms get used in **three independent places** per prediction:
+
+| place | what it does | what goes here (winner) |
+|---|---|---|
+| **Retrieval query** | the text we **embed** to search the index for the 6 nearest past tickets | the **summary** (~460 tok) |
+| **New-ticket prompt** | the new ticket's text the LLM **reads to pick the VS** | the **full raw** (~24,000 tok) |
+| **Historic block** | each of the 6 retrieved neighbours, shown as precedent in the prompt | each neighbour's **summary** (~460 tok × 6) + its VS labels |
+
+So a run labelled **"raw + summary"** in the tables below means: **new-ticket prompt = raw**,
+**historic block = summary** (the retrieval query stays the summary unless the row says `raw@7k`
+retrieval). The ladder varies one place at a time.
 
 ## Results
 
 ![F1 by representation](vs_repr_charts/f1_ladder.png)
 
-| run | prompt | historic | retrieval | **F1** | exact-set | avg latency |
+Columns = the form used in each of the three places (see the terms table above).
+
+| run | new-ticket prompt | historic block | retrieval query | **F1** | exact-set | avg latency |
 |---|---|---|---|---|---|---|
 | all-summary | summary | summary | summary | 0.715 | 23% | 4.2s |
 | **raw + summary** | **raw** | **summary** | **summary** | **0.786** | **36%** | 5.8s |
