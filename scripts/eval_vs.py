@@ -154,6 +154,39 @@ def _cardinality_stats(rows: list[dict]) -> dict:
     }
 
 
+def _drop_detail_rows(results: list[dict], vs_names: dict[str, str]) -> list[dict]:
+    """One row per dropped GT: ticket, VS id+name, and every logged reason signal.
+
+    This is the answer record for 'why wasn't value stream X picked for ticket Y' - the drop
+    reason code + its free-text note (Level A/explain-drops), the comparative swap reason + note
+    (Level C), and the score margin to the pick cut (Level B). Whatever probes were on populate
+    their columns; the rest stay blank.
+    """
+    out: list[dict] = []
+    for res in results:
+        if res.get("error"):
+            continue
+        dropped = (res.get("buckets") or {}).get("llm_dropped") or []
+        drop_reasons = res.get("drop_reasons") or {}
+        drop_notes = res.get("drop_notes") or {}
+        swap_reasons = res.get("swap_reasons") or {}
+        swap_notes = res.get("swap_notes") or {}
+        margins = res.get("score_margins") or {}
+        for vs in dropped:
+            out.append({
+                "ticket_id": res["ticket_id"],
+                "value_stream_id": vs,
+                "value_stream_name": vs_names.get(vs, ""),
+                "drop_reason": drop_reasons.get(vs, ""),
+                "drop_note": drop_notes.get(vs, ""),
+                "swap_reason": swap_reasons.get(vs, ""),
+                "swap_note": swap_notes.get(vs, ""),
+                "score_margin": margins.get(vs, ""),
+                "picked_instead": "; ".join(sorted(set(res.get("predicted") or []) - res.get("gt", set()))),
+            })
+    return out
+
+
 def _count_following_stats(rows: list[dict]) -> dict:
     """Did the LLM return the REQUESTED count on its own, before our _enforce_count padding?
 
@@ -336,6 +369,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
         boost = _historic_boost(gt, predicted, trace)
         # Post-hoc: ask why the LLM dropped GT it actually saw (never changes the metrics).
         drop_reasons: dict[str, str] = {}
+        drop_notes: dict[str, str] = {}  # the free-text per-candidate 'why' (the answerable reason)
         if llm is not None and buckets["llm_dropped"]:
             try:
                 explained = await explain_drops(
@@ -346,6 +380,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
                     llm_client=llm,
                 )
                 drop_reasons = {vs: exp.reason_code for vs, exp in explained.items()}
+                drop_notes = {vs: exp.note for vs, exp in explained.items()}
             except Exception as exc:  # a failed probe must not abort the batch
                 print(f"    explain-drops failed for {ticket_id}: {type(exc).__name__}: {exc}")
         # Level B: independent 0-1 score of every candidate -> how close each dropped GT was to the cut.
@@ -363,6 +398,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
                 print(f"    score-margins failed for {ticket_id}: {type(exc).__name__}: {exc}")
         # Level C: comparative - why the picks beat each dropped GT (richer swap taxonomy).
         swap_reasons: dict[str, str] = {}
+        swap_notes: dict[str, str] = {}
         if llm is not None and args.explain_swaps and buckets["llm_dropped"]:
             try:
                 swaps = await explain_swaps(
@@ -371,6 +407,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
                     dropped_ids=buckets["llm_dropped"], llm_client=llm,
                 )
                 swap_reasons = {vs: exp.reason_code for vs, exp in swaps.items()}
+                swap_notes = {vs: exp.note for vs, exp in swaps.items()}
             except Exception as exc:
                 print(f"    explain-swaps failed for {ticket_id}: {type(exc).__name__}: {exc}")
         # LLM-as-judge: is each predicted / missed VS genuinely relevant (independent of GT)?
@@ -393,6 +430,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted, "buckets": buckets,
             "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed,
             "score_margins": score_margins, "swap_reasons": swap_reasons,
+            "drop_notes": drop_notes, "swap_notes": swap_notes,
             "retrieval_s": trace.retrieval_seconds, "selection_s": trace.selection_seconds,
             "llm_pick_count": trace.llm_pick_count, "requested_count": trace.requested_count,
             "retrieval": retrieval, "boost": boost}
@@ -737,6 +775,16 @@ async def main(args) -> None:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
         w.writeheader(); w.writerows(rows)
     print(f"\nper-ticket CSV -> {out}")
+
+    # Queryable per-drop log: ONE row per dropped GT with its logged reason - so 'why wasn't VS-X
+    # picked for ticket Y' has a direct answer (reason code + the LLM's free-text note + margin).
+    detail = _drop_detail_rows(results, vs_names)
+    if detail:
+        detail_path = out.with_suffix(".drops_detail.csv")
+        with detail_path.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(detail[0].keys()))
+            w.writeheader(); w.writerows(detail)
+        print(f"per-drop reasons -> {detail_path}  ({len(detail)} dropped GT, each with a logged reason)")
 
     return {
         "n": n, "micro_p": micro_p, "micro_r": micro_r,
