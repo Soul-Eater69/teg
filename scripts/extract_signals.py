@@ -8,8 +8,11 @@ and write {ticket key: generationSignals} to a sidecar the eval loads.
 
 Resumable: re-run to fill in any tickets missing from the sidecar.
 
+The sidecar is a SEPARATE file (out/stage_eval/signals.json) - cosmos_idmt.json is never modified,
+so the ingest artifacts stay clean for other experiments. The eval overlays the signals at runtime.
+
 Usage (needs the LLM gateway):
-  uv run python scripts/extract_signals.py out/idmt/cosmos_idmt.json --out out/idmt/signals.json
+  uv run python scripts/extract_signals.py out/idmt/cosmos_idmt.json
   uv run python scripts/extract_signals.py out/idmt/cosmos_idmt.json --keys IDMT-10429 IDMT-10428
 """
 
@@ -85,7 +88,7 @@ async def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Extract generation signals from stored rawText.")
     p.add_argument("dataset", help="index docs json (e.g. out/idmt/cosmos_idmt.json)")
-    p.add_argument("--out", default="out/idmt/signals.json")
+    p.add_argument("--out", default="out/stage_eval/signals.json")  # separate from the ingest docs
     p.add_argument("--keys", nargs="*", help="limit to these ticket keys")
     p.add_argument("--concurrency", type=int, default=5)
     p.add_argument("--fresh", action="store_true", help="ignore an existing sidecar, re-extract all")
