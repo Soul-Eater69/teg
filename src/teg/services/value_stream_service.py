@@ -8,6 +8,7 @@ Clients are injected so it can be unit-tested with fakes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from time import perf_counter
 
 from teg.contracts.value_stream_io import ValueStreamRequest, ValueStreamResponse
 from teg.domain.value_stream import HistoricalTicket
@@ -41,6 +42,8 @@ class PredictionTrace:
     review_pool: list = field(default_factory=list)  # ValueStreamCandidate objects the LLM saw
     vs_lane_ranked: list[str] = field(default_factory=list)  # VS ids in semantic-rank order (VS lane)
     historic_lane_ids: list[str] = field(default_factory=list)  # VS surfaced by the historic lane
+    retrieval_seconds: float = 0.0  # candidate extraction (embed query + search)
+    selection_seconds: float = 0.0  # the VS-selection LLM call
 
     @property
     def review_pool_ids(self) -> list[str]:
@@ -104,6 +107,7 @@ class ValueStreamService:
         vs_top_k, historical_top_k, policy = derive_runtime(requested_count, config=self._config)
         # Over-fetch by the exclude count so dropping self/excluded tickets still leaves a
         # full analog set.
+        t_retrieve = perf_counter()
         result = await retrieve(
             request.summary_fields,
             self._search,
@@ -112,6 +116,7 @@ class ValueStreamService:
             include_historical=self._config.use_historic_lane,
             vs_candidates=self._vs_candidates,  # None -> index search; set -> from the catalogue
         )
+        retrieval_seconds = perf_counter() - t_retrieve
         # The index is retrieval-only - enrich each hit's VS labels from the historic lookup (keyed by
         # ticket id; Cosmos point-read in prod, local in the eval). Empty lookup -> hits keep [] VS.
         for hit in result.historical_hits:
@@ -138,6 +143,7 @@ class ValueStreamService:
         historic_evidence = _render_evidence(
             historical_hits, repr=self._config.historic_repr, budget=self._config.historic_budget,
             content=self._historic_content) if mode == "evidence" else ""
+        t_select = perf_counter()
         recommendations = await select_value_streams(
             # Prompt reads raw text when provided (decoupled from retrieval, which used the summary).
             query=request.prompt_text or request.summary_fields.generated_summary,
@@ -150,6 +156,7 @@ class ValueStreamService:
             or _PROMPT_BY_MODE.get(mode, "value_stream/selection"),
             show_scores=self._config.show_candidate_scores,
         )
+        selection_seconds = perf_counter() - t_select
         response = ValueStreamResponse(
             ticket_id=request.ticket_id,
             recommendations=recommendations,
@@ -166,6 +173,8 @@ class ValueStreamService:
             review_pool=review_pool,
             vs_lane_ranked=vs_lane_ranked,
             historic_lane_ids=historic_lane_ids,
+            retrieval_seconds=retrieval_seconds,
+            selection_seconds=selection_seconds,
         )
         return response, trace
 

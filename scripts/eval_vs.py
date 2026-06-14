@@ -332,6 +332,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
           f"P={_div(tp, tp+fp):.2f} R={_div(tp, tp+fn):.2f}  (gt={len(gt)}, pred={len(predicted)}, {elapsed:.1f}s)")
     return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted, "buckets": buckets,
             "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed,
+            "retrieval_s": trace.retrieval_seconds, "selection_s": trace.selection_seconds,
             "retrieval": retrieval, "boost": boost}
 
 
@@ -503,6 +504,8 @@ async def main(args) -> None:
         rows.append({
             "ticket_id": res["ticket_id"], "gt_count": len(gt), "predicted_count": len(predicted),
             "tp": tp, "fp": fp, "fn": fn, "seconds": round(res.get("elapsed", 0.0), 2),
+            "retrieval_s": round(res.get("retrieval_s", 0.0), 2),
+            "selection_s": round(res.get("selection_s", 0.0), 2),
             "precision": round(_div(tp, tp + fp), 3), "recall": round(_div(tp, tp + fn), 3),
             "fn_not_retrieved": "; ".join(buckets.get("not_retrieved", [])),
             "fn_gated_pre_llm": "; ".join(buckets.get("gated_pre_llm", [])),
@@ -588,11 +591,17 @@ async def main(args) -> None:
     if times:
         slow = min(rows, key=lambda r: -r["seconds"])
         fast = min(rows, key=lambda r: r["seconds"] if r["seconds"] > 0 else 1e9)
+        retr = [r["retrieval_s"] for r in rows if r.get("retrieval_s")]
+        sel = [r["selection_s"] for r in rows if r.get("selection_s")]
         latency = {"avg": _div(sum(times), len(times)), "min": fast["seconds"],
-                   "max": slow["seconds"], "median": times[len(times) // 2]}
+                   "max": slow["seconds"], "median": times[len(times) // 2],
+                   "retrieval_avg": _div(sum(retr), len(retr)) if retr else 0.0,
+                   "selection_avg": _div(sum(sel), len(sel)) if sel else 0.0}
         print(f"\nprediction latency (per ticket, excludes judge/explain):")
-        print(f"  avg={latency['avg']:.1f}s   min={latency['min']:.1f}s ({fast['ticket_id']})   "
+        print(f"  combined  avg={latency['avg']:.1f}s   min={latency['min']:.1f}s ({fast['ticket_id']})   "
               f"max={latency['max']:.1f}s ({slow['ticket_id']})   median={latency['median']:.1f}s")
+        print(f"  split     retrieval avg={latency['retrieval_avg']:.2f}s   "
+              f"LLM-selection avg={latency['selection_avg']:.1f}s  (= where the time goes)")
 
     if judge_pred:
         # Judge precision: predictions the LLM judge calls relevant (credits relevant non-GT picks).
