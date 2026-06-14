@@ -64,18 +64,22 @@ Columns = the form used in each of the three places (see the terms table above).
 | raw + raw@7k | raw | raw@7k | summary | 0.780 | 9.4s |
 | **raw@7k retrieval** | raw@7k | raw@7k | **raw@7k** | **0.742** | 6.6s |
 
-The last row drops the summary entirely (raw-embedded index + raw everything). On a clean 100/100
-with cheap raw@3k historic it lands at **0.742** — below the pack. (An earlier raw@7k-*historic*
-variant cost 13.9s avg / 132s max latency; dropping it to 3k fixed the latency but not the quality.)
+The last row drops the summary entirely (raw-embedded index + raw everything): retrieval query =
+**raw 7k tok**, new-ticket prompt = **raw 7k tok**, each of the 6 historic neighbours = **raw 3k tok**.
+On a clean 100/100 it lands at **0.742** — below the pack. (An earlier variant with **raw 7k tok**
+historic cost 13.9s avg / 132s max latency; cutting historic to 3k fixed the latency but not the
+quality.)
 
 **How to read it:** the big step is summary→raw on the **new-ticket prompt** (0.715 → 0.786). After
 that, swapping the **historic block** representation barely moves F1 (0.768–0.786) — and the last
 bar (raw@7k *retrieval*) drops *below* the pack. So the prompt is the lever, the historic block is a
 wash, and raw retrieval is a regression.
 
-> **Note on the numbers:** because we request exactly the GT count (`count=gt`), each **F1** above is
-> also that run's **precision and recall** (they're equal when the predicted set is the same size as
-> GT). So "F1 0.786" means P = R = F1 = 0.786.
+> **Why F1 = P = R here** (they're normally different): precision = correct ÷ **predicted count**,
+> recall = correct ÷ **GT count**. We force the model to return **exactly the GT count**
+> (`--count-mode gt`) and it complies (avg predicted 5.9 = avg GT 5.9), so predicted count = GT count
+> → the two denominators are equal → **P = R**, and F1 (their mean) equals that too. Pin a *different*
+> count (fixed 10, or GT+2) and they'd diverge — we used `count=gt` to get one honest number.
 
 ## Finding 1 — the lever is the NEW-TICKET prompt
 Feeding the new ticket's **raw text** instead of its summary is **+0.071 F1 (0.715 → 0.786)**.
@@ -121,6 +125,21 @@ either way, so **there's no reason to cap the new-ticket prompt.**
 sub-second** (0.38–0.79s) — never the bottleneck. The **LLM call is the whole cost**, and it tracks
 the **historic block size**: summary historic 3.7s vs raw@3k historic 5.8s. So the cheap lever for
 latency is the historic representation (keep it summary), not the new-ticket prompt.
+
+**Avg vs max latency** (per-ticket, prediction only; the max is the slowest single ticket in the run):
+
+| config | new-ticket prompt | historic | avg | **max** |
+|---|---|---|---|---|
+| winner | raw ~24k tok | summary ~460 tok ×6 | **3.7s** | **6.9s** |
+| capped winner | raw 7k tok | summary ~460 tok ×6 | 3.7s | 6.9s |
+| fully-raw (confirmation) | raw 7k tok | **raw 3k tok ×6** | 5.8s | 21.7s |
+| raw@7k historic (earlier) | raw 7k tok | **raw 7k tok ×6** | 13.9s | **132s** |
+
+The winner's max is **6.9s** — tight, because the prompt is one ~24k-token ticket + six ~460-token
+summaries. The moment the historic block goes raw, the max blows out: **3k raw historic → 21.7s max**,
+**7k raw historic → 132s max** (6 × 7k = 42k tokens of precedent → a ~55k-token prompt). Average hides
+this; the **max is what a user actually waits** on a bad-luck ticket — another reason to keep historic
+as summary.
 
 ## Latency / cost
 
