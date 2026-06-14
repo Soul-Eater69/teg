@@ -210,9 +210,8 @@ mostly fine. For best F1 / autonomous output, use **count = gt**.
 
 ## Drop diagnosis — is the gap fixable, and can a prompt fix it?
 
-We went deeper on the `count=gt` drops (131 of them, 100 gt≥3 tickets) with three probes: an
-evidence-grounding classifier, an independent 0-1 score of every candidate, and a comparative "why
-did the picks win" probe.
+We went deeper on the `count=gt` drops (131 of them, 100 gt≥3 tickets) with two probes: an
+evidence-grounding classifier and a comparative "why did the picks win" probe.
 
 ![Grounding](vs_repr_charts/grounding.png)
 
@@ -224,13 +223,13 @@ did the picks win" probe.
 | no_context_for_gt | 29% | the ticket has no support — the BA tagged it from outside knowledge — **not** fixable from text (label noise) |
 | weak_broad_context | 24% | only indirect/downstream evidence — borderline |
 
-**The model rates them relevant, then drops them.** Scored *independently* (no count pressure),
-**81% of dropped GT scored ≥ a candidate the model actually kept.** So the model's relevance
-judgement is consistent; the single count-limited "pick N" call is where it goes wrong — it ranks
-others higher and the count cutoff chops the rest. The comparative probe shows *what* it favours:
-the picks win as `picks_more_specific` (25%) / `picks_more_prominent` (8%), and the dropped GT lose as
-`dropped_too_broad` (39%) / `no_evidence_for_dropped` (27%). Only **2%** are misses the model itself
-calls genuine.
+**The model finds them relevant, then drops them to fit the count.** The drop reasons are ~74%
+`lower_priority` ("relevant but less central"), and the count test proves it — giving +2 slots
+recovers recall 0.786 → 0.854, surfacing exactly those VS. So the single count-limited "pick N" call
+ranks others higher and the count cutoff chops the rest. The comparative probe shows *what* it
+favours: the picks win as `picks_more_specific` (25%) / `picks_more_prominent` (8%), and the dropped
+GT lose as `dropped_too_broad` (39%) / `no_evidence_for_dropped` (27%). Only **2%** are misses the
+model itself calls genuine.
 
 **The root cause: the model is text-anchored; the BA is experience-anchored.** The model rewards what
 the idea card spells out (specific, named, prominent) and under-weights the broad / downstream /
@@ -242,10 +241,9 @@ evidence for the broad/implied streams it would otherwise drop.
 ### Prompt engineering — tried, and why it didn't move F1
 
 We built `selection_evidence_recall_v2`, targeting the diagnosis directly: a **consistency** rule
-(don't drop a candidate as well-supported as your weakest pick — aimed at the 81% near-miss), a
-**broad/downstream reframe** (a broad stream is valid when the work flows through it; exclude only
-filler — aimed at the 39%+24%), and **near-twin care** (siblings can both apply). A/B on the same 100
-tickets:
+(don't drop a candidate as well-supported as your weakest pick), a **broad/downstream reframe** (a
+broad stream is valid when the work flows through it; exclude only filler — aimed at the 39%+24%),
+and **near-twin care** (siblings can both apply). A/B on the same 100 tickets:
 
 | prompt | F1 | P@6 | R@6 | judge F1 |
 |---|---|---|---|---|
@@ -253,18 +251,16 @@ tickets:
 | v2 (targeted) | **0.776** | 0.803 | 0.705 | **0.829** |
 
 **Strict F1 did not move** (0.776 vs 0.778, noise) — the rank/judge metrics ticked up a hair, the drop
-profile was unchanged. **Why:** the inconsistency is **structural, not promptable.** The model already
-*knows* the dropped GT is relevant (the 81% near-miss) — you cannot *talk* a single count-limited call
-into being consistent. Three prompt iterations would all land here. The lever is the **selection
-policy** (the count, or a two-stage score-then-select), not the wording.
+profile was unchanged. **Why:** the gap is **structural, not promptable.** The drops are the count
+squeezing out relevant-but-less-central streams (the count itself recovers them, not the wording),
+plus the text-vs-experience gap and label noise. You cannot close that with prompt phrasing — three
+iterations would all land here. The real lever is the **selection policy** (the count), not the words.
 
 **Decision: stop here.** Prompt wording is at its ceiling, and judge-F1 0.829 means ~⅓ of the
-remaining "misses" are actually relevant (GT-label noise) — so true quality is already ~0.83. A
-two-stage *score-then-select* path was built (config `score_select`) as the one structural idea that
-could exploit the 81% near-miss, but we are **not pursuing it**: the realistic upside is small, the
-precision risk is real (generous scoring also lifts the magnet false-positives), and `count=gt`
-strict-0.78 / judge-0.83 is accepted as the corpus ceiling for selection-from-text. **VS selection is
-locked on the v1 winner.**
+remaining "misses" are actually relevant (GT-label noise) — so true quality is already ~0.83.
+`count=gt` strict-0.78 / judge-0.83 is accepted as the corpus ceiling for selection-from-text, and
+**VS selection is locked on the v1 winner.** For more recall, the lever is the count (gt+2 for the
+shortlist-then-trim flow), not a different prompt.
 
 ## Verdict
 **Locked config: summary retrieval + FULL ~24k raw new-ticket prompt + summary historic — F1 ≈0.78–0.79.**
