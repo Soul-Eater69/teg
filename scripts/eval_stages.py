@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +33,12 @@ from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
 from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
+from teg.theme.context import render_ticket_context
 from teg.theme.stage_catalogue import StageCatalogue
+from teg.theme.stage_drop_explainer import (
+    classify_stage_drop_grounding,
+    explain_stage_swaps,
+)
 from teg.theme.stage_selection import (
     StageSelectionInput,
     select_stages,
@@ -222,8 +228,81 @@ async def _eval_ticket(
                 _pair_row(resolved.get(vs_id, []), gt_ids[vs_id], cand_ids[vs_id]) for vs_id in gt_ids
             ]
             result["mislink"] = [mislink_counts(raw_picks, cand_ids)]
+            # Drop diagnosis (one_call only): why did the LLM drop a GT stage it saw? Every catalogued
+            # GT stage was in the prompt, so a drop is always 'saw it, didn't pick it'.
+            if args.ground_drops or args.explain_swaps:
+                ticket_ctx = render_ticket_context(ctx)
+                result["drops"] = await _diagnose_drops(
+                    ticket_ctx, inputs, resolved, gt_ids, llm, args)
         print(f"  {ticket_id}: {len(inputs)} VS scored")
         return result
+
+
+async def _diagnose_drops(ticket_ctx: str, inputs, resolved, gt_ids, llm, args) -> list[dict]:
+    """One row per dropped GT stage with its logged reason (grounding + swap), per value stream."""
+    rows: list[dict] = []
+    for i in inputs:
+        vs_id = i.value_stream.value_stream_id
+        picked = [s.stage_id for s in resolved.get(vs_id, [])]
+        dropped = sorted(gt_ids[vs_id] - set(picked))
+        if not dropped:
+            continue
+        grounding: dict = {}
+        swaps: dict = {}
+        if args.ground_drops:
+            try:
+                grounding = await classify_stage_drop_grounding(
+                    ticket_context=ticket_ctx, value_stream_name=i.value_stream.value_stream_name,
+                    stages=i.stages, dropped_ids=dropped, llm_client=llm)
+            except Exception as exc:
+                print(f"    ground-drops failed for {vs_id}: {type(exc).__name__}: {exc}")
+        if args.explain_swaps and picked:
+            try:
+                swaps = await explain_stage_swaps(
+                    ticket_context=ticket_ctx, value_stream_name=i.value_stream.value_stream_name,
+                    stages=i.stages, picked_ids=picked, dropped_ids=dropped, llm_client=llm)
+            except Exception as exc:
+                print(f"    explain-swaps failed for {vs_id}: {type(exc).__name__}: {exc}")
+        name_of = {s.stage_id: s.stage_name for s in i.stages}
+        for sid in dropped:
+            g = grounding.get(sid)
+            sw = swaps.get(sid)
+            rows.append({
+                "value_stream_id": vs_id, "stage_id": sid, "stage_name": name_of.get(sid, ""),
+                "grounding": g.grounding if g else "", "grounding_note": g.note if g else "",
+                "swap_reason": sw.reason_code if sw else "", "swap_note": sw.note if sw else "",
+                "picked_instead": "; ".join(name_of.get(p, p) for p in picked),
+            })
+    return rows
+
+
+def _report_stage_drops(drops: list[dict], out_base: Path) -> None:
+    """Aggregate grounding + swap of dropped GT stages, and write the per-drop detail CSV."""
+    grounding: dict[str, int] = {}
+    swaps: dict[str, int] = {}
+    for d in drops:
+        if d.get("grounding"):
+            grounding[d["grounding"]] = grounding.get(d["grounding"], 0) + 1
+        if d.get("swap_reason"):
+            swaps[d["swap_reason"]] = swaps.get(d["swap_reason"], 0) + 1
+    if grounding:
+        g = sum(grounding.values())
+        fixable = grounding.get("context_present_but_dropped", 0)
+        print(f"\n[grounding] {len(drops)} dropped GT stages, {g} classified:")
+        for code, n in sorted(grounding.items(), key=lambda kv: -kv[1]):
+            print(f"  {code:30} {n:4}  ({_div(n, g):.0%})")
+        print(f"  -> {_div(fixable, g):.0%} FIXABLE (evidence present, dropped anyway); "
+              f"{_div(grounding.get('no_context_for_stage', 0), g):.0%} justified (no evidence)")
+    if swaps:
+        sw = sum(swaps.values())
+        print(f"[swap] why the picks beat each dropped stage (of {sw}):")
+        for code, n in sorted(swaps.items(), key=lambda kv: -kv[1]):
+            print(f"  {code:34} {n:4}  ({_div(n, sw):.0%})")
+    detail = out_base.with_suffix(".stage_drops.csv")
+    with detail.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(drops[0].keys()))
+        w.writeheader(); w.writerows(drops)
+    print(f"-> per-drop reasons: {detail}  ({len(drops)} dropped GT stages)")
 
 
 async def main(args: argparse.Namespace) -> None:
@@ -314,6 +393,11 @@ async def main(args: argparse.Namespace) -> None:
             results_by_run.append({"input": input_repr, "mode": mode, "n_tickets": len(tickets), **metrics})
             _print_metrics(input_repr, mode, metrics)
 
+        # Drop diagnosis (one_call): aggregate grounding + swap, write a per-drop detail CSV.
+        drops = [d for r in rows for d in r.get("drops", [])]
+        if drops:
+            _report_stage_drops(drops, Path(args.out))
+
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     runs = json.loads(out.read_text(encoding="utf-8")) if out.exists() else []
@@ -353,6 +437,11 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--min-stages", type=int, default=1, help="min total resolved GT stages per ticket")
     p.add_argument("--sample", type=int, default=0, help="seeded random subset of N eligible tickets")
     p.add_argument("--seed", type=int, default=13, help="sampling seed (fixed so runs match)")
+    p.add_argument("--ground-drops", action="store_true",
+                   help="classify each dropped GT stage by evidence (context_present_but_dropped / "
+                        "no_context_for_stage / weak_broad_context) - the fixable-vs-justified split")
+    p.add_argument("--explain-swaps", action="store_true",
+                   help="comparative probe: why the picked stage(s) beat each dropped GT stage")
     p.add_argument("--coverage-only", action="store_true",
                    help="just check GT stage ids are in the catalogue (no LLM calls) and exit")
     p.add_argument("--concurrency", type=int, default=5)
