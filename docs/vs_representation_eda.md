@@ -34,6 +34,20 @@ So a run labelled **"raw + summary"** in the tables below means: **new-ticket pr
 **historic block = summary** (the retrieval query stays the summary unless the row says `raw@7k`
 retrieval). The ladder varies one place at a time.
 
+### The new IDMT ticket is used in BOTH forms
+
+This is the key thing to understand: for the **new** ticket we generate the summary **and** use the
+raw — they go to different places:
+
+- its raw (~24k tok) is **summarized** → that **summary** (~460 tok) is what we **embed for the
+  retrieval query** (to find the 6 nearest past tickets);
+- the **same raw** (~24k tok, in full) is what we put in the **new-ticket prompt** (the text the LLM
+  reads to pick the VS).
+
+> **summary to *find*, raw to *decide*.** The new ticket is therefore still summarized — that's why
+> summarization can't be dropped. The 6 historic neighbours contribute **only their summaries**
+> (their raw is never used in the winner).
+
 ## Results
 
 ![F1 by representation](vs_repr_charts/f1_ladder.png)
