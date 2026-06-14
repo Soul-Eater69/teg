@@ -43,8 +43,9 @@ PARENT_LINK_FIELD = "customfield_11401"
 STAGE_FIELD = "customfield_18700"
 
 _FUZZY_THRESHOLD = 0.86  # min ratio to accept a fuzzy stage-name match (summary fallback only)
-# Themes/epics in these states are NOT real GT: cancelled = dropped; to do = not yet committed.
-_SKIP_STATUSES = {"cancelled", "canceled", "to do", "todo"}
+# Themes/epics in these states are NOT real GT: cancelled = the BA dropped it. To Do is KEPT
+# (a planned-but-not-started stage is still a valid GT selection).
+_SKIP_STATUSES = {"cancelled", "canceled"}
 
 
 @dataclass(frozen=True)
