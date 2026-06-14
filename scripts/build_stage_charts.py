@@ -82,8 +82,8 @@ def fn_breakdown() -> None:
 
 
 # Drop grounding AFTER prune (answerable stages only).
-GROUNDING = [
-    ("no_context\n(label noise)", 41), ("present_but\n_dropped", 40), ("weak_broad", 20),
+GROUNDING = [  # largest-remainder rounding -> sums to 100
+    ("no_context\n(label noise)", 40), ("present_but\n_dropped", 40), ("weak_broad", 20),
 ]
 
 
@@ -105,7 +105,7 @@ _SWAP_N = sum(v for _, v in SWAP)
 
 def swap() -> None:
     labels = [r[0] for r in SWAP]
-    pct = [100 * v / _SWAP_N for _, v in SWAP]
+    pct = [35, 26, 24, 11, 4]  # largest-remainder rounding -> sums to 100
     fig, ax = plt.subplots(figsize=(8, 4.4))
     _bar(ax, labels, pct, "% of drops",
          f"Why the picks beat each dropped stage (n={_SWAP_N})", fmt="{:.0f}%",

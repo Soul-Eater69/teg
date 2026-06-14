@@ -106,22 +106,21 @@ model change. The post-prune numbers are the **fair baseline**: the model agains
 
 ![Grounding](stage_charts/grounding.png)
 
-On the answerable stages (post-prune), the drops break down as (n = 259 classified; shares rounded):
+On the answerable stages (post-prune), the drops break down as (n = 259 classified):
 
 | grounding | count | share | meaning |
 |---|---|---|---|
-| **no_context_for_stage** | 105 | **41%** | no ticket evidence — the BA's outside-knowledge pick (label noise) |
+| **no_context_for_stage** | 105 | **40%** | no ticket evidence — the BA's outside-knowledge pick (label noise) |
 | context_present_but_dropped | 103 | 40% | evidence shown, dropped anyway |
 | weak_broad_context | 51 | 20% | borderline |
 
 ![Swap reasons](stage_charts/swap.png)
 
-And *why* the picks won over each dropped stage (n = 264; shares rounded to whole numbers, so they
-sum to ~101%):
+And *why* the picks won over each dropped stage (n = 264):
 
 | reason | count | share | read |
 |---|---|---|---|
-| picks_more_specific | 94 | 36% | the model picked a **better/narrower** stage — often the model being right |
+| picks_more_specific | 94 | 35% | the model picked a **better/narrower** stage — often the model being right |
 | no_evidence_for_dropped | 69 | 26% | nothing in the ticket points to the dropped stage |
 | dropped_too_broad | 63 | 24% | the GT stage is broad/adjacent, only loosely implied |
 | adjacent_stage_confusion | 28 | 11% | a neighbouring lifecycle stage picked instead (the one fixable lever) |
