@@ -31,7 +31,12 @@ from teg.domain.condensed import SummaryFields
 from teg.integrations.llm import build_llm_client
 from teg.integrations.search import HistoricalValueStreamLabel
 from teg.value_stream.config import ValueStreamConfig
-from teg.value_stream.drop_explainer import explain_drops, explain_swaps, score_candidates
+from teg.value_stream.drop_explainer import (
+    classify_drop_grounding,
+    explain_drops,
+    explain_swaps,
+    score_candidates,
+)
 from teg.value_stream.relevance_judge import judge_value_streams
 
 
@@ -171,12 +176,16 @@ def _drop_detail_rows(results: list[dict], vs_names: dict[str, str]) -> list[dic
         drop_notes = res.get("drop_notes") or {}
         swap_reasons = res.get("swap_reasons") or {}
         swap_notes = res.get("swap_notes") or {}
+        grounding = res.get("grounding") or {}
+        grounding_notes = res.get("grounding_notes") or {}
         margins = res.get("score_margins") or {}
         for vs in dropped:
             out.append({
                 "ticket_id": res["ticket_id"],
                 "value_stream_id": vs,
                 "value_stream_name": vs_names.get(vs, ""),
+                "grounding": grounding.get(vs, ""),  # the actionable split, first
+                "grounding_note": grounding_notes.get(vs, ""),
                 "drop_reason": drop_reasons.get(vs, ""),
                 "drop_note": drop_notes.get(vs, ""),
                 "swap_reason": swap_reasons.get(vs, ""),
@@ -410,6 +419,19 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
                 swap_notes = {vs: exp.note for vs, exp in swaps.items()}
             except Exception as exc:
                 print(f"    explain-swaps failed for {ticket_id}: {type(exc).__name__}: {exc}")
+        # Grounding: was the evidence for each dropped GT present (fixable) or absent (justified)?
+        grounding: dict[str, str] = {}
+        grounding_notes: dict[str, str] = {}
+        if llm is not None and args.ground_drops and buckets["llm_dropped"]:
+            try:
+                grounded = await classify_drop_grounding(
+                    query=request.summary_fields.generated_summary,
+                    review_pool=trace.review_pool, dropped_ids=buckets["llm_dropped"], llm_client=llm,
+                )
+                grounding = {vs: exp.grounding for vs, exp in grounded.items()}
+                grounding_notes = {vs: exp.note for vs, exp in grounded.items()}
+            except Exception as exc:
+                print(f"    ground-drops failed for {ticket_id}: {type(exc).__name__}: {exc}")
         # LLM-as-judge: is each predicted / missed VS genuinely relevant (independent of GT)?
         judged: dict[str, bool] = {}
         if llm is not None and args.judge:
@@ -431,6 +453,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
             "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed,
             "score_margins": score_margins, "swap_reasons": swap_reasons,
             "drop_notes": drop_notes, "swap_notes": swap_notes,
+            "grounding": grounding, "grounding_notes": grounding_notes,
             "retrieval_s": trace.retrieval_seconds, "selection_s": trace.selection_seconds,
             "llm_pick_count": trace.llm_pick_count, "requested_count": trace.requested_count,
             "retrieval": retrieval, "boost": boost}
@@ -516,7 +539,8 @@ async def main(args) -> None:
     }
     service = build_value_stream_service(config=config, historic_content=historic_content)
     llm = build_llm_client(load_settings()) if (
-        args.explain_drops or args.judge or args.score_margins or args.explain_swaps) else None
+        args.explain_drops or args.judge or args.score_margins or args.explain_swaps
+        or args.ground_drops) else None
     sem = asyncio.Semaphore(args.concurrency)
 
     vs_names = _vs_name_map(docs)  # id -> name, for judging GT streams not in the pool
@@ -572,6 +596,7 @@ async def main(args) -> None:
     bucket_totals = {"not_retrieved": 0, "gated_pre_llm": 0, "llm_dropped": 0}
     reason_totals: dict[str, int] = {}
     swap_totals: dict[str, int] = {}  # Level C reason codes
+    grounding_totals: dict[str, int] = {}  # evidence-grounding buckets
     margins: list[float] = []  # Level B: dropped-GT score minus the pick cut
     # Judge-adjusted: predictions judged relevant (even if not GT) + misses judged supported.
     judge_pred = judge_rel_pred = judge_supported_miss = 0
@@ -602,6 +627,8 @@ async def main(args) -> None:
             reason_totals[code] = reason_totals.get(code, 0) + 1
         for code in (res.get("swap_reasons") or {}).values():
             swap_totals[code] = swap_totals.get(code, 0) + 1
+        for code in (res.get("grounding") or {}).values():
+            grounding_totals[code] = grounding_totals.get(code, 0) + 1
         margins.extend((res.get("score_margins") or {}).values())
         for k in args.k:
             topk = set(predicted[:k])
@@ -750,6 +777,16 @@ async def main(args) -> None:
         print(f"\n[i] {bucket_totals['llm_dropped']} GT were llm_dropped but not explained - "
               "re-run with --explain-drops to classify why.")
 
+    if grounding_totals:  # the actionable evidence split
+        g = sum(grounding_totals.values())
+        fixable = grounding_totals.get("context_present_but_dropped", 0)
+        justified = grounding_totals.get("no_context_for_gt", 0)
+        print(f"\n[grounding] was the evidence for each dropped GT present? (of {g} classified):")
+        for code, cnt in sorted(grounding_totals.items(), key=lambda kv: -kv[1]):
+            print(f"  {code:30} {cnt:4}  ({_div(cnt, g):.0%})")
+        print(f"  -> {_div(fixable, g):.0%} are FIXABLE (evidence present, dropped anyway); "
+              f"{_div(justified, g):.0%} justified (no evidence - GT-label noise / broad BA choice)")
+
     if swap_totals:  # Level C
         sw = sum(swap_totals.values())
         print(f"\n[Level C] why the picks beat each dropped GT (of {sw} explained):")
@@ -798,6 +835,9 @@ async def main(args) -> None:
         "retrieval": retrieval_mean,
         "boost": {"backed_recall": br, "notbacked_recall": nr_, "lift": br - nr_},
         "drop_reasons": dict(reason_totals), "swap_reasons": dict(swap_totals),
+        "grounding": dict(grounding_totals),
+        "grounding_fixable": _div(grounding_totals.get("context_present_but_dropped", 0),
+                                  sum(grounding_totals.values())) if grounding_totals else None,
         "score_margin_near_miss": _div(sum(1 for m in margins if m >= 0), len(margins)) if margins else None,
     }
 
@@ -988,6 +1028,10 @@ if __name__ == "__main__":
     parser.add_argument("--explain-swaps", action="store_true",
                         help="Level C: comparative probe - why the picks beat each dropped GT, in a "
                              "richer taxonomy (more actionable than --explain-drops). Extra calls.")
+    parser.add_argument("--ground-drops", action="store_true",
+                        help="classify each dropped GT by EVIDENCE: no_context_for_gt (justified) / "
+                             "context_present_but_dropped (the fixable miss) / weak_broad_context. "
+                             "The most actionable split. Extra calls.")
     parser.add_argument("--judge", action="store_true",
                         help="LLM-as-judge relevance of predictions + misses (GT-independent view; extra calls)")
     parser.add_argument("--mode", choices=["merge", "all50", "topk", "historic_only", "evidence"],

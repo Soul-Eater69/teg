@@ -6,7 +6,9 @@ import asyncio
 
 from teg.value_stream.drop_explainer import (
     CandidateScores,
+    GroundingExplanations,
     SwapExplanations,
+    classify_drop_grounding,
     explain_swaps,
     score_candidates,
 )
@@ -52,3 +54,18 @@ def test_explain_swaps_empty_when_no_picks() -> None:
     out = asyncio.run(explain_swaps(
         query="t", review_pool=pool, picked_ids=[], dropped_ids=["C"], llm_client=FakeSwapLLM()))
     assert out == {}
+
+
+class FakeGroundLLM:
+    async def complete(self, *, system, user, schema):
+        return GroundingExplanations(explanations=[
+            {"droppedId": "C", "grounding": "context_present_but_dropped", "note": "ticket says X"},
+        ])
+
+
+def test_classify_drop_grounding_buckets() -> None:
+    pool = [_cand("A", "Alpha"), _cand("C", "Gamma")]
+    out = asyncio.run(classify_drop_grounding(
+        query="t", review_pool=pool, dropped_ids=["C"], llm_client=FakeGroundLLM()))
+    assert out["C"].grounding == "context_present_but_dropped"  # the fixable bucket
+    assert out["C"].note == "ticket says X"

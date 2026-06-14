@@ -178,3 +178,66 @@ async def explain_swaps(
     )
     result = await llm_client.complete(system=_SWAP_SYSTEM, user=user, schema=SwapExplanations)
     return {e.dropped_id: e for e in result.explanations}
+
+
+# --------------------------------------------------------------------------- #
+# Grounding: was the evidence for the dropped GT actually present? (the actionable split)
+# --------------------------------------------------------------------------- #
+
+GroundingBucket = Literal[
+    # The ticket has NO evidence for this GT - dropping it was justified (GT is likely a broad /
+    # downstream BA choice or label noise; not a model error, not prompt-fixable).
+    "no_context_for_gt",
+    # The ticket clearly supports this GT and the candidate block showed enough - it SHOULD have
+    # been picked. This is the real, prompt-fixable miss (the F1 headroom).
+    "context_present_but_dropped",
+    # Only indirect / downstream / broad evidence - borderline, reasonably deprioritised.
+    "weak_broad_context",
+    "other",
+]
+
+_GROUND_SYSTEM = (
+    "You audit value-stream selection. For each CORRECT-but-left-out value stream, judge ONLY the "
+    "EVIDENCE: does this ticket contain support for it, and was that support visible in the "
+    "candidate block shown? Choose one code: "
+    "no_context_for_gt (the ticket has no evidence for it - leaving it out was justified), "
+    "context_present_but_dropped (the ticket clearly supports it and the block showed enough - it "
+    "should have been picked), "
+    "weak_broad_context (only indirect/downstream/broad evidence - borderline), other. "
+    "Add a one-line note quoting the ticket evidence, or noting its absence. Be strict: only call "
+    "it context_present_but_dropped when the ticket genuinely supports it."
+)
+
+
+class GroundingExplanation(CamelModel):
+    dropped_id: str
+    grounding: GroundingBucket = "other"
+    note: str = ""
+
+
+class GroundingExplanations(CamelModel):
+    explanations: list[GroundingExplanation] = Field(default_factory=list)
+
+
+async def classify_drop_grounding(
+    *,
+    query: str,
+    review_pool: list[ValueStreamCandidate],
+    dropped_ids: list[str],
+    llm_client: LLMClient,
+) -> dict[str, GroundingExplanation]:
+    """Per dropped GT: was the supporting evidence present (fixable) or absent (justified)?"""
+    if not dropped_ids:
+        return {}
+    by_id = {c.value_stream_id: c for c in review_pool}
+    asked = [f"{i} ({by_id[i].value_stream_name})" for i in dropped_ids if i in by_id]
+    if not asked:
+        return {}
+    user = (
+        f"TICKET:\n{query}\n\n"
+        f"CANDIDATE BLOCKS (what the model saw):\n{render_candidate_blocks(review_pool)}\n\n"
+        f"For each left-out CORRECT value stream, classify the evidence situation:\n"
+        + "\n".join(asked)
+    )
+    result = await llm_client.complete(system=_GROUND_SYSTEM, user=user, schema=GroundingExplanations)
+    return {e.dropped_id: e for e in result.explanations}
