@@ -233,6 +233,25 @@ async def main(args: argparse.Namespace) -> None:
     if not tickets:
         raise SystemExit("no tickets overlap between condensed docs and stage GT")
 
+    # Coverage-only: verify GT stage ids live in the catalogue (the recall ceiling) WITHOUT any LLM
+    # calls - the cheap first check that the GT field and the catalogue share an id space.
+    if args.coverage_only:
+        in_cat = gt_total = scored_vs = skipped_vs = 0
+        for t in tickets:
+            for vs_id, entry in gt[t].items():
+                cand = {s.stage_id for s in catalogue.stages_for(vs_id)}
+                if not cand:
+                    skipped_vs += 1
+                    continue
+                scored_vs += 1
+                in_cat += len(entry["stages"] & cand)
+                gt_total += len(entry["stages"])
+        print(f"\nGT-in-catalogue coverage (no LLM): {in_cat}/{gt_total} stage ids "
+              f"({_div(in_cat, gt_total):.0%}) across {scored_vs} scored VS; "
+              f"{skipped_vs} VS skipped (id not in catalogue)")
+        print("-> high (>80%) = ids align, safe to run the full eval; low = stage-id mismatch to fix.")
+        return
+
     inputs_axis = ["summary", "raw"] if args.input == "both" else [args.input]
     llm = build_llm_client(settings)
     sem = asyncio.Semaphore(args.concurrency)
@@ -300,6 +319,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--input", choices=["summary", "raw", "both"], default="summary")
     p.add_argument("--raw-budget", type=int, default=_RAW_BUDGET_CHARS)
     p.add_argument("--count", type=int, default=0, help="limit tickets (0 = all)")
+    p.add_argument("--coverage-only", action="store_true",
+                   help="just check GT stage ids are in the catalogue (no LLM calls) and exit")
     p.add_argument("--concurrency", type=int, default=5)
     p.add_argument("--out", default="out/stage_eval/eval_stages.runs.json")
     return p.parse_args()
