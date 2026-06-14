@@ -16,8 +16,17 @@ from __future__ import annotations
 
 import io
 import re
+import threading
 import unicodedata
 from typing import Callable
+
+# PDFium (ctypes) and python-pptx are NOT safe to run from multiple threads at once - two
+# concurrent parses deadlock inside the native code (no error, the run just hangs), which is
+# why ingest needed --concurrency 1. Serialize only the native parse with this lock: extraction
+# runs in asyncio.to_thread worker threads, so one parse at a time across them avoids the
+# deadlock while the LLM / embedding / download I/O stays fully parallel. Ticket concurrency can
+# go back up - the bottleneck is the per-ticket LLM call, not the now-serialized (fast) parse.
+_NATIVE_PARSE_LOCK = threading.Lock()
 
 _ZERO_WIDTH = re.compile("[" + "".join(map(chr, (0x200B, 0x200C, 0x200D, 0xFEFF))) + "]")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -87,7 +96,9 @@ class DocumentExtractor:
         if handler is None:
             return ""  # unsupported (legacy .ppt/.doc, spreadsheets, images, ...)
         try:
-            return _clean(handler(content))
+            with _NATIVE_PARSE_LOCK:  # one native parse at a time (PDFium/pptx aren't thread-safe)
+                text = handler(content)
+            return _clean(text)  # cleaning is pure Python - no need to hold the lock
         except Exception:
             return ""  # defensive: a bad/corrupt file contributes nothing, never crashes
 
