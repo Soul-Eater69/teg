@@ -16,6 +16,14 @@ import asyncio
 
 import httpx
 
+# The token POST itself is flaky on the dev STS: the FIRST fetch of a run is sometimes
+# rejected (401 server_error / SecretInitialisationException) or hits a 5xx/timeout, even
+# though a standalone call succeeds. Retry the fetch with exponential backoff before giving
+# up; a genuinely-bad credential just fails all attempts after a few seconds.
+_TOKEN_MAX_RETRIES = 3
+_TOKEN_BACKOFF_SECONDS = 0.5
+_TOKEN_RETRY_STATUS = {401, 408, 429}  # plus any 5xx; transient on this STS
+
 
 class IDPCustomAuth(httpx.Auth):
     def __init__(
@@ -28,6 +36,7 @@ class IDPCustomAuth(httpx.Auth):
         user: str,
         password: str,
         verify_ssl: bool = False,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._app_id = app_id
         self._auth_url = auth_url
@@ -35,6 +44,7 @@ class IDPCustomAuth(httpx.Auth):
         self._client_secret = client_secret
         self._user = user
         self._password = password
+        self._transport = transport  # test seam (inject a MockTransport); None = real network
         self._verify_ssl = verify_ssl
         self._token: str | None = None
         self._lock = asyncio.Lock()
@@ -75,10 +85,24 @@ class IDPCustomAuth(httpx.Auth):
             "scope": "profile openid roles permissions",
         }
         body = {"username": self._user, "password": self._password}
-        async with httpx.AsyncClient(verify=self._verify_ssl) as client:
-            response = await client.post(self._auth_url, headers=headers, json=body)
-        response.raise_for_status()
-        token = response.json().get("jwt_token")
-        if not token:
-            raise RuntimeError("IDP token response missing jwt_token")
-        return str(token)
+        last_error: Exception | None = None
+        async with httpx.AsyncClient(verify=self._verify_ssl, transport=self._transport) as client:
+            for attempt in range(_TOKEN_MAX_RETRIES + 1):
+                if attempt:
+                    await asyncio.sleep(_TOKEN_BACKOFF_SECONDS * (2 ** (attempt - 1)))
+                try:
+                    response = await client.post(self._auth_url, headers=headers, json=body)
+                except httpx.TransportError as exc:  # connect/read timeout, conn reset, ...
+                    last_error = exc
+                    continue
+                if response.status_code in _TOKEN_RETRY_STATUS or response.status_code >= 500:
+                    last_error = httpx.HTTPStatusError(
+                        f"token endpoint {response.status_code}", request=response.request,
+                        response=response)
+                    continue  # transient on this STS - back off and retry
+                response.raise_for_status()  # any other 4xx is a real error - surface it
+                token = response.json().get("jwt_token")
+                if not token:
+                    raise RuntimeError("IDP token response missing jwt_token")
+                return str(token)
+        raise last_error or RuntimeError("IDP token fetch failed")

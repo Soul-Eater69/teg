@@ -6,6 +6,7 @@ import asyncio
 
 import httpx
 
+from teg.integrations.llm import idp_auth
 from teg.integrations.llm.idp_auth import IDPCustomAuth
 
 
@@ -62,3 +63,34 @@ def test_cached_token_used_without_refetch_when_ok(monkeypatch) -> None:
     monkeypatch.setattr(auth, "_fetch_token", fake_fetch)
     sent = _drive(auth, [200])
     assert sent == ["Bearer tok"] and calls["n"] == 1  # one fetch, no retry on success
+
+
+def test_fetch_token_retries_transient_401_then_succeeds(monkeypatch) -> None:
+    # The dev STS sometimes 401s the first token POST (server_error / secret store), then recovers.
+    monkeypatch.setattr(idp_auth, "_TOKEN_BACKOFF_SECONDS", 0.0)  # no real sleep in the test
+    statuses = iter([401, 503, 200])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = next(statuses)
+        return httpx.Response(status, json={"jwt_token": "tok"} if status == 200 else {"error": "server_error"})
+
+    auth = IDPCustomAuth(app_id="APP", auth_url="https://idp/token", client_id="c",
+                         client_secret="s", user="u", password="p",
+                         transport=httpx.MockTransport(handler))
+    assert asyncio.run(auth._fetch_token()) == "tok"  # rode through the 401 + 503
+
+
+def test_fetch_token_surfaces_a_real_4xx(monkeypatch) -> None:
+    monkeypatch.setattr(idp_auth, "_TOKEN_BACKOFF_SECONDS", 0.0)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"error": "forbidden"})  # not in the retry set
+
+    auth = IDPCustomAuth(app_id="APP", auth_url="https://idp/token", client_id="c",
+                         client_secret="s", user="u", password="p",
+                         transport=httpx.MockTransport(handler))
+    try:
+        asyncio.run(auth._fetch_token())
+        assert False, "expected a 403 to surface"
+    except httpx.HTTPStatusError as exc:
+        assert exc.response.status_code == 403
