@@ -4,8 +4,12 @@ Charts are inlined as base64 data URIs, so the output opens on any machine / onl
 with no sibling image files - fixing the broken relative ``![](charts/x.png)`` links when the
 doc is copied around. Run with the markdown lib provided ad-hoc (no project dependency):
 
-  uv run --with markdown python scripts/render_doc.py docs/retrieval_eval_findings.md
-  uv run --with markdown python scripts/render_doc.py docs/*.md --pdf
+  uv run --with markdown-it-py python scripts/render_doc.py docs/retrieval_eval_findings.md
+  uv run --with markdown-it-py python scripts/render_doc.py docs/*.md --pdf
+
+Markdown is rendered with markdown-it-py (CommonMark + tables) so the output matches GitHub's
+rendering - in particular a bullet/ordered list may directly follow a paragraph line (no blank
+line needed), which Python-Markdown got wrong (it printed literal '-' dashes).
 
 ``--pdf`` prints the self-contained HTML to PDF via headless Chrome (the inlined base64
 charts render natively). Writes ``<doc>.html`` (and ``<doc>.pdf``) next to the source.
@@ -22,7 +26,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import markdown
+from markdown_it import MarkdownIt
 
 # Headless-Chrome locations that can print HTML -> PDF (first one found wins).
 _CHROME_CANDIDATES = [
@@ -118,11 +122,14 @@ def html_to_pdf(html_path: Path) -> Path | None:
     return pdf_path
 
 
+# CommonMark + tables, matching GitHub: a list can directly follow a paragraph (no blank line),
+# which is how the docs are written. typographer adds smart quotes/dashes (GitHub-like).
+_MD = MarkdownIt("commonmark", {"typographer": True}).enable(["table", "strikethrough"])
+
+
 def render(md_path: Path, *, to_pdf: bool = False) -> Path:
     text = md_path.read_text(encoding="utf-8")
-    body = markdown.markdown(
-        text, extensions=["tables", "fenced_code", "sane_lists", "toc", "attr_list"]
-    )
+    body = _MD.render(text)
     body, inlined, missing = _inline_images(body, md_path.parent)
     title = md_path.stem.replace("_", " ")
     html = (f"<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
