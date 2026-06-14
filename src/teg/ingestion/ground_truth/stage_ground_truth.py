@@ -5,16 +5,18 @@ For one IDMT ticket this resolves, per linked Theme/GROUP (a Value Stream):
     Theme description   -> theme_description
     Business Needs field-> business_needs
     each child Epic     -> one stage (Epic summary canonicalized to the stage catalogue)
-                           plus the Epic's L2 / L3 capability fields
+    L2 / L3 fields      -> theme_l2_capabilities / theme_l3_capabilities
 
 Stages are the eval answer key for stage selection; theme_description / business_needs /
 L2 / L3 are the answer key for the rest of the theme package (see ``ThemePackage``). Epics
 under a Theme are found three ways and unioned (deduped by key): the "Parent Link" custom
 field, the standard ``parent`` relation, and implement/Epic issue-links on the Theme.
 
+Business Needs and the L2/L3 Business Capability Model fields all live on the Theme (verified
+on a live GROUP issue), so L2/L3 GT is per-theme, not per-stage. Field ids are overridable
+(see :class:`StageGtFields`); a field empty across all themes is reported in ``warnings``.
+
 Pure logic + a small injected Jira protocol so it unit-tests with a fake (no live calls).
-Field ids reuse the POC defaults and are overridable (see :class:`StageGtFields`); a field
-that comes back empty for every Epic is reported in ``warnings`` so it can be corrected.
 """
 
 from __future__ import annotations
@@ -27,11 +29,11 @@ from typing import Protocol, Sequence
 from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
 from teg.ingestion.extraction.value_stream_field import parse_value_stream
 
-# Jira field ids (POC defaults; override via StageGtFields). Business Needs lives on the
-# Theme; L2/L3 live on each Epic (per the schema decision); Parent Link finds child Epics.
-BUSINESS_NEEDS_FIELD = "customfield_20900"  # on the Theme
-L2_CAPABILITY_FIELD = "customfield_18602"  # on the Epic (assumed; verify against a sample)
-L3_CAPABILITY_FIELD = "customfield_18603"  # on the Epic (assumed; verify against a sample)
+# Jira field ids (override via StageGtFields). All three live on the Theme (verified on a
+# live GROUP issue); Parent Link finds the child Epics.
+BUSINESS_NEEDS_FIELD = "customfield_20900"  # "Business Needs" on the Theme
+L2_CAPABILITY_FIELD = "customfield_18602"  # "L2 Business Capability Model" on the Theme
+L3_CAPABILITY_FIELD = "customfield_18603"  # "L3 Business Capability Model" on the Theme
 PARENT_LINK_FIELD = "customfield_11401"
 
 _FUZZY_THRESHOLD = 0.86  # min ratio to accept a fuzzy stage-name match (POC value)
@@ -49,7 +51,7 @@ class StageGtFields:
 
 @dataclass(frozen=True)
 class StageGroundTruth:
-    """One Epic resolved to a catalogue stage, with its L2/L3 capabilities."""
+    """One Epic resolved to a catalogue stage."""
 
     epic_key: str
     raw_summary: str  # the Epic title before canonicalization
@@ -57,13 +59,11 @@ class StageGroundTruth:
     stage_name: str  # canonical catalogue stage name ("" when unresolved)
     match_method: str  # exact | fuzzy | unresolved
     confidence: float
-    l2_capabilities: list[str] = field(default_factory=list)
-    l3_capabilities: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class ThemeStageGroundTruth:
-    """One linked Theme (a Value Stream) and the stages under it."""
+    """One linked Theme (a Value Stream): its stages, description, needs, and L2/L3 caps."""
 
     theme_key: str
     group_key: str
@@ -71,6 +71,8 @@ class ThemeStageGroundTruth:
     value_stream_name: str
     theme_description: str
     business_needs: str
+    l2_capabilities: list[str] = field(default_factory=list)
+    l3_capabilities: list[str] = field(default_factory=list)
     stages: list[StageGroundTruth] = field(default_factory=list)
 
 
@@ -141,7 +143,8 @@ async def _build_theme(
 ) -> ThemeStageGroundTruth | None:
     theme = await jira.get_issue(
         theme_key,
-        fields=["summary", "description", "issuelinks", value_stream_field, fields.business_needs],
+        fields=["summary", "description", "issuelinks", value_stream_field,
+                fields.business_needs, fields.l2_capability, fields.l3_capability],
     )
     tf = theme.get("fields") or {}
     vs = parse_value_stream(tf.get(value_stream_field))
@@ -155,7 +158,7 @@ async def _build_theme(
 
     epics = await _fetch_child_epics(theme, jira=jira, fields=fields)
     stages = [
-        _stage_from_epic(epic, catalogue_stages=catalogue_stages, vs_name=vs_name, fields=fields)
+        _stage_from_epic(epic, catalogue_stages=catalogue_stages, vs_name=vs_name)
         for epic in epics
     ]
     return ThemeStageGroundTruth(
@@ -165,6 +168,8 @@ async def _build_theme(
         value_stream_name=vs_name,
         theme_description=_coerce_text(tf.get("description")),
         business_needs=_coerce_text(tf.get(fields.business_needs)),
+        l2_capabilities=parse_capabilities(tf.get(fields.l2_capability)),
+        l3_capabilities=parse_capabilities(tf.get(fields.l3_capability)),
         stages=stages,
     )
 
@@ -174,10 +179,7 @@ async def _fetch_child_epics(
 ) -> list[dict]:
     """Union the three Epic-discovery paths, deduped by key (first seen wins)."""
     theme_key = _clean(theme.get("key")).upper()
-    epic_fields = [
-        "summary", "status", "issuetype", "parent",
-        fields.parent_link, fields.l2_capability, fields.l3_capability,
-    ]
+    epic_fields = ["summary", "status", "issuetype", "parent", fields.parent_link]
     by_key: dict[str, dict] = {}
 
     for jql in (
@@ -206,7 +208,7 @@ async def _fetch_child_epics(
 
 
 def _stage_from_epic(
-    epic: dict, *, catalogue_stages: list[CatalogueStage], vs_name: str, fields: StageGtFields
+    epic: dict, *, catalogue_stages: list[CatalogueStage], vs_name: str
 ) -> StageGroundTruth:
     ef = epic.get("fields") or {}
     raw_summary = _clean(ef.get("summary"))
@@ -220,8 +222,6 @@ def _stage_from_epic(
         stage_name=stage_name,
         match_method=method,
         confidence=confidence,
-        l2_capabilities=parse_capabilities(ef.get(fields.l2_capability)),
-        l3_capabilities=parse_capabilities(ef.get(fields.l3_capability)),
     )
 
 

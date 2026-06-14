@@ -46,11 +46,8 @@ class FakeJira:
         return self._searches.get(jql, [])
 
 
-def _epic(key: str, summary: str, *, l2=None, l3=None) -> dict:
-    return {"key": key, "fields": {
-        "summary": summary, "issuetype": {"name": "Epic"},
-        "customfield_18602": l2, "customfield_18603": l3,
-    }}
+def _epic(key: str, summary: str) -> dict:
+    return {"key": key, "fields": {"summary": summary, "issuetype": {"name": "Epic"}}}
 
 
 def _fixture() -> FakeJira:
@@ -64,6 +61,8 @@ def _fixture() -> FakeJira:
     theme = {"key": "GROUP-9", "fields": {
         "summary": "Appeals theme", "description": "Theme description text",
         "customfield_20900": "Members can appeal decisions quickly",
+        "customfield_18602": [{"value": "Capability Mgmt"}],  # L2 on the Theme
+        "customfield_18603": "Case Intake; Triage Routing",  # L3 on the Theme
         "Business Value Stream": "Resolve Appeal {VSR001}",
         "issuelinks": [  # an Epic reached only via an implement link (not via parent search)
             {"type": {"name": "Implements", "outward": "implements"},
@@ -71,9 +70,8 @@ def _fixture() -> FakeJira:
         ],
     }}
     rel = {"key": "REL-5", "fields": {"summary": "unrelated", "Business Value Stream": None}}
-    epic2 = _epic("EPIC-2", "Resolve Appeal - Intake & Triage",
-                  l2=[{"value": "Capability Mgmt"}], l3="Case Intake; Triage Routing")
-    epic3 = _epic("EPIC-3", "Resolve Appeal Decision", l2={"value": "Decisioning"}, l3=None)
+    epic2 = _epic("EPIC-2", "Resolve Appeal - Intake & Triage")
+    epic3 = _epic("EPIC-3", "Resolve Appeal Decision")
     return FakeJira(
         issues={"IDMT-1": ticket, "GROUP-9": theme, "REL-5": rel, "EPIC-3": epic3},
         searches={'"Parent Link" = GROUP-9 AND issuetype = Epic': [epic2]},
@@ -93,6 +91,9 @@ def test_build_ticket_stage_ground_truth_end_to_end() -> None:
     assert (theme.value_stream_id, theme.value_stream_name) == ("VSR001", "Resolve Appeal")
     assert theme.theme_description == "Theme description text"
     assert theme.business_needs == "Members can appeal decisions quickly"
+    # L2/L3 are theme-level (verified on a live GROUP issue).
+    assert theme.l2_capabilities == ["Capability Mgmt"]
+    assert theme.l3_capabilities == ["Case Intake", "Triage Routing"]
 
     by_key = {s.epic_key: s for s in theme.stages}
     assert set(by_key) == {"EPIC-2", "EPIC-3"}  # parent-link Epic + issue-link Epic, deduped
@@ -100,13 +101,10 @@ def test_build_ticket_stage_ground_truth_end_to_end() -> None:
     # EPIC-2: prefix-stripped suffix "Intake & Triage" matches the catalogue stage exactly.
     s2 = by_key["EPIC-2"]
     assert (s2.stage_id, s2.stage_name, s2.match_method) == ("ST1", "Intake & Triage", "exact")
-    assert s2.l2_capabilities == ["Capability Mgmt"]
-    assert s2.l3_capabilities == ["Case Intake", "Triage Routing"]
 
     # EPIC-3: full summary matches; reached only through the Theme's implement link.
     s3 = by_key["EPIC-3"]
     assert s3.stage_id == "ST2" and s3.match_method == "exact"
-    assert s3.l2_capabilities == ["Decisioning"] and s3.l3_capabilities == []
 
 
 def test_canonicalize_stage_exact_fuzzy_and_unresolved() -> None:

@@ -141,13 +141,13 @@ async def main(args: argparse.Namespace) -> None:
         await http.aclose()
 
     # Capability-field health: flag a field that never populated (likely the wrong id).
-    l2_seen = any(s.l2_capabilities for t in tickets for th in t.themes for s in th.stages)
-    l3_seen = any(s.l3_capabilities for t in tickets for th in t.themes for s in th.stages)
+    l2_seen = any(th.l2_capabilities for t in tickets for th in t.themes)
+    l3_seen = any(th.l3_capabilities for t in tickets for th in t.themes)
     if not l2_seen:
-        print(f"\n  NOTE: L2 field {fields.l2_capability} was empty for every Epic "
+        print(f"\n  NOTE: L2 field {fields.l2_capability} was empty for every Theme "
               "- verify the id with --l2-field")
     if not l3_seen:
-        print(f"  NOTE: L3 field {fields.l3_capability} was empty for every Epic "
+        print(f"  NOTE: L3 field {fields.l3_capability} was empty for every Theme "
               "- verify the id with --l3-field")
 
     out = Path(args.out)

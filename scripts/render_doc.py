@@ -1,12 +1,14 @@
-"""Render a Markdown analysis doc to a self-contained HTML file.
+"""Render a Markdown analysis doc to a self-contained HTML file (and optionally PDF).
 
 Charts are inlined as base64 data URIs, so the output opens on any machine / online viewer
 with no sibling image files - fixing the broken relative ``![](charts/x.png)`` links when the
 doc is copied around. Run with the markdown lib provided ad-hoc (no project dependency):
 
   uv run --with markdown python scripts/render_doc.py docs/retrieval_eval_findings.md
+  uv run --with markdown python scripts/render_doc.py docs/*.md --pdf
 
-Writes ``<doc>.html`` next to the source. Pass several docs to render them all.
+``--pdf`` prints the self-contained HTML to PDF via headless Chrome (the inlined base64
+charts render natively). Writes ``<doc>.html`` (and ``<doc>.pdf``) next to the source.
 """
 
 from __future__ import annotations
@@ -15,9 +17,20 @@ import argparse
 import base64
 import mimetypes
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import markdown
+
+# Headless-Chrome locations that can print HTML -> PDF (first one found wins).
+_CHROME_CANDIDATES = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "google-chrome", "chromium", "chromium-browser", "microsoft-edge",
+]
 
 _IMG_SRC = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', re.IGNORECASE)
 
@@ -64,7 +77,32 @@ def _inline_images(html: str, base_dir: Path) -> tuple[str, int, list[str]]:
     return _IMG_SRC.sub(_sub, html), inlined, missing
 
 
-def render(md_path: Path) -> Path:
+def _find_chrome() -> str | None:
+    for candidate in _CHROME_CANDIDATES:
+        if Path(candidate).exists() or shutil.which(candidate):
+            return candidate
+    return None
+
+
+def html_to_pdf(html_path: Path) -> Path | None:
+    """Print a self-contained HTML to PDF via headless Chrome. Returns None if unavailable."""
+    chrome = _find_chrome()
+    if not chrome:
+        print("  (skipping PDF: no headless Chrome/Edge/Chromium found)")
+        return None
+    pdf_path = html_path.with_suffix(".pdf")
+    # Chrome needs a unique user-data-dir to run headless without clobbering a live profile.
+    with tempfile.TemporaryDirectory() as profile:
+        subprocess.run(
+            [chrome, "--headless", "--disable-gpu", "--no-pdf-header-footer",
+             f"--user-data-dir={profile}",
+             f"--print-to-pdf={pdf_path}", html_path.resolve().as_uri()],
+            check=True, capture_output=True,
+        )
+    return pdf_path
+
+
+def render(md_path: Path, *, to_pdf: bool = False) -> Path:
     text = md_path.read_text(encoding="utf-8")
     body = markdown.markdown(
         text, extensions=["tables", "fenced_code", "sane_lists", "toc", "attr_list"]
@@ -78,12 +116,17 @@ def render(md_path: Path) -> Path:
     out.write_text(html, encoding="utf-8")
     print(f"{md_path.name} -> {out.name}  ({inlined} image(s) inlined)"
           + (f"  MISSING: {missing}" if missing else ""))
+    if to_pdf:
+        pdf = html_to_pdf(out)
+        if pdf:
+            print(f"{md_path.name} -> {pdf.name}")
     return out
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Render Markdown to self-contained HTML.")
+    p = argparse.ArgumentParser(description="Render Markdown to self-contained HTML (+ PDF).")
     p.add_argument("docs", nargs="+", help="markdown file(s) to render")
+    p.add_argument("--pdf", action="store_true", help="also print a PDF via headless Chrome")
     args = p.parse_args()
     for doc in args.docs:
-        render(Path(doc))
+        render(Path(doc), to_pdf=args.pdf)
