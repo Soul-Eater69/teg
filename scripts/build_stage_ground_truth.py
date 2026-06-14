@@ -95,6 +95,7 @@ async def main(args: argparse.Namespace) -> None:
         business_needs=args.business_needs_field or StageGtFields().business_needs,
         l2_capability=args.l2_field or StageGtFields().l2_capability,
         l3_capability=args.l3_field or StageGtFields().l3_capability,
+        stage=args.stage_field or StageGtFields().stage,
     )
 
     http = httpx.AsyncClient(
@@ -114,8 +115,8 @@ async def main(args: argparse.Namespace) -> None:
                 "set jira_value_stream_field in .env"
             )
         print(f"Business Value Stream field: {vs_field}")
-        print(f"capability fields: L2={fields.l2_capability} L3={fields.l3_capability} "
-              f"| business needs={fields.business_needs}")
+        print(f"stage field (Epic): {fields.stage}  | L2={fields.l2_capability} "
+              f"L3={fields.l3_capability} | business needs={fields.business_needs}")
         print(f"building stage GT for {len(ids)} tickets (concurrency={args.concurrency})\n")
 
         sem = asyncio.Semaphore(args.concurrency)
@@ -174,6 +175,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--business-needs-field", default="", help="override Business Needs customfield")
     p.add_argument("--l2-field", default="", help="override Epic L2 capability customfield")
     p.add_argument("--l3-field", default="", help="override Epic L3 capability customfield")
+    p.add_argument("--stage-field", default="", help="override Epic Value Stream Stage customfield")
     return p.parse_args()
 
 

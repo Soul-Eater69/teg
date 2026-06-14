@@ -27,7 +27,10 @@ from difflib import SequenceMatcher
 from typing import Protocol, Sequence
 
 from teg.ingestion.catalogues.models import CatalogueStage, CatalogueValueStream
-from teg.ingestion.extraction.value_stream_field import parse_value_stream
+from teg.ingestion.extraction.value_stream_field import (
+    parse_value_stream,
+    parse_value_stream_stage,
+)
 
 # Jira field ids (override via StageGtFields). All three live on the Theme (verified on a
 # live GROUP issue); Parent Link finds the child Epics.
@@ -35,8 +38,11 @@ BUSINESS_NEEDS_FIELD = "customfield_20900"  # "Business Needs" on the Theme
 L2_CAPABILITY_FIELD = "customfield_18602"  # "L2 Business Capability Model" on the Theme
 L3_CAPABILITY_FIELD = "customfield_18603"  # "L3 Business Capability Model" on the Theme
 PARENT_LINK_FIELD = "customfield_11401"
+# "Value Stream Stage" on each Epic: "<vs> {vs_id} - <stage> {stage_id}" - the stage id+name come
+# straight from this field (authoritative); the Epic summary is only a fallback when it's empty.
+STAGE_FIELD = "customfield_18700"
 
-_FUZZY_THRESHOLD = 0.86  # min ratio to accept a fuzzy stage-name match (POC value)
+_FUZZY_THRESHOLD = 0.86  # min ratio to accept a fuzzy stage-name match (summary fallback only)
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,7 @@ class StageGtFields:
     l2_capability: str = L2_CAPABILITY_FIELD
     l3_capability: str = L3_CAPABILITY_FIELD
     parent_link: str = PARENT_LINK_FIELD
+    stage: str = STAGE_FIELD  # the Epic's Value Stream Stage field
 
 
 @dataclass(frozen=True)
@@ -54,10 +61,10 @@ class StageGroundTruth:
     """One Epic resolved to a catalogue stage."""
 
     epic_key: str
-    raw_summary: str  # the Epic title before canonicalization
-    stage_id: str  # canonical catalogue stage id ("" when unresolved)
-    stage_name: str  # canonical catalogue stage name ("" when unresolved)
-    match_method: str  # exact | fuzzy | unresolved
+    raw_summary: str  # the Epic title (kept for traceability / the summary fallback)
+    stage_id: str  # stage id ("" when unresolved)
+    stage_name: str  # stage name ("" when unresolved)
+    match_method: str  # field | exact | fuzzy | unresolved  ('field' = from Value Stream Stage)
     confidence: float
 
 
@@ -158,7 +165,7 @@ async def _build_theme(
 
     epics = await _fetch_child_epics(theme, jira=jira, fields=fields)
     stages = [
-        _stage_from_epic(epic, catalogue_stages=catalogue_stages, vs_name=vs_name)
+        _stage_from_epic(epic, catalogue_stages=catalogue_stages, vs_name=vs_name, fields=fields)
         for epic in epics
     ]
     return ThemeStageGroundTruth(
@@ -179,7 +186,7 @@ async def _fetch_child_epics(
 ) -> list[dict]:
     """Union the three Epic-discovery paths, deduped by key (first seen wins)."""
     theme_key = _clean(theme.get("key")).upper()
-    epic_fields = ["summary", "status", "issuetype", "parent", fields.parent_link]
+    epic_fields = ["summary", "status", "issuetype", "parent", fields.parent_link, fields.stage]
     by_key: dict[str, dict] = {}
 
     for jql in (
@@ -208,10 +215,21 @@ async def _fetch_child_epics(
 
 
 def _stage_from_epic(
-    epic: dict, *, catalogue_stages: list[CatalogueStage], vs_name: str
+    epic: dict, *, catalogue_stages: list[CatalogueStage], vs_name: str, fields: StageGtFields
 ) -> StageGroundTruth:
     ef = epic.get("fields") or {}
     raw_summary = _clean(ef.get("summary"))
+
+    # Authoritative: read the stage id+name straight from the Epic's Value Stream Stage field.
+    parsed = parse_value_stream_stage(ef.get(fields.stage))
+    if parsed:
+        stage_name, stage_id = parsed
+        return StageGroundTruth(
+            epic_key=_clean(epic.get("key")).upper(), raw_summary=raw_summary,
+            stage_id=stage_id, stage_name=stage_name, match_method="field", confidence=1.0,
+        )
+
+    # Fallback: the field is empty - canonicalize the Epic summary against the catalogue.
     stage_id, stage_name, method, confidence = canonicalize_stage(
         raw_summary, catalogue_stages, value_stream_name=vs_name
     )

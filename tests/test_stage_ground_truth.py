@@ -46,8 +46,11 @@ class FakeJira:
         return self._searches.get(jql, [])
 
 
-def _epic(key: str, summary: str) -> dict:
-    return {"key": key, "fields": {"summary": summary, "issuetype": {"name": "Epic"}}}
+def _epic(key: str, summary: str, *, stage_field: str | None = None) -> dict:
+    return {"key": key, "fields": {
+        "summary": summary, "issuetype": {"name": "Epic"},
+        "customfield_18700": stage_field,  # Value Stream Stage field
+    }}
 
 
 def _fixture() -> FakeJira:
@@ -70,7 +73,10 @@ def _fixture() -> FakeJira:
         ],
     }}
     rel = {"key": "REL-5", "fields": {"summary": "unrelated", "Business Value Stream": None}}
-    epic2 = _epic("EPIC-2", "Resolve Appeal - Intake & Triage")
+    # EPIC-2: stage read straight from the Value Stream Stage field (authoritative).
+    epic2 = _epic("EPIC-2", "Some unrelated epic title",
+                  stage_field="Resolve Appeal {VSR001} - Intake & Triage {ST1}")
+    # EPIC-3: field empty -> falls back to canonicalizing the summary against the catalogue.
     epic3 = _epic("EPIC-3", "Resolve Appeal Decision")
     return FakeJira(
         issues={"IDMT-1": ticket, "GROUP-9": theme, "REL-5": rel, "EPIC-3": epic3},
@@ -98,11 +104,12 @@ def test_build_ticket_stage_ground_truth_end_to_end() -> None:
     by_key = {s.epic_key: s for s in theme.stages}
     assert set(by_key) == {"EPIC-2", "EPIC-3"}  # parent-link Epic + issue-link Epic, deduped
 
-    # EPIC-2: prefix-stripped suffix "Intake & Triage" matches the catalogue stage exactly.
+    # EPIC-2: stage from the Value Stream Stage field (authoritative) - id+name direct, no fuzzy.
     s2 = by_key["EPIC-2"]
-    assert (s2.stage_id, s2.stage_name, s2.match_method) == ("ST1", "Intake & Triage", "exact")
+    assert (s2.stage_id, s2.stage_name, s2.match_method) == ("ST1", "Intake & Triage", "field")
+    assert s2.confidence == 1.0
 
-    # EPIC-3: full summary matches; reached only through the Theme's implement link.
+    # EPIC-3: field empty -> summary canonicalized against the catalogue; via the implement link.
     s3 = by_key["EPIC-3"]
     assert s3.stage_id == "ST2" and s3.match_method == "exact"
 

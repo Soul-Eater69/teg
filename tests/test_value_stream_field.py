@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from teg.ingestion.extraction.value_stream_field import parse_value_stream
+from teg.ingestion.extraction.value_stream_field import (
+    parse_value_stream,
+    parse_value_stream_stage,
+)
 
 
 def test_plain_string() -> None:
@@ -26,3 +29,18 @@ def test_absent_or_unparseable_is_none() -> None:
     assert parse_value_stream("") is None
     assert parse_value_stream("no braces here") is None
     assert parse_value_stream([]) is None
+
+
+def test_parse_value_stream_stage_takes_the_stage_segment() -> None:
+    # "<vs> {vs_id} - <stage> {stage_id}" -> the STAGE (last segment), separator stripped.
+    assert parse_value_stream_stage("Configure Price {VS1024} - Quote Setup {VSS5}") == (
+        "Quote Setup", "VSS5")
+    assert parse_value_stream_stage("Resolve Appeal {VSR001} - Intake & Triage {ST1}") == (
+        "Intake & Triage", "ST1")
+    assert parse_value_stream_stage({"value": "A {V1} - B {S2}"}) == ("B", "S2")
+
+
+def test_parse_value_stream_stage_none_without_a_stage() -> None:
+    assert parse_value_stream_stage(None) is None
+    assert parse_value_stream_stage("Resolve Appeal {VSR001}") is None  # VS only, no stage segment
+    assert parse_value_stream_stage("no braces") is None
