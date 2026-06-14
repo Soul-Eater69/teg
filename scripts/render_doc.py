@@ -44,15 +44,31 @@ h1 { border-bottom: 2px solid #d0d7de; padding-bottom: .3rem; }
 h2 { border-bottom: 1px solid #d8dee4; padding-bottom: .25rem; }
 img { max-width: 100%; height: auto; display: block; margin: 1rem 0;
       border: 1px solid #d0d7de; border-radius: 6px; }
-table { border-collapse: collapse; margin: 1rem 0; width: 100%; }
-th, td { border: 1px solid #d0d7de; padding: 6px 13px; text-align: left; }
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; table-layout: auto; }
+th, td { border: 1px solid #d0d7de; padding: 6px 13px; text-align: left;
+         overflow-wrap: anywhere; word-break: break-word; }
 th { background: #f6f8fa; }
 tr:nth-child(2n) td { background: #f6f8fa; }
 code { background: #eff1f3; padding: .15em .35em; border-radius: 4px;
        font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
-pre { background: #f6f8fa; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+/* Wrap long code lines instead of scrolling - a horizontal scrollbar clips in print/PDF. */
+pre { background: #f6f8fa; padding: 1rem; border-radius: 6px;
+      white-space: pre-wrap; overflow-wrap: anywhere; }
 pre code { background: none; padding: 0; }
 blockquote { border-left: 4px solid #d0d7de; margin: 1rem 0; padding: .2rem 1rem; color: #57606a; }
+
+/* PRINT / PDF: use the full page, shrink wide tables to fit, never clip - so the PDF matches the
+   markdown exactly (no cut-off columns or code lines). */
+@page { size: A4; margin: 12mm; }
+@media print {
+  body { max-width: none; margin: 0; padding: 0; font-size: 10.5pt; color: #000; }
+  h1, h2, h3, h4 { break-after: avoid; }
+  img, table, pre, blockquote { break-inside: avoid; }
+  table { font-size: 8.5pt; width: 100%; }
+  th, td { padding: 3px 6px; }
+  pre, code { font-size: 8.5pt; }
+  img { border: 1px solid #ccc; }
+}
 """
 
 
