@@ -521,6 +521,7 @@ async def main(args) -> None:
         selection_mode=args.mode,
         selection_prompt_override=args.selection_prompt,
         show_candidate_scores=not args.no_candidate_scores,
+        score_select=args.score_select,
         historic_repr=args.historic_repr,
         historic_budget=args.historic_budget,
         **({"llm_candidate_window": window} if window else {}),
@@ -1032,6 +1033,9 @@ if __name__ == "__main__":
                         help="classify each dropped GT by EVIDENCE: no_context_for_gt (justified) / "
                              "context_present_but_dropped (the fixable miss) / weak_broad_context. "
                              "The most actionable split. Extra calls.")
+    parser.add_argument("--score-select", action="store_true",
+                        help="two-stage score-then-select: LLM scores every candidate 0-1, then take "
+                             "top-N by score (evidence mode). Tests recovering the 81%% near-misses.")
     parser.add_argument("--judge", action="store_true",
                         help="LLM-as-judge relevance of predictions + misses (GT-independent view; extra calls)")
     parser.add_argument("--mode", choices=["merge", "all50", "topk", "historic_only", "evidence"],

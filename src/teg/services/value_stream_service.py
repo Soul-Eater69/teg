@@ -18,7 +18,7 @@ from teg.value_stream.candidate_merger import build_candidates, derive_runtime, 
 from teg.value_stream.config import ValueStreamConfig
 from teg.value_stream.custom_instruction import parse_requested_count
 from teg.value_stream.retrieval import retrieve
-from teg.value_stream.selection import select_value_streams
+from teg.value_stream.selection import score_and_select, select_value_streams
 
 
 # Each candidate-structure gets its own selection prompt (merge = lane-aware/historical-in-blocks;
@@ -147,19 +147,28 @@ class ValueStreamService:
             content=self._historic_content) if mode == "evidence" else ""
         t_select = perf_counter()
         select_trace: dict = {}
-        recommendations = await select_value_streams(
-            # Prompt reads raw text when provided (decoupled from retrieval, which used the summary).
-            query=request.prompt_text or request.summary_fields.generated_summary,
-            candidates=review_pool,
-            requested_count=requested_count,
-            llm_client=self._llm,
-            min_confidence=self._config.min_confidence,
-            historic_evidence=historic_evidence,
-            prompt_name=self._config.selection_prompt_override
-            or _PROMPT_BY_MODE.get(mode, "value_stream/selection"),
-            show_scores=self._config.show_candidate_scores,
-            trace=select_trace,
-        )
+        query = request.prompt_text or request.summary_fields.generated_summary
+        if self._config.score_select and mode == "evidence":
+            # Two-stage: score every candidate independently, then take the top-N by score.
+            recommendations = await score_and_select(
+                query=query, candidates=review_pool, requested_count=requested_count,
+                llm_client=self._llm, historic_evidence=historic_evidence,
+                show_scores=self._config.show_candidate_scores, trace=select_trace,
+            )
+        else:
+            recommendations = await select_value_streams(
+                # Prompt reads raw text when provided (decoupled from retrieval, which uses summary).
+                query=query,
+                candidates=review_pool,
+                requested_count=requested_count,
+                llm_client=self._llm,
+                min_confidence=self._config.min_confidence,
+                historic_evidence=historic_evidence,
+                prompt_name=self._config.selection_prompt_override
+                or _PROMPT_BY_MODE.get(mode, "value_stream/selection"),
+                show_scores=self._config.show_candidate_scores,
+                trace=select_trace,
+            )
         selection_seconds = perf_counter() - t_select
         response = ValueStreamResponse(
             ticket_id=request.ticket_id,

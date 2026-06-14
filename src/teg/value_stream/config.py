@@ -42,3 +42,8 @@ class ValueStreamConfig:
     # Semantic scores in candidate blocks are off: the VS-lane ranking is weak (R@10 ~0.26) so the
     # score is a misleading hint; the eval showed it's a wash-to-slightly-better to drop it.
     show_candidate_scores: bool = False
+    # Two-stage score-then-select (experiment): instead of one 'pick N' call, the LLM scores EVERY
+    # candidate 0-1 independently, then we take the top-N by score deterministically. Tests whether
+    # the model's independent scoring (which rated dropped GT >= a pick 81% of the time) recovers
+    # the near-misses the single call drops. evidence mode only. See docs/vs_representation_eda.md.
+    score_select: bool = False

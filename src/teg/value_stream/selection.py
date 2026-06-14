@@ -75,6 +75,75 @@ async def select_value_streams(
     return _enforce_count(recommendations, candidates, requested_count)
 
 
+class ScoredCandidate(CamelModel):
+    """One candidate's independent relevance score (score-then-select)."""
+
+    entity_id: str
+    score: float = 0.0
+    support_type: SupportType = "implied"
+    reason: str = ""
+
+
+class CandidateScoring(CamelModel):
+    scores: list[ScoredCandidate] = Field(default_factory=list)
+
+
+async def score_and_select(
+    *,
+    query: str,
+    candidates: list[ValueStreamCandidate],
+    requested_count: int,
+    llm_client: LLMClient,
+    historic_evidence: str = "",
+    prompt_name: str = "value_stream/score_all_recall",
+    show_scores: bool = True,
+    trace: dict | None = None,
+) -> list[ValueStreamRecommendation]:
+    """Two-stage: the LLM scores EVERY candidate independently, then take the top-N by score.
+
+    Replaces the single 'pick N' call. The scoring is done with no count pressure (each candidate on
+    its own), then the cut is deterministic - so a relevant candidate the single call would drop is
+    kept whenever it out-scores a weaker one. Falls back to the candidate order for any unscored id.
+    """
+    evidence_block = (
+        f"\nSIMILAR PAST TICKETS (evidence - the value streams these were tagged with):\n"
+        f"{historic_evidence}\n" if historic_evidence else ""
+    )
+    prompt = load_prompt(prompt_name)
+    system, user = prompt.render(
+        query_for_prompt=query,
+        historic_evidence=evidence_block,
+        candidate_blocks=render_candidate_blocks(candidates, show_scores=show_scores),
+    )
+    result = await llm_client.complete(system=system, user=user, schema=CandidateScoring)
+
+    by_id = {c.value_stream_id: c for c in candidates}
+    scored: dict[str, ScoredCandidate] = {}
+    for s in result.scores:
+        if s.entity_id in by_id and s.entity_id not in scored:  # catalogue ids only, deduped
+            scored[s.entity_id] = s
+    # Rank by score desc; unscored candidates sink to the bottom in their original order.
+    ranked = sorted(
+        candidates,
+        key=lambda c: scored[c.value_stream_id].score if c.value_stream_id in scored else -1.0,
+        reverse=True,
+    )
+    top = ranked[:requested_count]
+    if trace is not None:
+        # 'picked' by the LLM = candidates it scored at/above the cut's score (its own judgement),
+        # before the deterministic top-N. Lets eval compare to requested_count like the single call.
+        cut_score = scored[top[-1].value_stream_id].score if top and top[-1].value_stream_id in scored else 0.0
+        trace["llm_pick_count"] = sum(1 for s in scored.values() if s.score >= cut_score and s.score > 0)
+        trace["requested_count"] = requested_count
+
+    out: list[ValueStreamRecommendation] = []
+    for c in top:
+        s = scored.get(c.value_stream_id)
+        confidence = (s.score if s else _FILL_CONFIDENCE / 100) * 100
+        out.append(_recommend(c, confidence, s.support_type if s else "implied", s.reason if s else ""))
+    return out
+
+
 def _resolve(
     selection: ValueStreamSelection, candidates: list[ValueStreamCandidate]
 ) -> list[ValueStreamRecommendation]:
