@@ -228,10 +228,26 @@ async def main(args: argparse.Namespace) -> None:
     catalogue = StageCatalogue.from_catalogue(load_value_stream_catalogue(args.catalogue))
 
     tickets = [t for t in gt if t in condensed]
-    if args.count:
+    # Only tickets with enough GT to be discriminating: >= --min-vs value streams that carry stages,
+    # and >= --min-stages total resolved GT stages (like the VS eval's --min-gt).
+    def _vs_count(t: str) -> int:
+        return len(gt[t])
+
+    def _stage_count(t: str) -> int:
+        return sum(len(e["stages"]) for e in gt[t].values())
+
+    eligible = [t for t in tickets if _vs_count(t) >= args.min_vs and _stage_count(t) >= args.min_stages]
+    print(f"{len(tickets)} tickets with stage GT; {len(eligible)} pass "
+          f"min_vs>={args.min_vs} & min_stages>={args.min_stages}")
+    tickets = eligible
+    if args.sample and args.sample < len(tickets):
+        import random
+        tickets = sorted(random.Random(args.seed).sample(tickets, args.sample))
+        print(f"sampled {len(tickets)} (seed={args.seed})")
+    elif args.count:
         tickets = tickets[:args.count]
     if not tickets:
-        raise SystemExit("no tickets overlap between condensed docs and stage GT")
+        raise SystemExit("no tickets pass the min-vs / min-stages filter (or none overlap the docs)")
 
     # Coverage-only: verify GT stage ids live in the catalogue (the recall ceiling) WITHOUT any LLM
     # calls - the cheap first check that the GT field and the catalogue share an id space.
@@ -319,6 +335,10 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--input", choices=["summary", "raw", "both"], default="summary")
     p.add_argument("--raw-budget", type=int, default=_RAW_BUDGET_CHARS)
     p.add_argument("--count", type=int, default=0, help="limit tickets (0 = all)")
+    p.add_argument("--min-vs", type=int, default=1, help="min GT value streams (with stages) per ticket")
+    p.add_argument("--min-stages", type=int, default=1, help="min total resolved GT stages per ticket")
+    p.add_argument("--sample", type=int, default=0, help="seeded random subset of N eligible tickets")
+    p.add_argument("--seed", type=int, default=13, help="sampling seed (fixed so runs match)")
     p.add_argument("--coverage-only", action="store_true",
                    help="just check GT stage ids are in the catalogue (no LLM calls) and exit")
     p.add_argument("--concurrency", type=int, default=5)
