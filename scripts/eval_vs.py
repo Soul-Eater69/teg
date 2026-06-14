@@ -154,6 +154,41 @@ def _cardinality_stats(rows: list[dict]) -> dict:
     }
 
 
+def _count_following_stats(rows: list[dict]) -> dict:
+    """Did the LLM return the REQUESTED count on its own, before our _enforce_count padding?
+
+    Compares the LLM's raw pick count (trace.llm_pick_count) to requested_count. 'followed' = it
+    returned exactly the count; 'under' = it picked fewer (we then padded - 'padded_rate'); 'over' =
+    it picked more (we trimmed). This is the honest count-adherence signal - the final
+    predicted_count is forced by us, so it always matches and hides the model's behaviour.
+    """
+    usable = [r for r in rows if r.get("requested_count")]
+    if not usable:
+        return {}
+    n = len(usable)
+    followed = under = over = 0
+    deltas: list[int] = []
+    for r in usable:
+        d = r["llm_pick_count"] - r["requested_count"]
+        deltas.append(d)
+        followed += d == 0
+        under += d < 0
+        over += d > 0
+    dist: dict[str, int] = {}
+    for d in deltas:
+        dist[f"{d:+d}"] = dist.get(f"{d:+d}", 0) + 1
+    return {
+        "n": n,
+        "followed_rate": _div(followed, n),
+        "under_rate": _div(under, n),
+        "over_rate": _div(over, n),
+        "padded_rate": _div(under, n),  # under-picks are the ones we had to pad up
+        "avg_requested": _div(sum(r["requested_count"] for r in usable), n),
+        "avg_llm_pick": _div(sum(r["llm_pick_count"] for r in usable), n),
+        "delta_dist": dict(sorted(dist.items(), key=lambda kv: int(kv[0]))),
+    }
+
+
 def _cohort_prf(rows: list[dict]) -> tuple[float, float, float]:
     """Micro P/R/F1 over a cohort of per-ticket rows (each has tp/fp/fn)."""
     tp = sum(r["tp"] for r in rows)
@@ -333,6 +368,7 @@ async def _eval_one(service, llm, args, doc, ticket_id: str, gt: set[str], base_
     return {"ticket_id": ticket_id, "gt": gt, "predicted": predicted, "buckets": buckets,
             "drop_reasons": drop_reasons, "judged": judged, "elapsed": elapsed,
             "retrieval_s": trace.retrieval_seconds, "selection_s": trace.selection_seconds,
+            "llm_pick_count": trace.llm_pick_count, "requested_count": trace.requested_count,
             "retrieval": retrieval, "boost": boost}
 
 
@@ -506,6 +542,8 @@ async def main(args) -> None:
             "tp": tp, "fp": fp, "fn": fn, "seconds": round(res.get("elapsed", 0.0), 2),
             "retrieval_s": round(res.get("retrieval_s", 0.0), 2),
             "selection_s": round(res.get("selection_s", 0.0), 2),
+            "llm_pick_count": res.get("llm_pick_count", 0),
+            "requested_count": res.get("requested_count", 0),
             "precision": round(_div(tp, tp + fp), 3), "recall": round(_div(tp, tp + fn), 3),
             "fn_not_retrieved": "; ".join(buckets.get("not_retrieved", [])),
             "fn_gated_pre_llm": "; ".join(buckets.get("gated_pre_llm", [])),
@@ -535,6 +573,13 @@ async def main(args) -> None:
           f"over={cardinality['over_rate']:.0%}  | exact set={cardinality['exact_set_rate']:.0%}  "
           f"avg delta={cardinality['avg_delta']:+.2f}")
     print(f"  delta dist (pred-gt): {cardinality['delta_dist']}")
+    follow = _count_following_stats(rows)
+    if follow:
+        print(f"count-following (did the LLM return what was requested, BEFORE our padding):")
+        print(f"  followed={follow['followed_rate']:.0%}  under={follow['under_rate']:.0%}  "
+              f"over={follow['over_rate']:.0%}  | avg requested={follow['avg_requested']:.1f}  "
+              f"avg LLM picked={follow['avg_llm_pick']:.1f}  padded={follow['padded_rate']:.0%}")
+        print(f"  LLM(picked-requested) dist: {follow['delta_dist']}")
     print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}  (strict GT)")
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}  (strict GT)")
     for k in args.k:
@@ -646,6 +691,7 @@ async def main(args) -> None:
         "macro_f1": _div(2 * macro_p * macro_r, macro_p + macro_r),
         "single_recall": single_recall, "multi_f1": multi_f1,
         "avg_predicted": avg_pred, "avg_gt": avg_gt, "cardinality": cardinality,
+        "count_following": _count_following_stats(rows),
         "cohorts": cohort_rows, "cohort_n": cohort_n, "latency": latency,
         "buckets": dict(bucket_totals), "judge_p": _div(judge_rel_pred, judge_pred) if judge_pred else None,
         "retrieval": retrieval_mean,

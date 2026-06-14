@@ -44,6 +44,8 @@ class PredictionTrace:
     historic_lane_ids: list[str] = field(default_factory=list)  # VS surfaced by the historic lane
     retrieval_seconds: float = 0.0  # candidate extraction (embed query + search)
     selection_seconds: float = 0.0  # the VS-selection LLM call
+    llm_pick_count: int = 0  # how many the LLM picked itself (before count enforcement/padding)
+    requested_count: int = 0  # the count asked of the LLM
 
     @property
     def review_pool_ids(self) -> list[str]:
@@ -144,6 +146,7 @@ class ValueStreamService:
             historical_hits, repr=self._config.historic_repr, budget=self._config.historic_budget,
             content=self._historic_content) if mode == "evidence" else ""
         t_select = perf_counter()
+        select_trace: dict = {}
         recommendations = await select_value_streams(
             # Prompt reads raw text when provided (decoupled from retrieval, which used the summary).
             query=request.prompt_text or request.summary_fields.generated_summary,
@@ -155,6 +158,7 @@ class ValueStreamService:
             prompt_name=self._config.selection_prompt_override
             or _PROMPT_BY_MODE.get(mode, "value_stream/selection"),
             show_scores=self._config.show_candidate_scores,
+            trace=select_trace,
         )
         selection_seconds = perf_counter() - t_select
         response = ValueStreamResponse(
@@ -175,6 +179,8 @@ class ValueStreamService:
             historic_lane_ids=historic_lane_ids,
             retrieval_seconds=retrieval_seconds,
             selection_seconds=selection_seconds,
+            llm_pick_count=select_trace.get("llm_pick_count", 0),
+            requested_count=select_trace.get("requested_count", requested_count),
         )
         return response, trace
 

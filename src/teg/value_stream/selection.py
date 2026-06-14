@@ -44,6 +44,7 @@ async def select_value_streams(
     historic_evidence: str = "",
     prompt_name: str = "value_stream/selection",
     show_scores: bool = True,
+    trace: dict | None = None,
 ) -> list[ValueStreamRecommendation]:
     # In evidence mode the historic tickets are shown as a separate context block (not merged
     # into candidates); empty string keeps the section out of the prompt.
@@ -61,6 +62,11 @@ async def select_value_streams(
     )
     selection = await llm_client.complete(system=system, user=user, schema=ValueStreamSelection)
     recommendations = _resolve(selection, candidates)
+    if trace is not None:
+        # The LLM's OWN pick count (deduped, valid ids), before any count enforcement/padding -
+        # so eval can see whether the model followed the requested count or we forced it.
+        trace["llm_pick_count"] = len(recommendations)
+        trace["requested_count"] = requested_count
     if min_confidence > 0.0:
         # Abstention: honor the prompt's "skip non-matches" - keep only confident picks, cap at
         # the count, never pad. requested_count is an upper bound, not a quota.

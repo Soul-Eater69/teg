@@ -54,21 +54,28 @@ raw — they go to different places:
 
 Columns = the form used in each of the three places (see the terms table above).
 
-| run | new-ticket prompt | historic block | retrieval query | **F1 (= P = R)** | avg latency |
-|---|---|---|---|---|---|
-| all-summary | summary | summary | summary | 0.715 | 4.2s |
-| **raw + summary** | **raw** | **summary** | **summary** | **0.786** | 5.8s |
-| raw + raw@1500 | raw | raw@1500 | summary | 0.781 | 5.6s |
-| raw + raw@3000 | raw | raw@3000 | summary | 0.768 | 6.3s |
-| raw + description | raw | description | summary | 0.780 | 4.4s |
-| raw + raw@7k | raw | raw@7k | summary | 0.780 | 9.4s |
-| **raw@7k retrieval** | raw@7k | raw@7k | **raw@7k** | **0.742** | 6.6s |
+The **"new ticket summarized?"** column is the one to watch: every row except the last **still
+summarizes the new ticket** (its summary is the retrieval query). So those rows are *not* summary-free
+configs — they only change how the new ticket's prompt and the historic block are rendered. The
+summary is dropped **only** in the last row (raw@7k retrieval).
 
-The last row drops the summary entirely (raw-embedded index + raw everything): retrieval query =
-**raw 7k tok**, new-ticket prompt = **raw 7k tok**, each of the 6 historic neighbours = **raw 3k tok**.
-On a clean 100/100 it lands at **0.742** — below the pack. (An earlier variant with **raw 7k tok**
-historic cost 13.9s avg / 132s max latency; cutting historic to 3k fixed the latency but not the
-quality.)
+| run | new ticket summarized? | new-ticket prompt | historic block | retrieval query | **F1 (= P = R)** | avg latency |
+|---|---|---|---|---|---|---|
+| all-summary | **yes** | summary | summary | summary | 0.715 | 4.2s |
+| **raw + summary** | **yes** | **raw** | **summary** | **summary** | **0.786** | 5.8s |
+| raw + raw@1500 | **yes** | raw | raw@1500 | summary | 0.781 | 5.6s |
+| raw + raw@3000 | **yes** | raw | raw@3000 | summary | 0.768 | 6.3s |
+| raw + description | **yes** | raw | description | summary | 0.780 | 4.4s |
+| raw + raw@7k | **yes** | raw | raw@7k | summary | 0.780 | 9.4s |
+| **raw@7k retrieval** | **NO** | raw@7k | raw@7k | **raw@7k** | **0.742** | 6.6s |
+
+**Don't be misled by the middle rows.** `raw + raw@1500` (0.781) looks close to the winner, but it
+**still summarizes** — it just shows the historic neighbours as raw@1500 instead of summary. It is
+*not* evidence that raw historic is good or that summarization is droppable; it only says the historic
+representation barely matters **when the summary is still doing the retrieval**. The real
+summary-free test is the **last row** (the only "NO"), and it **drops to 0.742** — the verdict on
+dropping summarization. (An earlier summary-free variant with **raw 7k tok** historic cost 13.9s avg /
+132s max latency; cutting historic to 3k fixed the latency but not the quality.)
 
 **How to read it:** the big step is summary→raw on the **new-ticket prompt** (0.715 → 0.786). After
 that, swapping the **historic block** representation barely moves F1 (0.768–0.786) — and the last
