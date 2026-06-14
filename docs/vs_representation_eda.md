@@ -157,6 +157,57 @@ historic ≈ 6×7k = 42k tokens, which blows the prompt to ~55k tokens and spike
 big-neighbour tickets. This is a *second* cost axis, independent of the summary question: even if you
 keep summaries, **never ship raw@7k historic** — it's ~4–5× the runtime token cost for zero quality.
 
+## Count behaviour — does the LLM follow the requested count?
+
+We pass a target count to the model. Two questions: (a) does it actually return that many on its
+own, and (b) when it skips a correct VS it *saw*, why? Run on the winner config, 100 gt≥3 tickets.
+
+### The LLM obeys the count exactly — to a fault
+
+| count requested | followed | padded by us | avg LLM picked |
+|---|---|---|---|
+| fixed 10 | **100%** | **0%** | 10.0 |
+| gt + 2 | **100%** | **0%** | 7.9 |
+
+It returns **exactly** the requested count every time — we never had to pad. But it obeys
+*literally*: asked for 10 it returns 10 even when only ~6 are right, **filling the spare slots with
+weaker picks**. So the count is a real, fully-obeyed **precision↔recall dial**:
+
+![Count mode](vs_repr_charts/count_mode.png)
+
+| count mode | avg predicted | recall | precision | F1 |
+|---|---|---|---|---|
+| count = gt | 5.9 | 0.786 | 0.786 | **0.786** |
+| gt + 2 | 7.9 | **0.854** | 0.638 | 0.730 |
+| fixed 10 | 10.0 | 0.842 | 0.497 | 0.625 |
+
+**How to read it:** more slots → recall climbs (0.786 → 0.854) but precision falls faster → F1 drops.
+Best F1 is at `count = gt`. Crucially, recall at `count = gt` is **genuinely capped** — giving +2
+slots recovers ~7 points of recall, i.e. the model *was* dropping real GT just to fit the exact count.
+
+### Why it skips GT it saw — mostly the count, not quality
+
+![Drop reasons](vs_repr_charts/drop_reasons.png)
+
+Every miss is `llm_dropped` (the GT reached the LLM — retrieval is perfect — and it didn't pick it).
+Re-prompting the model on each dropped GT buckets the reason:
+
+| reason | share | meaning |
+|---|---|---|
+| **lower_priority** | **~74%** | relevant, but less central than the picks — the **count** squeezed it out |
+| off_topic | ~17% | the model genuinely disagrees with the GT label |
+| near_duplicate_of_pick | ~9% | a near-twin was picked instead |
+
+**The two tests tie together:** ~75% of misses are `lower_priority`, and Test 1 *proves* that's the
+count — give the model +2 slots and recall jumps 0.786 → 0.854, recovering exactly those VS. So
+**most "misses" aren't the model being wrong; they're the count constraint doing its job.** Only
+~17% are genuine disagreement (and the judge says ~25% of *those* are actually supported — GT label
+noise). The genuinely fixable error surface is small (~17% off_topic + ~9% near-duplicate).
+
+**Implication:** for the shortlist-then-trim product flow, pass **gt+2** — recall ~0.85, the model
+surfaces the relevant-but-lower-priority VS, and judge precision still holds (~0.71) so the extras are
+mostly fine. For best F1 / autonomous output, use **count = gt**.
+
 ## Verdict
 **Locked config: summary retrieval + FULL ~24k raw new-ticket prompt + summary historic — F1 ≈0.78–0.79.**
 

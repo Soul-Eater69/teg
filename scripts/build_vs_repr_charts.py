@@ -109,7 +109,48 @@ def latency_split() -> None:
     fig.tight_layout(); fig.savefig(_OUT / "latency_split.png", dpi=130); plt.close(fig)
 
 
+# Count mode -> precision / recall / F1 (winner config, 100 gt>=3 tickets). The LLM follows the
+# requested count exactly (100% followed, 0% padded), so the count is a precision<->recall dial.
+COUNT_MODE = [
+    ("count = gt", 0.786, 0.786, 0.786),
+    ("gt + 2", 0.638, 0.854, 0.730),
+    ("fixed 10", 0.497, 0.842, 0.625),
+]
+
+# Why the LLM dropped GT it saw (avg of the gt+2 and fixed-10 explain-drops runs).
+DROP_REASONS = [
+    ("lower_priority\n(count cut it)", 74),
+    ("off_topic\n(disagrees)", 17),
+    ("near_duplicate\n(twin picked)", 9),
+]
+
+
+def count_mode() -> None:
+    labels = [r[0] for r in COUNT_MODE]
+    x = range(len(labels))
+    fig, ax = plt.subplots(figsize=(7, 4.4))
+    w = 0.27
+    ax.bar([i - w for i in x], [r[1] for r in COUNT_MODE], w, label="precision", color="#E45756")
+    ax.bar([i for i in x], [r[2] for r in COUNT_MODE], w, label="recall", color="#54A24B")
+    ax.bar([i + w for i in x], [r[3] for r in COUNT_MODE], w, label="F1", color="#4C78A8")
+    ax.set_xticks(list(x)); ax.set_xticklabels(labels)
+    ax.set_ylabel("score"); ax.set_ylim(0.4, 0.9)
+    ax.set_title("Count is a precision<->recall dial (LLM obeys it exactly)",
+                 fontsize=12, weight="bold")
+    ax.legend(); ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout(); fig.savefig(_OUT / "count_mode.png", dpi=130); plt.close(fig)
+
+
+def drop_reasons() -> None:
+    labels = [r[0] for r in DROP_REASONS]
+    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    _bar(ax, labels, [r[1] for r in DROP_REASONS], "% of dropped GT",
+         "Why the LLM skips GT it saw", fmt="{:.0f}%", highlight=labels[0], color="#72B7B2")
+    fig.tight_layout(); fig.savefig(_OUT / "drop_reasons.png", dpi=130); plt.close(fig)
+
+
 if __name__ == "__main__":
     _OUT.mkdir(parents=True, exist_ok=True)
     f1_ladder(); retrieval_compare(); latency(); prompt_budget(); latency_split()
+    count_mode(); drop_reasons()
     print(f"wrote charts to {_OUT}/")
