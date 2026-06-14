@@ -106,6 +106,38 @@ def _gt_ids(props: dict) -> set[str]:
     return {t["valueStreamId"] for t in (props.get("themes") or []) if t.get("valueStreamId")}
 
 
+def _cardinality_stats(rows: list[dict]) -> dict:
+    """Predicted VS count vs GT count: exact/under/over-fetch rates + the delta distribution.
+
+    exact_count_rate = predicted_count == gt_count (right SIZE, regardless of which VS).
+    exact_set_rate   = the predicted SET equals GT (fp == fn == 0; the strong version).
+    under/over       = predicted fewer / more than GT. delta_dist histograms (pred - gt).
+    """
+    n = len(rows)
+    exact_count = under = over = exact_set = 0
+    deltas: list[int] = []
+    for r in rows:
+        d = r["predicted_count"] - r["gt_count"]
+        deltas.append(d)
+        exact_count += d == 0
+        under += d < 0
+        over += d > 0
+        exact_set += r["fp"] == 0 and r["fn"] == 0
+    dist: dict[str, int] = {}
+    for d in deltas:
+        dist[f"{d:+d}"] = dist.get(f"{d:+d}", 0) + 1
+    return {
+        "n": n,
+        "exact_count_rate": _div(exact_count, n),
+        "under_rate": _div(under, n),
+        "over_rate": _div(over, n),
+        "exact_set_rate": _div(exact_set, n),
+        "avg_delta": _div(sum(deltas), n),
+        "avg_abs_delta": _div(sum(abs(d) for d in deltas), n),
+        "delta_dist": dict(sorted(dist.items(), key=lambda kv: int(kv[0]))),
+    }
+
+
 def _cohort_prf(rows: list[dict]) -> tuple[float, float, float]:
     """Micro P/R/F1 over a cohort of per-ticket rows (each has tp/fp/fn)."""
     tp = sum(r["tp"] for r in rows)
@@ -478,6 +510,12 @@ async def main(args) -> None:
     avg_gt = _div(sum(r["gt_count"] for r in rows), n)
     print(f"avg predicted={avg_pred:.1f}  avg gt={avg_gt:.1f}  "
           f"(min_confidence={args.min_confidence}{' = abstention on' if args.min_confidence else ''})")
+    cardinality = _cardinality_stats(rows)
+    print(f"cardinality (predicted count vs gt count; count_mode={args.count_mode}):")
+    print(f"  exact={cardinality['exact_count_rate']:.0%}  under={cardinality['under_rate']:.0%}  "
+          f"over={cardinality['over_rate']:.0%}  | exact set={cardinality['exact_set_rate']:.0%}  "
+          f"avg delta={cardinality['avg_delta']:+.2f}")
+    print(f"  delta dist (pred-gt): {cardinality['delta_dist']}")
     print(f"micro  P={micro_p:.3f}  R={micro_r:.3f}  F1={_div(2*micro_p*micro_r, micro_p+micro_r):.3f}  (strict GT)")
     print(f"macro  P={macro_p:.3f}  R={macro_r:.3f}  F1={_div(2*macro_p*macro_r, macro_p+macro_r):.3f}  (strict GT)")
     for k in args.k:
@@ -582,7 +620,7 @@ async def main(args) -> None:
         "micro_f1": _div(2 * micro_p * micro_r, micro_p + micro_r),
         "macro_f1": _div(2 * macro_p * macro_r, macro_p + macro_r),
         "single_recall": single_recall, "multi_f1": multi_f1,
-        "avg_predicted": avg_pred, "avg_gt": avg_gt,
+        "avg_predicted": avg_pred, "avg_gt": avg_gt, "cardinality": cardinality,
         "cohorts": cohort_rows, "cohort_n": cohort_n, "latency": latency,
         "buckets": dict(bucket_totals), "judge_p": _div(judge_rel_pred, judge_pred) if judge_pred else None,
         "retrieval": retrieval_mean,
