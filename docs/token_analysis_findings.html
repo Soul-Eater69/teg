@@ -233,6 +233,29 @@ nothing, without needing a hard count cap.</p>
 up the prompt.</p>
 <p><strong>Implemented:</strong> <code>CondenseConfig.doc_char_budget = 96_000</code> (~24k tokens), greedy packing in
 <code>_consolidate</code>, <code>max_attachments = 8</code> (download/extract cap — the budget, not this count, caps content).</p>
+<h3 id="why-the-count-cap-is-8-and-why-it-isnt-the-real-limiter">Why the count cap is 8 (and why it isn't the real limiter)</h3>
+<p>The 24k-token <strong>budget</strong> decides how much text survives — not the count. So why cap the count at all?
+Because the attachment ranker has to <strong>download and extract</strong> each candidate <em>before</em> the budget packer
+can decide what fits (and extraction is now a serialized native parse). Without a cap, a pathological
+ticket with 20–30 attachments would download and parse every one — wasting work on files that could
+never fit a 24k budget anyway. The cap bounds that wasted effort; it does <strong>not</strong> bound content.</p>
+<p>Two EDA facts set the number at 8:</p>
+<ol>
+<li><strong>The budget realistically holds ~4–6 attachments.</strong> Each adds ~3k tokens up to 4 (1→3k, 2→6.7k,
+   3→9.5k, 4→11.7k); a 6-attachment ticket averages ~24k. So content-wise the budget is exhausted
+   around the 5th–6th attachment.</li>
+<li><strong>The cap must sit <em>above</em> that</strong>, or it becomes the real limiter and re-introduces the old
+   "keep top-4" truncation we deliberately removed. We want the <strong>budget</strong> to decide, with the count
+   only catching outliers.</li>
+</ol>
+<p>So <strong>8 sits comfortably above the ~6 the budget can hold</strong>: enough candidates for the greedy packer to
+fill 24k even when attachments are small, while still capping the rare 15-/20-/30-attachment tickets.
+Per the per-ticket distribution, the overwhelming majority of tickets have ≤8 attachments, so 8 almost
+never truncates a real set — it only bounds download/extract on outliers.</p>
+<p><strong>Honest caveat:</strong> 8 is a pragmatic guard, not a tuned optimum — anything in the ~6–10 range behaves
+almost identically because the budget does the real work. It only bites a ticket with many <em>small</em>
+attachments where the 9th/10th would have fit; the EDA says that's rare. If we ever want the budget to
+be the <em>sole</em> limiter, raise the cap to 10–12 or download lazily in ranked order until the budget fills.</p>
 <hr />
 <h2 id="the-numbers">The numbers</h2>
 <table>

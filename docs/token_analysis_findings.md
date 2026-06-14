@@ -196,6 +196,33 @@ up the prompt.
 **Implemented:** `CondenseConfig.doc_char_budget = 96_000` (~24k tokens), greedy packing in
 `_consolidate`, `max_attachments = 8` (download/extract cap — the budget, not this count, caps content).
 
+### Why the count cap is 8 (and why it isn't the real limiter)
+
+The 24k-token **budget** decides how much text survives — not the count. So why cap the count at all?
+Because the attachment ranker has to **download and extract** each candidate *before* the budget packer
+can decide what fits (and extraction is now a serialized native parse). Without a cap, a pathological
+ticket with 20–30 attachments would download and parse every one — wasting work on files that could
+never fit a 24k budget anyway. The cap bounds that wasted effort; it does **not** bound content.
+
+Two EDA facts set the number at 8:
+
+1. **The budget realistically holds ~4–6 attachments.** Each adds ~3k tokens up to 4 (1→3k, 2→6.7k,
+   3→9.5k, 4→11.7k); a 6-attachment ticket averages ~24k. So content-wise the budget is exhausted
+   around the 5th–6th attachment.
+2. **The cap must sit *above* that**, or it becomes the real limiter and re-introduces the old
+   "keep top-4" truncation we deliberately removed. We want the **budget** to decide, with the count
+   only catching outliers.
+
+So **8 sits comfortably above the ~6 the budget can hold**: enough candidates for the greedy packer to
+fill 24k even when attachments are small, while still capping the rare 15-/20-/30-attachment tickets.
+Per the per-ticket distribution, the overwhelming majority of tickets have ≤8 attachments, so 8 almost
+never truncates a real set — it only bounds download/extract on outliers.
+
+**Honest caveat:** 8 is a pragmatic guard, not a tuned optimum — anything in the ~6–10 range behaves
+almost identically because the budget does the real work. It only bites a ticket with many *small*
+attachments where the 9th/10th would have fit; the EDA says that's rare. If we ever want the budget to
+be the *sole* limiter, raise the cap to 10–12 or download lazily in ranked order until the budget fills.
+
 ---
 
 ## The numbers
