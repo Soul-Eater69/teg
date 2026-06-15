@@ -29,6 +29,7 @@ from teg.config.settings import load_settings
 from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.integrations.files.document_extractor import build_attachment_extractor
 from teg.integrations.llm import build_llm_client
+from teg.value_stream.config import ValueStreamConfig
 
 _RAW_BUDGET_CHARS = 96_000  # ~24k tokens, the ingest budget (idea card is already small)
 _TEXT_EXTS = {".txt", ".md", ".text"}
@@ -72,7 +73,8 @@ async def main(args: argparse.Namespace) -> None:
 
     # 2. Run production Value Stream selection (evidence mode is the config default).
     #    summary_fields = the embedding/retrieval query; prompt_text = raw idea card the LLM reads.
-    service = build_value_stream_service(settings)
+    # Winning evidence config: all 50 Value Streams reach the LLM (window=50), not the default 18.
+    service = build_value_stream_service(settings, config=ValueStreamConfig(llm_candidate_window=50))
     request = ValueStreamRequest(
         ticket_id=args.id,
         summary_fields=condensed.summary_fields,

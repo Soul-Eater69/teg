@@ -38,6 +38,11 @@ from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.domain.base import CamelModel
 from teg.integrations.files.document_extractor import build_attachment_extractor
 from teg.integrations.llm import build_llm_client
+from teg.value_stream.config import ValueStreamConfig
+
+# Winning evidence config = the FULL 50-VS catalogue reaches the LLM (window=50), not the stale
+# default 18 that gates GT value streams out before the model ever sees them.
+_WINNING = ValueStreamConfig(llm_candidate_window=50)
 
 _RAW_BUDGET_CHARS = 96_000
 _TEXT_EXTS = {".txt", ".md", ".text"}
@@ -242,7 +247,7 @@ async def main(args: argparse.Namespace) -> None:
     cards = _load_cards(args.cards)
     gt = _load_gt(args.gt)
     settings = load_settings()
-    service = build_value_stream_service(settings)
+    service = build_value_stream_service(settings, config=_WINNING)
     llm = build_llm_client(settings)
 
     targets = [t for t in cards if t in gt]
