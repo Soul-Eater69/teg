@@ -31,6 +31,13 @@ the stage-keyed format makes possible:
 | **stage_usage** | selected stages **addressed** in the output | the stage set |
 | **stage_align** | addressed stages whose needs **fit that stage's scope** (not misfiled) | catalogue scope |
 
+**Where is "correctness"?** There is no separate correctness metric, by design. Correctness-vs-GT
+was dropped because each GT Business Needs document is free-form (matching it would penalise style,
+not substance). In a reference-free eval, *"is this need correct?"* becomes *"is it supported by the
+source?"* — so **faithfulness IS the correctness check** (a need is correct iff the idea card backs
+it), and coverage is the completeness check. We keep faithfulness + hallucination + coverage rather
+than a redundant "correctness" label.
+
 ---
 
 ## Finding — the structural checks pass; grounding is the lever

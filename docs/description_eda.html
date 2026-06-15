@@ -94,6 +94,11 @@ assembled text is the artifact the architect sees).</p>
 </table>
 <p>Faithfulness/hallucination = <em>don't make things up</em> (fact precision vs source); coverage = <em>don't
 leave things out</em> (fact recall vs source). A good description is <strong>both</strong>.</p>
+<p><strong>Where is &quot;correctness&quot;?</strong> There is no separate correctness metric, by design. Correctness-vs-GT was
+dropped because each GT description is free-form (matching it would penalise style, not substance). In
+a reference-free eval, <em>&quot;is this claim correct?&quot;</em> becomes <em>&quot;is it supported by the source?&quot;</em> — so
+<strong>faithfulness IS the correctness check</strong>, and coverage is the completeness check. We keep
+faithfulness + hallucination + coverage rather than a redundant &quot;correctness&quot; label.</p>
 <hr />
 <h2>Finding — a grounding prompt halved hallucination</h2>
 <p>The first run was good but leaked invention:</p>
@@ -127,6 +132,12 @@ leave things out</em> (fact recall vs source). A good description is <strong>bot
 </tr>
 </tbody>
 </table>
+<p>The last two are the <strong>raw claim counts</strong> behind faithfulness/hallucination: the faithfulness judge
+decomposes each description into atomic factual claims, so <strong><code>avg claims/desc</code> = 21.8</strong> means each
+description asserts ~22 self-contained facts, and <strong><code>avg unsupported/desc</code> = 2.75</strong> means ~3 of those
+22 aren't supported by the source. Faithfulness/hallucination are just these as ratios
+(<code>supported/total</code> and <code>unsupported/total</code>), but the counts are more concrete — <em>&quot;~3 of ~22 claims
+invented&quot;</em> is easier to picture than <em>0.14</em>, and the count is what the prompt fix moves directly.</p>
 <p><strong>Diagnosis:</strong> the body prompt was <strong>signal-centric</strong> — it told the model to &quot;copy the value from the
 matching signal&quot; for Product Availability / funding / networks. But theme generation now feeds the
 <strong>raw idea card with no signals</strong>, so the model had nothing to copy and <strong>inferred those structured
@@ -196,6 +207,12 @@ hallucination 0.06 / coverage 0.77.</strong></p>
 <li>Prompt grounding was the lever: hallucination halved, faithfulness up, at a small coverage cost we
 accept because invention is the worse failure for a BA-facing artifact.</li>
 </ul>
+<blockquote>
+<p><strong>These are conservative floor numbers.</strong> Spot-checks showed the automated judge occasionally
+marks source-grounded claims as unsupported and counts correctly-omitted project financials as
+missed coverage, so true faithfulness is higher and true hallucination lower than shown — the real
+quality is better than the metrics suggest.</p>
+</blockquote>
 <p><strong>No further changes.</strong></p>
 
 </body>

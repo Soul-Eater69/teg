@@ -38,6 +38,12 @@ assembled text is the artifact the architect sees).
 Faithfulness/hallucination = *don't make things up* (fact precision vs source); coverage = *don't
 leave things out* (fact recall vs source). A good description is **both**.
 
+**Where is "correctness"?** There is no separate correctness metric, by design. Correctness-vs-GT was
+dropped because each GT description is free-form (matching it would penalise style, not substance). In
+a reference-free eval, *"is this claim correct?"* becomes *"is it supported by the source?"* — so
+**faithfulness IS the correctness check**, and coverage is the completeness check. We keep
+faithfulness + hallucination + coverage rather than a redundant "correctness" label.
+
 ---
 
 ## Finding — a grounding prompt halved hallucination
@@ -51,6 +57,13 @@ The first run was good but leaked invention:
 | coverage | 0.843 |
 | avg claims/desc | 21.8 |
 | avg unsupported/desc | 2.75 |
+
+The last two are the **raw claim counts** behind faithfulness/hallucination: the faithfulness judge
+decomposes each description into atomic factual claims, so **`avg claims/desc` = 21.8** means each
+description asserts ~22 self-contained facts, and **`avg unsupported/desc` = 2.75** means ~3 of those
+22 aren't supported by the source. Faithfulness/hallucination are just these as ratios
+(`supported/total` and `unsupported/total`), but the counts are more concrete — *"~3 of ~22 claims
+invented"* is easier to picture than *0.14*, and the count is what the prompt fix moves directly.
 
 **Diagnosis:** the body prompt was **signal-centric** — it told the model to "copy the value from the
 matching signal" for Product Availability / funding / networks. But theme generation now feeds the
