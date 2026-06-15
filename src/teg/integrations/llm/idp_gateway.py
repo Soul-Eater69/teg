@@ -143,7 +143,9 @@ def _extract_content(payload: dict) -> str:
     return content
 
 
-def build_llm_client(settings: Settings) -> IdpLLMClient:
+def build_llm_client(settings: Settings, *, model: str | None = None) -> IdpLLMClient:
+    """Build the gateway client. ``model`` overrides settings.llm_model (e.g. a stronger judge
+    model for eval, while generation stays on the production model)."""
     auth = IDPCustomAuth(
         app_id=settings.llm_app_id,
         auth_url=settings.idp_auth_url,
@@ -161,7 +163,7 @@ def build_llm_client(settings: Settings) -> IdpLLMClient:
     )
     return IdpLLMClient(
         http_client,
-        model=settings.llm_model,
+        model=model or settings.llm_model,
         completion_path=settings.llm_completion_path,
         api_version=settings.llm_api_version,
         reasoning_effort=settings.llm_reasoning_effort or None,

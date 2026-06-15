@@ -67,7 +67,7 @@ def _raw_context(props: dict, raw_budget: int) -> tuple[CondensedContext, str]:
     return ctx, raw
 
 
-async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, raw_budget, sem) -> list[dict]:
+async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw_budget, sem) -> list[dict]:
     async with sem:
         ctx, source = _raw_context(props, raw_budget)
         rows: list[dict] = []
@@ -84,9 +84,9 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, raw_budget
             if not needs.strip():
                 continue
             faith, cov, usage = await asyncio.gather(
-                judge_faithfulness(description=needs, source=source, llm_client=llm),
-                judge_coverage(description=needs, source=source, llm_client=llm),
-                judge_stage_usage(business_needs=needs, stages=stages, llm_client=llm),
+                judge_faithfulness(description=needs, source=source, llm_client=judge),
+                judge_coverage(description=needs, source=source, llm_client=judge),
+                judge_stage_usage(business_needs=needs, stages=stages, llm_client=judge),
             )
             rows.append({
                 "ticket_id": ticket_id, "value_stream_id": vs_id, "n_stages": len(stages),
@@ -117,10 +117,13 @@ async def main(args: argparse.Namespace) -> None:
         raise SystemExit("no tickets to evaluate")
     print(f"evaluating {len(tickets)} tickets (raw text only)\n")
 
-    llm = build_llm_client(settings)
+    llm = build_llm_client(settings)  # generation = production model
+    judge = build_llm_client(settings, model=args.judge_model) if args.judge_model else llm
+    if args.judge_model:
+        print(f"judging with: {args.judge_model} (generation: {settings.llm_model})")
     sem = asyncio.Semaphore(args.concurrency)
     results = await asyncio.gather(*(
-        _eval_ticket(t, condensed[t], gt[t], catalogue=catalogue, llm=llm,
+        _eval_ticket(t, condensed[t], gt[t], catalogue=catalogue, llm=llm, judge=judge,
                      raw_budget=args.raw_budget, sem=sem)
         for t in tickets
     ))
@@ -154,6 +157,8 @@ if __name__ == "__main__":
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json", help="VS + stages")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
     p.add_argument("--raw-budget", type=int, default=_RAW_BUDGET_CHARS)
+    p.add_argument("--judge-model", default="", help="stronger model for the judges (e.g. gpt-5-idp); "
+                   "empty = self-judge with the generation model (may be optimistic)")
     p.add_argument("--sample", type=int, default=0)
     p.add_argument("--seed", type=int, default=13)
     p.add_argument("--count", type=int, default=0)
