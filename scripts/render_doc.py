@@ -66,12 +66,15 @@ blockquote { border-left: 4px solid #d0d7de; margin: 1rem 0; padding: .2rem 1rem
 @page { size: A4; margin: 12mm; }
 @media print {
   body { max-width: none; margin: 0; padding: 0; font-size: 10.5pt; color: #000; }
+  h1 { margin-top: 0; }
   h1, h2, h3, h4 { break-after: avoid; }
-  img, table, pre, blockquote { break-inside: avoid; }
+  table, pre, blockquote { break-inside: avoid; }
   table { font-size: 8.5pt; width: 100%; }
   th, td { padding: 3px 6px; }
   pre, code { font-size: 8.5pt; }
-  img { border: 1px solid #ccc; }
+  /* Cap tall (portrait) diagrams so they scale to fit one page next to the heading,
+     instead of overflowing and pushing themselves onto an otherwise-empty next page. */
+  img { border: 1px solid #ccc; max-height: 245mm; width: auto; margin: .4rem auto; }
 }
 """
 
