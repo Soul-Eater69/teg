@@ -28,14 +28,16 @@ import asyncio
 import json
 from pathlib import Path
 
+from pydantic import Field
+
 from teg.bootstrap import build_value_stream_service
 from teg.condense.condenser import condense
 from teg.condense.models import ResolvedContext
 from teg.config.settings import load_settings
 from teg.contracts.value_stream_io import ValueStreamRequest
+from teg.domain.base import CamelModel
 from teg.integrations.files.document_extractor import build_attachment_extractor
 from teg.integrations.llm import build_llm_client
-from teg.value_stream.drop_explainer import explain_drops
 
 _RAW_BUDGET_CHARS = 96_000
 _TEXT_EXTS = {".txt", ".md", ".text"}
@@ -97,6 +99,41 @@ def _load_gt(path: str) -> dict[str, dict[str, str]]:
     return out
 
 
+class _Rejection(CamelModel):
+    value_stream_id: str
+    reason: str = ""  # specific, exact wording
+
+
+class _Rejections(CamelModel):
+    rejections: list[_Rejection] = Field(default_factory=list)
+
+
+_REJECT_SYSTEM = (
+    "You explain why specific Value Streams were NOT selected for a ticket. The model has already "
+    "picked the Value Streams that best fit this idea card. For EACH not-picked Value Stream listed "
+    "(these are in the ground truth but the model did not select them), write ONE precise sentence "
+    "giving the EXACT reason it was not selected: name the specific evidence the idea card is MISSING "
+    "for it, or name the picked Value Stream that already covers that scope. Be concrete and quote or "
+    "paraphrase the idea card - never vague ('not relevant'), never generic. Judge only from the idea "
+    "card and the descriptions shown."
+)
+
+
+async def _explain_rejections(idea_card, picked_names, rejected, llm):
+    """rejected: list of (vs_id, vs_name, vs_description) -> {vs_id: exact-wording reason}."""
+    if not rejected:
+        return {}
+    blocks = "\n".join(f"- {i} | {n}: {d or '(no description available)'}" for i, n, d in rejected)
+    user = (
+        f"IDEA CARD:\n{idea_card}\n\n"
+        f"PICKED Value Streams: {', '.join(picked_names) or '(none)'}\n\n"
+        f"NOT-PICKED Value Streams to explain (give value_stream_id + a specific one-sentence reason):\n"
+        f"{blocks}"
+    )
+    res = await llm.complete(system=_REJECT_SYSTEM, user=user, schema=_Rejections)
+    return {r.value_stream_id: r.reason for r in res.rejections if r.reason.strip()}
+
+
 async def _compare_one(tid, card, gt_vs, *, service, llm, explain):
     """Predict at GT count, diff against GT, and (optionally) explain the misses."""
     context = ResolvedContext(ticket_id=tid, ticket_title="", description="",
@@ -113,13 +150,13 @@ async def _compare_one(tid, card, gt_vs, *, service, llm, explain):
     missed = [(i, n) for i, n in gt_vs.items() if i not in pred]    # GT we didn't get
     extra = [(i, r) for i, r in pred.items() if i not in gt_vs]     # picked, not in GT
 
-    # Why each missed GT was left out (one LLM call over the candidate pool the selector saw).
+    # Exact-wording reason each rejected GT was not selected (one focused LLM call).
     miss_reasons: dict[str, str] = {}
     if explain and missed:
-        expl = await explain_drops(query=condensed.raw_text, review_pool=trace.review_pool,
-                                   picked_ids=list(pred), dropped_ids=[i for i, _ in missed],
-                                   llm_client=llm)
-        miss_reasons = {i: (e.note or e.reason_code) for i, e in expl.items()}
+        desc = {c.value_stream_id: c.value_stream_description for c in trace.review_pool}
+        rejected = [(i, n, desc.get(i, "")) for i, n in missed]
+        picked_names = [r.value_stream_name for r in recs]
+        miss_reasons = await _explain_rejections(condensed.raw_text, picked_names, rejected, llm)
 
     return {
         "ticket_id": tid,
