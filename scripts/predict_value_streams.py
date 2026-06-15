@@ -64,7 +64,11 @@ async def main(args: argparse.Namespace) -> None:
         attachments_used=[],
         consolidated_text=idea_card,
     )
-    condensed = await condense(context, build_llm_client(settings))
+    llm = build_llm_client(settings)
+    try:
+        condensed = await condense(context, llm)
+    finally:
+        await llm.aclose()  # close the condense LLM session
 
     # 2. Run production Value Stream selection (evidence mode is the config default).
     #    summary_fields = the embedding/retrieval query; prompt_text = raw idea card the LLM reads.
@@ -76,7 +80,10 @@ async def main(args: argparse.Namespace) -> None:
         requested_count=args.count,
         custom_instruction=args.instruction,
     )
-    response = await service.predict(request)
+    try:
+        response = await service.predict(request)
+    finally:
+        await service.aclose()  # close the search + selection-LLM sessions
 
     if args.json:
         print(json.dumps(response.model_dump(by_alias=True), indent=2, ensure_ascii=False))

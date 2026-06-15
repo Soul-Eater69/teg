@@ -55,6 +55,10 @@ class IdpLLMClient:
         self._prompt_tokens = 0
         self._completion_tokens = 0
 
+    async def aclose(self) -> None:
+        """Close the underlying httpx client (call when done; e.g. scripts)."""
+        await self._http.aclose()
+
     @property
     def usage(self) -> dict:
         """Accumulated token usage: calls, prompt/completion/total tokens, and per-call averages."""

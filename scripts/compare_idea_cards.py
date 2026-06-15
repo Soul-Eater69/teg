@@ -62,6 +62,8 @@ def _load_cards(folder: str) -> dict[str, str]:
         raise SystemExit(f"idea-cards folder not found: {folder}")
     cards: dict[str, str] = {}
     for p in sorted(root.iterdir()):
+        if p.stem.lower() in {"readme", "index", ".ds_store"}:
+            continue  # housekeeping files, not idea cards
         if p.suffix.lower() in _CARD_EXTS and p.is_file():
             text = _read_card(p)
             if text:
@@ -211,9 +213,13 @@ async def main(args: argparse.Namespace) -> None:
     if not targets:
         raise SystemExit("no idea cards matched a ground-truth ticket id")
 
-    rows = await asyncio.gather(*(
-        _compare_one(t, cards[t], gt[t], service=service, llm=llm, explain=not args.no_explain)
-        for t in targets))
+    try:
+        rows = await asyncio.gather(*(
+            _compare_one(t, cards[t], gt[t], service=service, llm=llm, explain=not args.no_explain)
+            for t in targets))
+    finally:
+        await service.aclose()  # close the search + selection-LLM sessions
+        await llm.aclose()      # close the condense/explain LLM session
 
     if args.md:
         Path(args.md).write_text(_md_report(rows), encoding="utf-8")
