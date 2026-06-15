@@ -79,6 +79,48 @@ async def generate_capabilities(
     return l3, l2
 
 
+async def generate_capabilities_traced(
+    *,
+    condensed: CondensedContext,
+    value_stream: ApprovedValueStream,
+    value_stream_description: str,
+    selected_stages: list[CatalogueStage],
+    llm_client: LLMClient,
+) -> tuple[list[StageCapabilities], list[StageCapabilities], dict[str, list[str]]]:
+    """Same batched L3/L2 selection, plus the LLM's RAW capability picks per stage (unresolved).
+
+    The third value is ``{stage_id: [picked capability_id, ...]}`` exactly as the LLM returned it,
+    BEFORE :func:`_resolve` drops ids foreign to that stage - so eval can measure cross-STAGE
+    mislinking (an L3 the batched call put under the wrong stage). Falls back to the plain call's
+    resolution; the raw picks come from the same LLM result.
+    """
+    active = [s for s in selected_stages if s.capabilities]
+    if not active:
+        return [], [], {}
+
+    prompt = load_prompt("theme/capability_selection")
+    system, user = prompt.render(
+        ticket_context=render_ticket_context(condensed),
+        generation_signals=render_generation_signals(condensed, _CAPABILITY_SIGNALS),
+        value_stream_name=value_stream.value_stream_name,
+        value_stream_description=value_stream_description,
+        stages="\n\n".join(_stage_block(s) for s in active),
+    )
+    result = await llm_client.complete(system=system, user=user, schema=BatchedCapabilitySelection)
+
+    by_stage = {s.stage_id: s for s in result.stages}
+    l3: list[StageCapabilities] = []
+    l2: list[StageCapabilities] = []
+    raw_picks: dict[str, list[str]] = {}
+    for stage in active:
+        entry = by_stage.get(stage.stage_id)
+        stage_l3, stage_l2 = _resolve(entry, stage)
+        l3.append(stage_l3)
+        l2.append(stage_l2)
+        raw_picks[stage.stage_id] = [c.capability_id for c in (entry.capabilities if entry else [])]
+    return l3, l2, raw_picks
+
+
 def _stage_block(stage: CatalogueStage) -> str:
     return (
         f"### Stage {stage.stage_id}\n"
