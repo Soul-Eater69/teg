@@ -106,7 +106,9 @@ async def _compare_one(tid, card, gt_vs, *, service, llm, explain):
                                  prompt_text=condensed.raw_text, requested_count=len(gt_vs))
     response, trace = await service.predict_traced(request)
 
-    pred = {r.value_stream_id: r for r in response.recommendations}
+    # Hard-cap to the GT count: take the top-ranked len(gt) picks so prediction count == GT length.
+    recs = response.recommendations[:len(gt_vs)]
+    pred = {r.value_stream_id: r for r in recs}
     captured = [(i, n) for i, n in gt_vs.items() if i in pred]      # GT we got
     missed = [(i, n) for i, n in gt_vs.items() if i not in pred]    # GT we didn't get
     extra = [(i, r) for i, r in pred.items() if i not in gt_vs]     # picked, not in GT
