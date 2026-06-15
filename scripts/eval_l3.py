@@ -5,8 +5,10 @@ L3 capabilities from THAT stage's governed candidates. GT L3 is recorded at the 
 Theme's 'L3 Business Capability Model' field, ids CAP#####), so we aggregate the generated L3 across
 the value stream's stages into a theme-level set and score it against the GT theme set.
 
-Two modes (like stages):
+Modes:
   per_stage : one capability call per stage (cannot cross-link by construction)
+  merged    : ONE call for the whole ticket - ALL value streams' stages together. Fewest calls;
+              measured for cross-VS + cross-stage mislink (the wider isolation test).
   one_call  : one batched call for all the value stream's stages (production); also measured for
               cross-STAGE mislinking - an L3 the batched call put under the wrong stage.
 
@@ -25,6 +27,7 @@ import re
 from time import perf_counter
 
 _GEN_LAT: list[float] = []  # one_call generation wall-time per VS, for the cost report
+_MERGED_LAT: list[float] = []  # merged mode: one call per TICKET (all VS together)
 from pathlib import Path
 
 from teg.config.settings import load_settings
@@ -88,7 +91,10 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
     async with sem:
         ctx = _ctx(props)
         res = {"ticket_id": ticket_id, "per_vs_pairs": [], "one_call_pairs": [], "mislink": [],
-               "coverage": [], "drops": []}
+               "merged_pairs": [], "merged_mislink": [], "coverage": [], "drops": []}
+        merged_stages: list = []   # all scorable stages across every VS (for the merged one-call mode)
+        stage_vs: dict = {}        # stage_id -> vs_id, to attribute merged picks back to a VS
+        vs_gt_scored: dict = {}    # vs_id -> answerable GT L3
         for vs_id, entry in gt_by_vs.items():
             stages = [s for s in catalogue.stages_for(vs_id) if s.stage_id in entry["stages"]
                       and s.capabilities]
@@ -106,14 +112,17 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
                 continue
             vs = ApprovedValueStream(value_stream_id=vs_id, value_stream_name=entry["name"])
             desc = catalogue.description_for(vs_id)
+            for s in stages:                       # accumulate for the merged (all-VS) one call
+                merged_stages.append(s); stage_vs[s.stage_id] = vs_id
+            vs_gt_scored[vs_id] = gt_scored
 
-            if args.mode in ("per_stage", "both"):
+            if args.mode in ("per_stage", "both", "all"):
                 per = await asyncio.gather(*(generate_capabilities(
                     condensed=ctx, value_stream=vs, value_stream_description=desc,
                     selected_stages=[s], llm_client=llm) for s in stages))
                 pred = {c.capability_id for l3, _ in per for sc in l3 for c in sc.capabilities}
                 res["per_vs_pairs"].append(_prf(pred, gt_scored))
-            if args.mode in ("one_call", "both"):
+            if args.mode in ("one_call", "both", "all"):
                 t0 = perf_counter()
                 l3, _l2, raw = await generate_capabilities_traced(
                     condensed=ctx, value_stream=vs, value_stream_description=desc,
@@ -141,6 +150,24 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
                                 res["drops"].append(g[cid].grounding if cid in g else "other")
                         except Exception as exc:
                             print(f"    ground-drops failed {vs_id}/{s.stage_id}: {exc}")
+        # MERGED: one single call for the whole ticket - all VS's stages together. The candidates
+        # stay per-stage (strict isolation), salvage re-routes by stage owner (ids are global), and
+        # picks are attributed back to a VS by stage to score per-VS like the other modes.
+        if args.mode in ("merged", "all") and merged_stages:
+            merged_vs = ApprovedValueStream(value_stream_id="ALL",
+                                            value_stream_name="all approved value streams")
+            t0 = perf_counter()
+            l3, _l2, raw = await generate_capabilities_traced(
+                condensed=ctx, value_stream=merged_vs, value_stream_description="",
+                selected_stages=merged_stages, llm_client=llm)
+            _MERGED_LAT.append(perf_counter() - t0)  # one call per TICKET (all VS)
+            pred_by_vs: dict = {}
+            for sc in l3:
+                pred_by_vs.setdefault(stage_vs.get(sc.stage_id), set()).update(
+                    c.capability_id for c in sc.capabilities)
+            for vs_id, gt_scored in vs_gt_scored.items():
+                res["merged_pairs"].append(_prf(pred_by_vs.get(vs_id, set()), gt_scored))
+            res["merged_mislink"].append(_mislink(raw, merged_stages))  # cross-VS + cross-stage leak
         print(f"  {ticket_id}: {len(res['coverage'])} VS scored")
         return res
 
@@ -191,16 +218,18 @@ async def main(args: argparse.Namespace) -> None:
     print(f"\n=== L3 capability eval | {len(cov)} VS ===")
     print(f"  GT-in-catalogue coverage: {in_cat}/{gt_tot} ({_div(in_cat, gt_tot):.0%}) "
           f"- of theme GT L3 reachable from the GT stages; P/R/F1 below score the answerable ones only")
-    for mode, key in (("per_stage", "per_vs_pairs"), ("one_call", "one_call_pairs")):
+    for mode, key in (("per_stage", "per_vs_pairs"), ("one_call", "one_call_pairs"),
+                      ("merged", "merged_pairs")):
         pairs = [p for r in rows for p in r[key]]
         if not pairs:
             continue
         m = _agg(pairs)
         print(f"  [{mode:9}] P={m['precision']}  R={m['recall']}  F1={m['f1']}  (n={m['n']})")
-    ml = [m for r in rows for m in r["mislink"]]
-    if ml:
-        tot = sum(m["total"] for m in ml); fr = sum(m["foreign"] for m in ml)
-        print(f"  one_call mislink (L3 under wrong stage): {fr}/{tot} ({_div(fr, tot):.1%})")
+    for label, mlkey in (("one_call", "mislink"), ("merged (cross-VS+stage)", "merged_mislink")):
+        ml = [m for r in rows for m in r[mlkey]]
+        if ml:
+            tot = sum(m["total"] for m in ml); fr = sum(m["foreign"] for m in ml)
+            print(f"  {label} mislink (L3 under wrong stage): {fr}/{tot} ({_div(fr, tot):.1%})")
     drops = [d for r in rows for d in r["drops"]]
     if drops:
         from collections import Counter
@@ -218,7 +247,8 @@ async def main(args: argparse.Namespace) -> None:
     runs = json.loads(out.read_text(encoding="utf-8")) if out.exists() else []
     runs.append({"n_vs": len(cov), "coverage": round(_div(in_cat, gt_tot), 4),
                  "per_stage": _agg([p for r in rows for p in r["per_vs_pairs"]]) if any(r["per_vs_pairs"] for r in rows) else None,
-                 "one_call": _agg([p for r in rows for p in r["one_call_pairs"]]) if any(r["one_call_pairs"] for r in rows) else None})
+                 "one_call": _agg([p for r in rows for p in r["one_call_pairs"]]) if any(r["one_call_pairs"] for r in rows) else None,
+                 "merged": _agg([p for r in rows for p in r["merged_pairs"]]) if any(r["merged_pairs"] for r in rows) else None})
     out.write_text(json.dumps(runs, indent=2), encoding="utf-8")
     if _GEN_LAT:
         lat = sorted(_GEN_LAT); u = llm.usage
@@ -226,6 +256,11 @@ async def main(args: argparse.Namespace) -> None:
         print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  max={lat[-1]:.1f}s")
         print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
               f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out)  [incl probes if --ground-drops]")
+    if _MERGED_LAT:
+        lat = sorted(_MERGED_LAT)
+        print(f"\ngeneration cost (merged, ONE call per TICKET / all VS):")
+        print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  "
+              f"max={lat[-1]:.1f}s  (n={len(lat)} tickets)")
     print(f"\n-> {out}")
 
 
@@ -234,7 +269,8 @@ if __name__ == "__main__":
     p.add_argument("condensed")
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
-    p.add_argument("--mode", choices=["per_stage", "one_call", "both"], default="both")
+    p.add_argument("--mode", choices=["per_stage", "one_call", "merged", "both", "all"], default="both",
+                   help="merged = ONE call for the whole ticket (all VS together); all = run everything")
     p.add_argument("--ground-drops", action="store_true",
                    help="classify each dropped answerable GT L3 (one_call): card-supported-but-dropped "
                         "(fixable) vs no-card-evidence (convention/label noise) vs weak")
