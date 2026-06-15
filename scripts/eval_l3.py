@@ -37,7 +37,7 @@ from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
 from teg.theme.capabilities import generate_capabilities, generate_capabilities_traced
 from teg.theme.context import render_ticket_context
-from teg.theme.l3_drop_explainer import classify_l3_drop_grounding
+from teg.theme.l3_drop_explainer import classify_l3_drop_grounding, classify_l3_pick_relevance
 from teg.theme.stage_catalogue import StageCatalogue
 
 _RAW_BUDGET = 96_000
@@ -91,7 +91,7 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
     async with sem:
         ctx = _ctx(props)
         res = {"ticket_id": ticket_id, "per_vs_pairs": [], "one_call_pairs": [], "mislink": [],
-               "merged_pairs": [], "merged_mislink": [], "coverage": [], "drops": []}
+               "merged_pairs": [], "merged_mislink": [], "coverage": [], "drops": [], "picks": []}
         merged_stages: list = []   # all scorable stages across every VS (for the merged one-call mode)
         stage_vs: dict = {}        # stage_id -> vs_id, to attribute merged picks back to a VS
         vs_gt_scored: dict = {}    # vs_id -> answerable GT L3
@@ -150,6 +150,25 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
                                 res["drops"].append(g[cid].grounding if cid in g else "other")
                         except Exception as exc:
                             print(f"    ground-drops failed {vs_id}/{s.stage_id}: {exc}")
+                # Pick relevance: of the PICKED L3 that are NOT in GT (the precision miss), how many
+                # are actually irrelevant (over-pick/noise) vs plausible the GT just didn't tag?
+                if args.judge_picks:
+                    picked_by_stage = {sc.stage_id: {c.capability_id for c in sc.capabilities}
+                                       for sc in l3}
+                    ticket_ctx = render_ticket_context(ctx)
+                    for s in stages:
+                        stage_gt = {c.capability_id for c in s.capabilities} & gt_l3
+                        fp = sorted(picked_by_stage.get(s.stage_id, set()) - stage_gt)
+                        if not fp:
+                            continue
+                        try:
+                            v = await classify_l3_pick_relevance(
+                                ticket_context=ticket_ctx, stage_name=s.stage_name,
+                                candidates=s.capabilities, picked_ids=fp, llm_client=llm)
+                            for cid in fp:
+                                res["picks"].append(v[cid].verdict if cid in v else "other")
+                        except Exception as exc:
+                            print(f"    judge-picks failed {vs_id}/{s.stage_id}: {exc}")
         # MERGED: one single call for the whole ticket - all VS's stages together. The candidates
         # stay per-stage (strict isolation), salvage re-routes by stage owner (ids are global), and
         # picks are attributed back to a VS by stage to score per-VS like the other modes.
@@ -173,15 +192,19 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
 
 
 def _mislink(raw_picks: dict[str, list[str]], stages) -> dict:
-    """An L3 the batched call put under a stage that doesn't own it = a cross-stage mislink."""
+    """Classify each raw pick: foreign = valid id under the WRONG stage (mislink, salvageable);
+    invalid = id not in ANY stage's candidate list (hallucinated / invented, dropped)."""
     owner = {c.capability_id: s.stage_id for s in stages for c in s.capabilities}
-    total = foreign = 0
+    total = foreign = invalid = 0
     for stage_id, picks in raw_picks.items():
         for cid in picks:
             total += 1
-            if owner.get(cid) not in (None, stage_id):
-                foreign += 1
-    return {"total": total, "foreign": foreign}
+            own = owner.get(cid)
+            if own is None:
+                invalid += 1            # hallucinated: no stage prints this id
+            elif own != stage_id:
+                foreign += 1            # mislink: real id, wrong stage (salvage fixes it)
+    return {"total": total, "foreign": foreign, "invalid": invalid}
 
 
 def _agg(pairs: list[tuple[int, int, int]]) -> dict:
@@ -229,7 +252,9 @@ async def main(args: argparse.Namespace) -> None:
         ml = [m for r in rows for m in r[mlkey]]
         if ml:
             tot = sum(m["total"] for m in ml); fr = sum(m["foreign"] for m in ml)
-            print(f"  {label} mislink (L3 under wrong stage): {fr}/{tot} ({_div(fr, tot):.1%})")
+            inv = sum(m.get("invalid", 0) for m in ml)
+            print(f"  {label}: mislink (wrong stage, salvageable) {fr}/{tot} ({_div(fr, tot):.1%})  |  "
+                  f"hallucinated (id in NO candidate list, dropped) {inv}/{tot} ({_div(inv, tot):.1%})")
     drops = [d for r in rows for d in r["drops"]]
     if drops:
         from collections import Counter
@@ -241,6 +266,16 @@ async def main(args: argparse.Namespace) -> None:
             print(f"    {code:30} {cnt:4}  ({_div(cnt, n):.0%})")
         print(f"    -> {_div(fixable, n):.0%} FIXABLE (card supports it, dropped anyway); "
               f"{_div(noise, n):.0%} convention/label-noise (no card evidence)")
+    picks = [p for r in rows for p in r["picks"]]
+    if picks:
+        from collections import Counter
+        c = Counter(picks); n = len(picks)
+        irrel = c.get("irrelevant", 0); rel = c.get("relevant", 0)
+        print(f"\n  [pick relevance] {n} picked-but-not-GT L3 judged:")
+        for code, cnt in c.most_common():
+            print(f"    {code:12} {cnt:4}  ({_div(cnt, n):.0%})")
+        print(f"    -> {_div(irrel, n):.0%} genuinely IRRELEVANT (over-pick/noise); "
+              f"{_div(rel, n):.0%} relevant the GT just didn't tag (under-tagging)")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -274,6 +309,9 @@ if __name__ == "__main__":
     p.add_argument("--ground-drops", action="store_true",
                    help="classify each dropped answerable GT L3 (one_call): card-supported-but-dropped "
                         "(fixable) vs no-card-evidence (convention/label noise) vs weak")
+    p.add_argument("--judge-picks", action="store_true",
+                   help="judge each PICKED-but-not-GT L3 (one_call): genuinely irrelevant (over-pick/"
+                        "noise) vs relevant the GT just didn't tag (under-tagging)")
     p.add_argument("--sample", type=int, default=0)
     p.add_argument("--seed", type=int, default=13)
     p.add_argument("--count", type=int, default=0)

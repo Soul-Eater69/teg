@@ -80,3 +80,61 @@ async def classify_l3_drop_grounding(
     )
     result = await llm_client.complete(system=_SYSTEM, user=user, schema=L3GroundingExplanations)
     return {e.capability_id: e for e in result.explanations}
+
+
+# --------------------------------------------------------------------------- #
+# Pick relevance: are the model's PICKS that aren't in GT actually irrelevant, or plausible?
+# --------------------------------------------------------------------------- #
+
+L3PickVerdict = Literal[
+    "relevant",    # the card's work exercises it - a plausible pick the GT just didn't tag
+    "weak",        # only indirect/partial evidence - borderline
+    "irrelevant",  # nothing in the card supports it - genuine over-pick / noise
+    "other",
+]
+
+
+class L3PickExplanation(CamelModel):
+    capability_id: str
+    verdict: L3PickVerdict = "other"
+    note: str = ""
+
+
+class L3PickExplanations(CamelModel):
+    explanations: list[L3PickExplanation] = Field(default_factory=list)
+
+
+_PICK_SYSTEM = (
+    "You audit L3 business-capability selection for ONE lifecycle stage. The idea card and the "
+    "stage's candidate capabilities are shown. A model PICKED the capabilities listed below (none of "
+    "which are in the ground-truth answer key). For EACH, judge ONLY the idea card's evidence: does "
+    "the card's work actually exercise that capability (run through / feed / change it)? Choose one "
+    "code: relevant (the card clearly exercises it - a plausible pick the answer key simply didn't "
+    "tag), weak (only indirect/partial evidence - borderline), irrelevant (nothing in the card "
+    "supports it - a genuine over-pick / noise), other. Add a one-line note."
+)
+
+
+async def classify_l3_pick_relevance(
+    *,
+    ticket_context: str,
+    stage_name: str,
+    candidates: list[CatalogueCapability],
+    picked_ids: list[str],
+    llm_client: LLMClient,
+) -> dict[str, L3PickExplanation]:
+    """Per picked-but-not-GT L3: is it relevant (GT under-tagged) or irrelevant (over-pick/noise)?"""
+    if not picked_ids:
+        return {}
+    by_id = {c.capability_id: c for c in candidates}
+    asked = [f"{i} ({by_id[i].capability_name})" for i in picked_ids if i in by_id]
+    if not asked:
+        return {}
+    user = (
+        f"IDEA CARD:\n{ticket_context}\n\n"
+        f"STAGE: {stage_name}\n\n"
+        f"CANDIDATE CAPABILITIES:\n{_render(candidates)}\n\n"
+        f"For each PICKED (non-answer-key) capability, judge its relevance:\n" + "\n".join(asked)
+    )
+    result = await llm_client.complete(system=_PICK_SYSTEM, user=user, schema=L3PickExplanations)
+    return {e.capability_id: e for e in result.explanations}
