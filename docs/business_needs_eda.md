@@ -98,4 +98,10 @@ hallucination 0.173 / coverage 0.669 / stage_usage 0.998 / stage_align 0.833.**
 - The ~0.17 hallucination is near the practical floor for a prescriptive artifact, and the coverage
   cost is the accepted no-invention trade.
 
+> **These are conservative floor numbers.** Spot-checking the flagged cases showed the automated
+> judge under-counts: it marked source-grounded claims (ones that quote the idea card) as
+> unsupported, and counted correctly-omitted project financials (funding asks, ROI, alternatives) as
+> missed coverage. So **true faithfulness is higher and true hallucination lower** than the figures
+> above — the real quality is better than the metrics suggest.
+
 **No further changes.**
