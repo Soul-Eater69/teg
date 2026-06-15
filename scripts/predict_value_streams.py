@@ -27,16 +27,27 @@ from teg.condense.condenser import condense
 from teg.condense.models import ResolvedContext
 from teg.config.settings import load_settings
 from teg.contracts.value_stream_io import ValueStreamRequest
+from teg.integrations.files.document_extractor import build_attachment_extractor
 from teg.integrations.llm import build_llm_client
 
 _RAW_BUDGET_CHARS = 96_000  # ~24k tokens, the ingest budget (idea card is already small)
+_TEXT_EXTS = {".txt", ".md", ".text"}
 
 
 def _read_idea_card(path: str) -> str:
-    text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+    """Read an idea card from text (.txt/.md) or extract it from .pdf/.pptx/.docx; '-' = stdin text."""
+    if path == "-":
+        text = sys.stdin.read()
+    else:
+        p = Path(path)
+        if p.suffix.lower() in _TEXT_EXTS:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        else:  # .pdf / .pptx / .docx -> extract (same path as ingestion attachments)
+            text = build_attachment_extractor().extract(p.name, p.read_bytes())
     text = text.strip()
     if not text:
-        raise SystemExit("idea card is empty")
+        raise SystemExit("idea card is empty / no text extracted "
+                         "(image-only PDF, or legacy .ppt/.doc — convert to .pptx/.docx)")
     return text[:_RAW_BUDGET_CHARS]
 
 

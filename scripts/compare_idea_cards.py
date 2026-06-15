@@ -33,16 +33,27 @@ from teg.condense.condenser import condense
 from teg.condense.models import ResolvedContext
 from teg.config.settings import load_settings
 from teg.contracts.value_stream_io import ValueStreamRequest
+from teg.integrations.files.document_extractor import build_attachment_extractor
 from teg.integrations.llm import build_llm_client
 from teg.value_stream.drop_explainer import explain_drops
 
 _RAW_BUDGET_CHARS = 96_000
-_CARD_EXTS = {".txt", ".md", ".text"}
+_TEXT_EXTS = {".txt", ".md", ".text"}
+_DOC_EXTS = {".pdf", ".pptx", ".docx"}        # extracted via DocumentExtractor (same as ingestion)
+_CARD_EXTS = _TEXT_EXTS | _DOC_EXTS
+_EXTRACTOR = build_attachment_extractor()
 
 
 def _ticket_id(path: Path) -> str:
-    """Filename stem is the IDMT id, e.g. 'IDMT-19761.txt' -> 'IDMT-19761' (upper-cased)."""
+    """Filename stem is the IDMT id, e.g. 'IDMT-19761.pdf' -> 'IDMT-19761' (upper-cased)."""
     return path.stem.strip().upper()
+
+
+def _read_card(path: Path) -> str:
+    """Idea-card text: read text files directly; extract .pdf/.pptx/.docx (idea card is the file)."""
+    if path.suffix.lower() in _TEXT_EXTS:
+        return path.read_text(encoding="utf-8", errors="ignore").strip()
+    return _EXTRACTOR.extract(path.name, path.read_bytes()).strip()  # .pdf/.pptx/.docx -> text
 
 
 def _load_cards(folder: str) -> dict[str, str]:
@@ -52,11 +63,13 @@ def _load_cards(folder: str) -> dict[str, str]:
     cards: dict[str, str] = {}
     for p in sorted(root.iterdir()):
         if p.suffix.lower() in _CARD_EXTS and p.is_file():
-            text = p.read_text(encoding="utf-8").strip()
+            text = _read_card(p)
             if text:
                 cards[_ticket_id(p)] = text[:_RAW_BUDGET_CHARS]
+            else:
+                print(f"note: no text extracted from {p.name} (empty/image-only/legacy .ppt/.doc) — skipped")
     if not cards:
-        raise SystemExit(f"no idea cards ({'/'.join(sorted(_CARD_EXTS))}) in {folder}")
+        raise SystemExit(f"no readable idea cards ({', '.join(sorted(_CARD_EXTS))}) in {folder}")
     return cards
 
 
