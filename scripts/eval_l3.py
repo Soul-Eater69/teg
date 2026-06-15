@@ -30,6 +30,8 @@ from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
 from teg.theme.capabilities import generate_capabilities, generate_capabilities_traced
+from teg.theme.context import render_ticket_context
+from teg.theme.l3_drop_explainer import classify_l3_drop_grounding
 from teg.theme.stage_catalogue import StageCatalogue
 
 _RAW_BUDGET = 96_000
@@ -83,7 +85,7 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
     async with sem:
         ctx = _ctx(props)
         res = {"ticket_id": ticket_id, "per_vs_pairs": [], "one_call_pairs": [], "mislink": [],
-               "coverage": []}
+               "coverage": [], "drops": []}
         for vs_id, entry in gt_by_vs.items():
             stages = [s for s in catalogue.stages_for(vs_id) if s.stage_id in entry["stages"]
                       and s.capabilities]
@@ -115,6 +117,25 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
                 pred = {c.capability_id for sc in l3 for c in sc.capabilities}
                 res["one_call_pairs"].append(_prf(pred, gt_scored))
                 res["mislink"].append(_mislink(raw, stages))
+                # Drop diagnosis: per stage, why was an answerable GT L3 (in this stage's candidate
+                # list) not picked? Every candidate was in the prompt -> 'saw it, didn't pick it'.
+                if args.ground_drops:
+                    picked_by_stage = {sc.stage_id: {c.capability_id for c in sc.capabilities}
+                                       for sc in l3}
+                    ticket_ctx = render_ticket_context(ctx)
+                    for s in stages:
+                        stage_gt = {c.capability_id for c in s.capabilities} & gt_l3
+                        dropped = sorted(stage_gt - picked_by_stage.get(s.stage_id, set()))
+                        if not dropped:
+                            continue
+                        try:
+                            g = await classify_l3_drop_grounding(
+                                ticket_context=ticket_ctx, stage_name=s.stage_name,
+                                candidates=s.capabilities, dropped_ids=dropped, llm_client=llm)
+                            for cid in dropped:
+                                res["drops"].append(g[cid].grounding if cid in g else "other")
+                        except Exception as exc:
+                            print(f"    ground-drops failed {vs_id}/{s.stage_id}: {exc}")
         print(f"  {ticket_id}: {len(res['coverage'])} VS scored")
         return res
 
@@ -175,6 +196,17 @@ async def main(args: argparse.Namespace) -> None:
     if ml:
         tot = sum(m["total"] for m in ml); fr = sum(m["foreign"] for m in ml)
         print(f"  one_call mislink (L3 under wrong stage): {fr}/{tot} ({_div(fr, tot):.1%})")
+    drops = [d for r in rows for d in r["drops"]]
+    if drops:
+        from collections import Counter
+        c = Counter(drops); n = len(drops)
+        fixable = c.get("context_present_but_dropped", 0)
+        noise = c.get("no_context_for_capability", 0)
+        print(f"\n  [drop grounding] {n} answerable GT L3 dropped:")
+        for code, cnt in c.most_common():
+            print(f"    {code:30} {cnt:4}  ({_div(cnt, n):.0%})")
+        print(f"    -> {_div(fixable, n):.0%} FIXABLE (card supports it, dropped anyway); "
+              f"{_div(noise, n):.0%} convention/label-noise (no card evidence)")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -192,6 +224,9 @@ if __name__ == "__main__":
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
     p.add_argument("--mode", choices=["per_stage", "one_call", "both"], default="both")
+    p.add_argument("--ground-drops", action="store_true",
+                   help="classify each dropped answerable GT L3 (one_call): card-supported-but-dropped "
+                        "(fixable) vs no-card-evidence (convention/label noise) vs weak")
     p.add_argument("--sample", type=int, default=0)
     p.add_argument("--seed", type=int, default=13)
     p.add_argument("--count", type=int, default=0)
