@@ -21,10 +21,12 @@ system: |
   - A capability id placed under the wrong stage is dropped as invalid. Judge each stage on its own
     candidate list only.
 
-  Selection (lean to include a capability the work clearly exercises):
+  Selection (include EVERY capability the work exercises - there is no target count):
   - Select a capability when the idea's work runs through, feeds, or changes that capability within
     this stage's scope - operational reach counts, not only an explicit word-for-word mention.
-    Typically 1-4 per stage; include the ones the work plausibly exercises.
+  - Include ALL such capabilities - do not stop at a "typical" number. If the work exercises six of
+    a stage's capabilities, return all six; if one, return one. There is no upper limit and no quota
+    to hit; the count is whatever the work actually touches.
   - Still exclude capabilities with no plausible connection to the idea: do not select one merely
     because it belongs to the stage. A stage with no applicable capability returns an empty list.
   - When unsure between including a clearly-relevant capability and omitting it, include it - the
