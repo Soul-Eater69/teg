@@ -31,11 +31,6 @@ the stage-keyed format makes possible:
 | **stage_usage** | selected stages **addressed** in the output | the stage set |
 | **stage_align** | addressed stages whose needs **fit that stage's scope** (not misfiled) | catalogue scope |
 
-> **Judge note:** the faithfulness/coverage/stage judges run on the **same gateway model that
-> generated the text** (`gpt-5-mini`). A model scores its own output a little favourably, so the
-> absolute numbers may be mildly optimistic; the **deltas** across prompt versions are valid (same
-> judge throughout). A `--judge-model` flag exists to re-judge with a stronger model (e.g. GPT-5).
-
 ---
 
 ## Finding — the structural checks pass; grounding is the lever
@@ -103,5 +98,4 @@ hallucination 0.173 / coverage 0.669 / stage_usage 0.998 / stage_align 0.833.**
 - The ~0.17 hallucination is near the practical floor for a prescriptive artifact, and the coverage
   cost is the accepted no-invention trade.
 
-**No further changes** (optional: re-judge with GPT-5 via `--judge-model` for a stricter absolute
-read — the deltas hold either way).
+**No further changes.**

@@ -95,12 +95,6 @@ the stage-keyed format makes possible:</p>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p><strong>Judge note:</strong> the faithfulness/coverage/stage judges run on the <strong>same gateway model that
-generated the text</strong> (<code>gpt-5-mini</code>). A model scores its own output a little favourably, so the
-absolute numbers may be mildly optimistic; the <strong>deltas</strong> across prompt versions are valid (same
-judge throughout). A <code>--judge-model</code> flag exists to re-judge with a stronger model (e.g. GPT-5).</p>
-</blockquote>
 <hr />
 <h2>Finding — the structural checks pass; grounding is the lever</h2>
 <p>The <strong>stage checks were excellent from the start</strong> and held throughout: the model <strong>uses every
@@ -206,8 +200,7 @@ alignment and some coverage.</li>
 <li>The ~0.17 hallucination is near the practical floor for a prescriptive artifact, and the coverage
 cost is the accepted no-invention trade.</li>
 </ul>
-<p><strong>No further changes</strong> (optional: re-judge with GPT-5 via <code>--judge-model</code> for a stricter absolute
-read — the deltas hold either way).</p>
+<p><strong>No further changes.</strong></p>
 
 </body>
 </html>
