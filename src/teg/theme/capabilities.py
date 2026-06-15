@@ -72,10 +72,14 @@ async def generate_capabilities(
     by_stage = {s.stage_id: s for s in result.stages}
     l3: list[StageCapabilities] = []
     l2: list[StageCapabilities] = []
+    raw_picks: dict[str, list[str]] = {}
     for stage in active:
-        stage_l3, stage_l2 = _resolve(by_stage.get(stage.stage_id), stage)
+        entry = by_stage.get(stage.stage_id)
+        stage_l3, stage_l2 = _resolve(entry, stage)
         l3.append(stage_l3)
         l2.append(stage_l2)
+        raw_picks[stage.stage_id] = [c.capability_id for c in (entry.capabilities if entry else [])]
+    _salvage_mislinks(active, raw_picks, l3)
     return l3, l2
 
 
@@ -118,7 +122,35 @@ async def generate_capabilities_traced(
         l3.append(stage_l3)
         l2.append(stage_l2)
         raw_picks[stage.stage_id] = [c.capability_id for c in (entry.capabilities if entry else [])]
+    _salvage_mislinks(active, raw_picks, l3)
     return l3, l2, raw_picks
+
+
+def _salvage_mislinks(
+    active: list[CatalogueStage],
+    raw_picks: dict[str, list[str]],
+    l3: list[StageCapabilities],
+) -> None:
+    """Reassign a mislinked L3 to its owning stage instead of losing it.
+
+    A capability id is governed by exactly one stage, so an L3 the batched call put under the WRONG
+    stage (dropped by _resolve) is added to its true owner's result (if not already there). The
+    strict-isolation prompt should make this a no-op; it's the correction layer so a mislinked-but-
+    valid capability is recovered, not lost. Salvaged caps carry an empty reason.
+    """
+    owner_of = {c.capability_id: s for s in active for c in s.capabilities}  # cap id -> owning stage
+    by_stage = {sc.stage_id: sc for sc in l3}
+    for picker_stage, picks in raw_picks.items():
+        for cap_id in picks:
+            owner = owner_of.get(cap_id)
+            if owner is None or owner.stage_id == picker_stage:
+                continue  # invalid id, or correctly placed
+            target = by_stage.get(owner.stage_id)
+            if target is None or any(c.capability_id == cap_id for c in target.capabilities):
+                continue  # owner already has it
+            cap = next(c for c in owner.capabilities if c.capability_id == cap_id)
+            target.capabilities.append(
+                Capability(capability_id=cap_id, name=cap.capability_name, reason=""))
 
 
 def _stage_block(stage: CatalogueStage) -> str:

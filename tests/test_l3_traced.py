@@ -49,3 +49,24 @@ def test_traced_resolves_and_exposes_raw_picks() -> None:
     assert by_stage["S2"] == ["C3"]
     # raw picks keep the model's behaviour so mislink is measurable: C3 was put under S1.
     assert raw["S1"] == ["C1", "C3"]
+
+
+class MislinkOnlyLLM:
+    """Puts C3 (S2's cap) only under S1; S2 picks nothing -> C3 would be LOST without salvage."""
+
+    async def complete(self, *, system, user, schema):
+        return BatchedCapabilitySelection(stages=[
+            {"stageId": "S1", "capabilities": [{"capabilityId": "C1"}, {"capabilityId": "C3"}]},
+            {"stageId": "S2", "capabilities": []},
+        ])
+
+
+def test_mislinked_capability_is_salvaged_to_its_owner_stage() -> None:
+    stages = [_stage("S1", [_cap("C1", "A"), _cap("C2", "B")]), _stage("S2", [_cap("C3", "C")])]
+    l3, _l2, _raw = asyncio.run(generate_capabilities_traced(
+        condensed=_ctx(), value_stream=ApprovedValueStream(value_stream_id="VS", value_stream_name="n"),
+        value_stream_description="", selected_stages=stages, llm_client=MislinkOnlyLLM()))
+
+    by_stage = {sc.stage_id: [c.capability_id for c in sc.capabilities] for sc in l3}
+    assert by_stage["S1"] == ["C1"]  # foreign C3 dropped from S1
+    assert by_stage["S2"] == ["C3"]  # SALVAGED to its owner S2 (instead of lost)

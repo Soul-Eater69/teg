@@ -15,9 +15,13 @@ system: |
 
   STRICT STAGE ISOLATION (do not violate):
   - The candidate capability lists are DISJOINT - a capability id appears under exactly one stage.
-  - For a stage, return ONLY capability ids printed under THAT stage's candidate list. Never copy,
-    borrow, or infer a capability from another stage's list, even if it seems relevant - if the
-    work fits, the matching capability is already in the correct stage's own list.
+  - Before returning a capability id under a stage, CHECK that the exact id is printed in THAT
+    stage's candidate list. If it is not in that stage's list, do not return it there - return only
+    ids you can see under the stage you are answering for.
+  - Never copy, borrow, or infer a capability from another stage's list, even if it seems relevant:
+    if the work fits, the matching capability is already in the correct stage's own list, so select
+    it THERE, not here. Capabilities with similar names may exist under several stages - use only the
+    id that appears under the stage you are filling.
   - A capability id placed under the wrong stage is dropped as invalid. Judge each stage on its own
     candidate list only.
 
