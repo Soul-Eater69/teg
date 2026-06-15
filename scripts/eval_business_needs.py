@@ -94,8 +94,9 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw
                 "coverage": round(cov.score(), 3),
                 "stage_usage": round(usage.usage(), 3), "stage_align": round(usage.alignment(), 3),
                 "unsupported": " | ".join(faith.unsupported()),
+                "missed_facts": " | ".join(cov.missed()),
                 "unused_stages": " | ".join(usage.unused()),
-                "misaligned_stages": " | ".join(usage.misaligned()),
+                "misaligned_stages": " | ".join(usage.misaligned_notes()),
             })
         print(f"  {ticket_id}: {len(rows)} VS business-needs judged")
         return rows

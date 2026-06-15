@@ -46,6 +46,10 @@ class StageUsageResult(CamelModel):
     def misaligned(self) -> list[str]:
         return [s.stage_id for s in self.stages if s.addressed and not s.aligned]
 
+    def misaligned_notes(self) -> list[str]:
+        """'<stage_id>: <why it's misaligned>' for each addressed-but-not-aligned stage."""
+        return [f"{s.stage_id}: {s.note}" for s in self.stages if s.addressed and not s.aligned]
+
 
 _SYSTEM = (
     "You audit a Business Needs document that should contain one section per SELECTED lifecycle "
