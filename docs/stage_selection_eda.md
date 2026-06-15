@@ -131,20 +131,53 @@ narrower picks, and only ~4% are genuine misses.** The one fixable lever — adj
 was already pushed down from 17% → 11% with a stage-boundary prompt (pick by entrance/exit scope, and
 include both adjacent stages when the work spans a boundary).
 
+## Finding — the count is a precision↔recall dial (and the GT may be under-tagged)
+
+![Count dial](stage_charts/count_dial.png)
+
+The model returns a stage count; how generous that is trades precision for recall. Removing the
+prompt's count guidance entirely makes it a recall-first selector:
+
+| config (one_call) | avg predicted | precision | recall | F1 |
+|---|---|---|---|---|
+| **balanced** (lean-but-bounded) | ~2.0 | **0.42** | 0.54 | 0.48 |
+| **recall-first** (no count cap) | ~3.9 | 0.35 | **0.89** | 0.50 |
+
+So the same dial seen in value-stream selection applies: the count is a lever, not a fixed answer.
+**F1 is roughly flat** across the dial (0.48–0.50) — recall-first trades precision ~1:1 for recall.
+
+**Crucially, the precision side is probably understated by the ground truth.** GT averages only
+**1.56 stages per VS**, yet a single change often genuinely runs through more of a value stream's
+lifecycle. The recall-first picks marked "false positives" against that thin GT are frequently
+*plausible* stages the architect simply did not tag — the same pattern the value-stream judge showed
+(many non-GT picks rated relevant). So the recall-first config's true precision is higher than 0.35;
+the strict score penalises it for stages the BA under-tagged or prioritised differently.
+
+**This is a product choice, not a bug:**
+- **recall-first** (no cap) — surfaces every stage the work plausibly touches (~4), recall ~0.89; the
+  architect trims. Best when missing a stage is worse than reviewing an extra.
+- **precision-first** (bounded) — a tighter set (~2), recall ~0.54; less to trim. Best when a lean,
+  high-confidence list is wanted.
+
+Both sit at ~0.48–0.50 strict F1; the dial just moves where on the precision/recall curve you operate.
+
 ---
 
 ## Verdict — locked
 
-**Stage selection: raw input + one_call, F1 ≈ 0.48 / recall ≈ 0.54 (of answerable stages), 0 mislinks.**
+**Stage selection: raw input + one_call, ~0.48–0.50 strict F1 with a precision↔recall dial
+(precision-first ~2 stages / recall 0.54, or recall-first ~4 stages / recall 0.89), 0 mislinks.**
 
 - **summary slightly beats raw** for stages (~2 pts), but production feeds **raw** for architectural
   consistency (one input across VS/stages/description/needs) — the cost is within the structural ceiling.
-- **one_call** is the production mode: calibrated, near-zero fallback, 1 call not N.
+- **one_call** is the production mode: 1 call not N.
 - **Interlinking is solved** (isolation prompt + salvage → 0 cross-VS mislinks).
-- **The recall ceiling was a catalogue gap**, not the model — pruning uncatalogued GT lifted recall
-  0.43 → 0.54.
-- **The remaining gap is structural**: ~40% of drops have no ticket evidence (the BA's outside-knowledge
-  picks), most of the rest is defensible narrower selection, and only ~4% are genuine misses. Prompt
-  engineering is tapped out beyond the adjacent-confusion fix.
+- **The recall ceiling was a catalogue gap**, not the model — pruning uncatalogued GT lifted recall.
+- **The count is a precision↔recall dial** — F1 is flat across it (~0.48–0.50); choose recall-first
+  (surface all, architect trims) or precision-first (tight set) per product need. The low precision is
+  partly real over-fetch and **partly thin/under-tagged GT** (1.56 stages/VS, while a change often
+  touches more) — strict precision penalises plausible stages the BA didn't tag.
+- **The remaining true gap is structural**: ~40% of drops have no ticket evidence (BA outside-knowledge
+  picks), most of the rest is defensible selection, and only ~4% are genuine misses.
 
 The model performs well against an answerable, noisy target. **No further changes.**

@@ -97,7 +97,7 @@ ceiling (theme-vs-stage granularity), 0% cross-stage mislink.**
   decompose to stages — so the 58% coverage is a structural ceiling, and we score the answerable L3.
 - **Removing the count cap was the lever** — recall 0.49 → 0.87 (the *count-is-the-lever* pattern
   again); precision is the accepted trade.
-- **Interlink is solved** — strict-isolation prompt (prevent) + salvage (correct) → 0% mislink.
+- **Interlink solved** — strict-isolation prompt (prevent) + salvage (correct) → 0% mislink.
 - The residual gap is **mostly BA capability-model convention** (50% no-context) the card can't
   derive, plus a small fixable tail.
 

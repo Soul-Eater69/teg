@@ -113,7 +113,28 @@ def swap() -> None:
     fig.tight_layout(); fig.savefig(_OUT / "swap.png", dpi=130); plt.close(fig)
 
 
+# Count dial (one_call): balanced (bounded) vs recall-first (no count cap).
+DIAL = [("precision", 0.42, 0.35), ("recall", 0.54, 0.89), ("F1", 0.48, 0.50)]
+
+
+def count_dial() -> None:
+    labels = [d[0] for d in DIAL]
+    x = range(len(labels))
+    fig, ax = plt.subplots(figsize=(6.5, 4.4))
+    w = 0.35
+    ax.bar([i - w / 2 for i in x], [d[1] for d in DIAL], w, label="balanced (~2 stages)", color="#4C78A8")
+    ax.bar([i + w / 2 for i in x], [d[2] for d in DIAL], w, label="recall-first (~4 stages)", color="#54A24B")
+    ax.set_xticks(list(x)); ax.set_xticklabels(labels); ax.set_ylim(0, 1.0)
+    ax.set_ylabel("score"); ax.set_title("Count is a precision<->recall dial (F1 flat)",
+                                         fontsize=12, weight="bold")
+    for i, d in enumerate(DIAL):
+        ax.text(i - w / 2, d[1], f"{d[1]:.2f}", ha="center", va="bottom", fontsize=8)
+        ax.text(i + w / 2, d[2], f"{d[2]:.2f}", ha="center", va="bottom", fontsize=8)
+    ax.legend(); ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout(); fig.savefig(_OUT / "count_dial.png", dpi=130); plt.close(fig)
+
+
 if __name__ == "__main__":
     _OUT.mkdir(parents=True, exist_ok=True)
-    input_mode(); prune_lift(); fn_breakdown(); grounding(); swap()
+    input_mode(); prune_lift(); fn_breakdown(); grounding(); swap(); count_dial()
     print(f"wrote charts to {_OUT}/")
