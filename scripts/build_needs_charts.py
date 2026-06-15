@@ -15,27 +15,27 @@ import matplotlib.pyplot as plt
 
 _OUT = Path("docs/needs_charts")
 
-# Prompt journey: baseline -> grounding (over-tight) -> rebalanced. (metric, [3 values])
+# Prompt journey: baseline -> grounding -> rebalanced -> final (GPT-5 judge). (metric, [4 values])
 JOURNEY = [
-    ("faithfulness", [0.735, 0.817, 0.827]),
-    ("hallucination", [0.265, 0.183, 0.173]),
-    ("coverage", [0.736, 0.633, 0.669]),
-    ("stage_align", [0.972, 0.812, 0.833]),
+    ("faithfulness", [0.735, 0.817, 0.827, 0.895]),
+    ("hallucination", [0.265, 0.183, 0.173, 0.105]),
+    ("coverage", [0.736, 0.633, 0.669, 0.810]),
+    ("stage_align", [0.972, 0.812, 0.833, 0.855]),
 ]
-_STAGES = ["baseline", "grounding\n(over-tight)", "rebalanced"]
-_COLORS = ["#B0B0B0", "#F2A93B", "#54A24B"]
+_STAGES = ["baseline", "grounding", "rebalanced", "final\n(GPT-5)"]
+_COLORS = ["#B0B0B0", "#F2A93B", "#9ECAE1", "#54A24B"]
 
 
 def journey() -> None:
-    fig, ax = plt.subplots(figsize=(8.5, 4.8))
+    fig, ax = plt.subplots(figsize=(9.5, 4.8))
     metrics = [m for m, _ in JOURNEY]
     x = range(len(metrics))
-    w = 0.26
+    w = 0.2
     for i, label in enumerate(_STAGES):
         vals = [vals[i] for _, vals in JOURNEY]
-        bars = ax.bar([p + (i - 1) * w for p in x], vals, w, label=label, color=_COLORS[i])
+        bars = ax.bar([p + (i - 1.5) * w for p in x], vals, w, label=label, color=_COLORS[i])
         for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v, f"{v:.2f}", ha="center", va="bottom", fontsize=7)
+            ax.text(b.get_x() + b.get_width() / 2, v, f"{v:.2f}", ha="center", va="bottom", fontsize=6)
     ax.set_xticks(list(x)); ax.set_xticklabels(metrics)
     ax.set_ylabel("score"); ax.set_ylim(0, 1.0)
     ax.set_title("Prompt journey: grounding lifted faithfulness, rebalance recovered the rest",
@@ -44,10 +44,10 @@ def journey() -> None:
     fig.tight_layout(); fig.savefig(_OUT / "journey.png", dpi=130); plt.close(fig)
 
 
-# Final locked metrics (rebalanced).
+# Final locked metrics (GPT-5 judge).
 FINAL = [
-    ("faithfulness", 0.827), ("coverage", 0.669), ("stage_usage", 0.998), ("stage_align", 0.833),
-    ("hallucination", 0.173),
+    ("faithfulness", 0.895), ("coverage", 0.810), ("stage_usage", 0.999), ("stage_align", 0.855),
+    ("hallucination", 0.105),
 ]
 
 
