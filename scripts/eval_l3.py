@@ -92,6 +92,13 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
             cat_l3 = {c.capability_id for s in stages for c in s.capabilities}
             gt_l3 = entry["l3"]
             res["coverage"].append((len(gt_l3 & cat_l3), len(gt_l3)))
+            # Score against ANSWERABLE GT L3 only: the GT theme L3 reachable from the GT stages'
+            # candidate lists. GT L3 that map to stages not in the selection are unpredictable, so
+            # scoring them as FN tanks recall - this is the real, fair recall (like pruning
+            # uncatalogued stages). Coverage above is reported separately as the ceiling.
+            gt_scored = gt_l3 & cat_l3
+            if not gt_scored:
+                continue
             vs = ApprovedValueStream(value_stream_id=vs_id, value_stream_name=entry["name"])
             desc = catalogue.description_for(vs_id)
 
@@ -100,13 +107,13 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
                     condensed=ctx, value_stream=vs, value_stream_description=desc,
                     selected_stages=[s], llm_client=llm) for s in stages))
                 pred = {c.capability_id for l3, _ in per for sc in l3 for c in sc.capabilities}
-                res["per_vs_pairs"].append(_prf(pred, gt_l3))
+                res["per_vs_pairs"].append(_prf(pred, gt_scored))
             if args.mode in ("one_call", "both"):
                 l3, _l2, raw = await generate_capabilities_traced(
                     condensed=ctx, value_stream=vs, value_stream_description=desc,
                     selected_stages=stages, llm_client=llm)
                 pred = {c.capability_id for sc in l3 for c in sc.capabilities}
-                res["one_call_pairs"].append(_prf(pred, gt_l3))
+                res["one_call_pairs"].append(_prf(pred, gt_scored))
                 res["mislink"].append(_mislink(raw, stages))
         print(f"  {ticket_id}: {len(res['coverage'])} VS scored")
         return res
@@ -156,7 +163,8 @@ async def main(args: argparse.Namespace) -> None:
     cov = [c for r in rows for c in r["coverage"]]
     in_cat = sum(a for a, _ in cov); gt_tot = sum(b for _, b in cov)
     print(f"\n=== L3 capability eval | {len(cov)} VS ===")
-    print(f"  GT-in-catalogue coverage: {in_cat}/{gt_tot} ({_div(in_cat, gt_tot):.0%}) - recall ceiling")
+    print(f"  GT-in-catalogue coverage: {in_cat}/{gt_tot} ({_div(in_cat, gt_tot):.0%}) "
+          f"- of theme GT L3 reachable from the GT stages; P/R/F1 below score the answerable ones only")
     for mode, key in (("per_stage", "per_vs_pairs"), ("one_call", "one_call_pairs")):
         pairs = [p for r in rows for p in r[key]]
         if not pairs:
