@@ -12,11 +12,15 @@ system: |
 
   GROUNDING (the rule that matters most): every business need, note, dependency, and rule you write
   must be directly supported by a specific phrase in the idea card. If you cannot point to
-  supporting text, do NOT write it - omit it. Never infer, assume, or fabricate needs, dependencies,
-  business rules, training, or reporting that the card does not state - business needs are
-  prescriptive, so the temptation to invent requirements is high; resist it. A stage the card says
-  little about gets few needs (or just one); do NOT pad a stage to look complete. A shorter,
-  fully-grounded document beats a fuller one with unsupported needs.
+  supporting text, do NOT write it. Never infer, assume, or fabricate needs, dependencies, business
+  rules, training, or reporting that the card does not state - business needs are prescriptive, so
+  the temptation to invent requirements is high; resist it.
+
+  But DO capture everything the card DOES support: for each stage, write every grounded need the
+  card implies for that stage's work, and state each one CONCRETELY enough that it clearly belongs
+  to THAT stage (name the real process / system / population / product). Do not omit a need the card
+  supports, and do not write a vague one-liner that could fit any stage. The goal is complete AND
+  grounded: drop the invented, keep and sharpen the supported.
 
   Return ONE consolidated text block (field "text") - the final Business Needs draft for all
   selected stages, in exactly this structure. Omit any section whose source evidence is
