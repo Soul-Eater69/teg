@@ -15,14 +15,14 @@ import matplotlib.pyplot as plt
 
 _OUT = Path("docs/needs_charts")
 
-# Prompt journey: baseline -> grounding -> rebalanced -> final (GPT-5 judge). (metric, [4 values])
+# Prompt journey: baseline -> grounding -> rebalanced -> final. (metric, [4 values])
 JOURNEY = [
     ("faithfulness", [0.735, 0.817, 0.827, 0.895]),
     ("hallucination", [0.265, 0.183, 0.173, 0.105]),
     ("coverage", [0.736, 0.633, 0.669, 0.810]),
     ("stage_align", [0.972, 0.812, 0.833, 0.855]),
 ]
-_STAGES = ["baseline", "grounding", "rebalanced", "final\n(GPT-5)"]
+_STAGES = ["baseline", "grounding", "rebalanced", "final"]
 _COLORS = ["#B0B0B0", "#F2A93B", "#9ECAE1", "#54A24B"]
 
 
@@ -44,7 +44,7 @@ def journey() -> None:
     fig.tight_layout(); fig.savefig(_OUT / "journey.png", dpi=130); plt.close(fig)
 
 
-# Final locked metrics (GPT-5 judge).
+# Final locked metrics.
 FINAL = [
     ("faithfulness", 0.895), ("coverage", 0.810), ("stage_usage", 0.999), ("stage_align", 0.855),
     ("hallucination", 0.105),

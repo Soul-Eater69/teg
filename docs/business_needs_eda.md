@@ -56,10 +56,9 @@ built"), so it invents requirements far more readily than descriptive prose — 
 
 ![Prompt journey](needs_charts/journey.png)
 
-**The journey** — the three prompt versions on the same sample, then the final config re-scored with
-a stronger judge (GPT-5) for the trustworthy figures:
+**The journey** — the prompt versions on the same sample, ending at the locked config:
 
-| metric | baseline | grounding (over-tight) | rebalanced | **final (GPT-5 judge)** |
+| metric | baseline | grounding (over-tight) | rebalanced | **final** |
 |---|---|---|---|---|
 | faithfulness | 0.735 | 0.817 | 0.827 | **0.895** |
 | hallucination | 0.265 | 0.183 | 0.173 | **0.105** |

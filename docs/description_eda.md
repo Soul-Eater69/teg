@@ -111,9 +111,4 @@ hallucination 0.06 / coverage 0.77.**
 - Prompt grounding was the lever: hallucination halved, faithfulness up, at a small coverage cost we
   accept because invention is the worse failure for a BA-facing artifact.
 
-> **These are conservative floor numbers.** Spot-checks showed the automated judge occasionally
-> marks source-grounded claims as unsupported and counts correctly-omitted project financials as
-> missed coverage, so true faithfulness is higher and true hallucination lower than shown — the real
-> quality is better than the metrics suggest.
-
 **No further changes.**
