@@ -38,6 +38,7 @@ from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.domain.base import CamelModel
 from teg.integrations.files.document_extractor import build_attachment_extractor
 from teg.integrations.llm import build_llm_client
+from teg.integrations.search import HistoricalValueStreamLabel
 from teg.value_stream.config import ValueStreamConfig
 
 # Winning evidence config = the FULL 50-VS catalogue reaches the LLM (window=50), not the stale
@@ -137,6 +138,25 @@ async def _explain_rejections(idea_card, picked_names, rejected, llm):
     )
     res = await llm.complete(system=_REJECT_SYSTEM, user=user, schema=_Rejections)
     return {r.value_stream_id: r.reason for r in res.rejections if r.reason.strip()}
+
+
+def _load_historic_content(path: str) -> dict[str, dict]:
+    """Corpus lookup keyed by ticket key: VS labels + summary/raw for the historic evidence block.
+    This is what gives the 6 retrieved past tickets their 'tagged value streams' - the recall driver.
+    (Offline stand-in for production's Cosmos point-read; the index is retrieval-only.)"""
+    docs = json.loads(Path(path).read_text(encoding="utf-8"))
+    docs = docs if isinstance(docs, list) else docs.get("docs", [])
+    out: dict[str, dict] = {}
+    for d in docs:
+        props = d.get("properties") or {}
+        out[d.get("key", "")] = {
+            "raw": props.get("rawText") or "",
+            "description": props.get("description") or "",
+            "summary": props.get("businessSummary") or "",
+            "vs": [HistoricalValueStreamLabel(t["valueStreamId"], t.get("valueStreamName", ""))
+                   for t in (props.get("themes") or []) if t.get("valueStreamId")],
+        }
+    return out
 
 
 async def _compare_one(tid, card, gt_vs, *, service, llm, explain):
@@ -247,7 +267,9 @@ async def main(args: argparse.Namespace) -> None:
     cards = _load_cards(args.cards)
     gt = _load_gt(args.gt)
     settings = load_settings()
-    service = build_value_stream_service(settings, config=_WINNING)
+    historic_content = _load_historic_content(args.corpus)
+    print(f"historic corpus: {len(historic_content)} tickets (for the past-ticket evidence + VS labels)")
+    service = build_value_stream_service(settings, config=_WINNING, historic_content=historic_content)
     llm = build_llm_client(settings)
 
     targets = [t for t in cards if t in gt]
@@ -278,6 +300,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Compare idea-card VS predictions against ground truth.")
     p.add_argument("--cards", default="idea_cards", help="folder of idea-card files (default idea_cards/)")
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json", help="ground-truth json")
+    p.add_argument("--corpus", default="out/idmt/cosmos_idmt.json",
+                   help="corpus docs for the historic evidence block (VS labels + summaries)")
     p.add_argument("--no-explain", action="store_true", help="skip the LLM 'why missed' explanation pass")
     p.add_argument("--md", default="", help="write the report to this markdown file (e.g. out/idea_card_compare.md)")
     p.add_argument("--json", action="store_true", help="emit structured JSON instead of the report")
