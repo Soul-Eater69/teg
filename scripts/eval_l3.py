@@ -22,6 +22,9 @@ import argparse
 import asyncio
 import json
 import re
+from time import perf_counter
+
+_GEN_LAT: list[float] = []  # one_call generation wall-time per VS, for the cost report
 from pathlib import Path
 
 from teg.config.settings import load_settings
@@ -111,9 +114,11 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
                 pred = {c.capability_id for l3, _ in per for sc in l3 for c in sc.capabilities}
                 res["per_vs_pairs"].append(_prf(pred, gt_scored))
             if args.mode in ("one_call", "both"):
+                t0 = perf_counter()
                 l3, _l2, raw = await generate_capabilities_traced(
                     condensed=ctx, value_stream=vs, value_stream_description=desc,
                     selected_stages=stages, llm_client=llm)
+                _GEN_LAT.append(perf_counter() - t0)  # one_call generation wall-time per VS
                 pred = {c.capability_id for sc in l3 for c in sc.capabilities}
                 res["one_call_pairs"].append(_prf(pred, gt_scored))
                 res["mislink"].append(_mislink(raw, stages))
@@ -215,6 +220,12 @@ async def main(args: argparse.Namespace) -> None:
                  "per_stage": _agg([p for r in rows for p in r["per_vs_pairs"]]) if any(r["per_vs_pairs"] for r in rows) else None,
                  "one_call": _agg([p for r in rows for p in r["one_call_pairs"]]) if any(r["one_call_pairs"] for r in rows) else None})
     out.write_text(json.dumps(runs, indent=2), encoding="utf-8")
+    if _GEN_LAT:
+        lat = sorted(_GEN_LAT); u = llm.usage
+        print(f"\ngeneration cost (one_call, per VS):")
+        print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  max={lat[-1]:.1f}s")
+        print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
+              f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out)  [incl probes if --ground-drops]")
     print(f"\n-> {out}")
 
 

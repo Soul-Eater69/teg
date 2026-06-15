@@ -23,6 +23,9 @@ import asyncio
 import csv
 import json
 from pathlib import Path
+from time import perf_counter
+
+_GEN_LAT: list[float] = []  # per-VS generation wall-time, for the cost report
 
 from teg.config.settings import load_settings
 from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
@@ -75,12 +78,14 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw
             stages = [s for s in catalogue.stages_for(vs_id) if s.stage_id in entry["stages"]]
             if not stages:
                 continue
+            t0 = perf_counter()
             needs = await generate_business_needs(
                 condensed=ctx,
                 value_stream=ApprovedValueStream(value_stream_id=vs_id, value_stream_name=entry["name"]),
                 value_stream_description=catalogue.description_for(vs_id),
                 value_proposition=catalogue.value_proposition_for(vs_id),
                 selected_stages=stages, llm_client=llm)
+            _GEN_LAT.append(perf_counter() - t0)  # per-VS generation wall-time
             if not needs.strip():
                 continue
             faith, cov, usage = await asyncio.gather(
@@ -149,6 +154,12 @@ async def main(args: argparse.Namespace) -> None:
                   "hallucination": round(avg("hallucination"), 4), "coverage": round(avg("coverage"), 4),
                   "stage_usage": round(avg("stage_usage"), 4), "stage_align": round(avg("stage_align"), 4)})
     runs.write_text(json.dumps(prior, indent=2), encoding="utf-8")
+    if _GEN_LAT:
+        lat = sorted(_GEN_LAT); u = llm.usage
+        print(f"\ngeneration cost (per VS business-needs doc):")
+        print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  max={lat[-1]:.1f}s")
+        print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
+              f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out), {u['total_tokens']} total")
     print(f"\nper-VS CSV -> {out}\nrun metrics -> {runs}")
 
 

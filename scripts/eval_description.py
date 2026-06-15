@@ -22,6 +22,9 @@ import asyncio
 import csv
 import json
 from pathlib import Path
+from time import perf_counter
+
+_GEN_LAT: list[float] = []  # per-ticket generation wall-time (body + framing), for the cost report
 
 from teg.config.settings import load_settings
 from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
@@ -77,11 +80,13 @@ async def _eval_ticket(ticket_id, props, vs_list, *, catalogue, llm, judge, raw_
         vs_details = {v: (catalogue.description_for(v), catalogue.value_proposition_for(v))
                       for v, _ in vs_list}
         # One shared body + one batched framing call for every VS (the production path).
+        t0 = perf_counter()
         body, framings = await asyncio.gather(
             generate_description_body(condensed=ctx, llm_client=llm),
             generate_vs_framings(condensed=ctx, approved_value_streams=approved,
                                  value_stream_details=vs_details, llm_client=llm),
         )
+        _GEN_LAT.append(perf_counter() - t0)  # generation wall-time per ticket (body+framing)
         rows: list[dict] = []
         for vs_id, vs_name in vs_list:
             description = assemble_description(framings.get(vs_id, ""), body)
@@ -148,6 +153,13 @@ async def main(args: argparse.Namespace) -> None:
     prior.append({"n": n, "faithfulness": round(avg("faithfulness"), 4),
                   "hallucination": round(avg("hallucination"), 4), "coverage": round(avg("coverage"), 4)})
     runs.write_text(json.dumps(prior, indent=2), encoding="utf-8")
+    if _GEN_LAT:
+        lat = sorted(_GEN_LAT)
+        u = llm.usage
+        print(f"\ngeneration cost (per ticket: shared body + batched framing):")
+        print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  max={lat[-1]:.1f}s")
+        print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
+              f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out), {u['total_tokens']} total")
     print(f"\nper-description CSV -> {out}\nrun metrics -> {runs}")
 
 

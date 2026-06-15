@@ -49,6 +49,26 @@ class IdpLLMClient:
         self._max_retries = max_retries  # retry 429/5xx/transient-network with backoff
         self._retry_base_delay = retry_base_delay
         self._retry_max_delay = retry_max_delay
+        # Running token usage across all calls (from the gateway's 'usage'); read via .usage for
+        # eval cost reporting. Not part of the contract - tests/production ignore it.
+        self._calls = 0
+        self._prompt_tokens = 0
+        self._completion_tokens = 0
+
+    @property
+    def usage(self) -> dict:
+        """Accumulated token usage: calls, prompt/completion/total tokens, and per-call averages."""
+        total = self._prompt_tokens + self._completion_tokens
+        n = self._calls or 1
+        return {
+            "calls": self._calls,
+            "prompt_tokens": self._prompt_tokens,
+            "completion_tokens": self._completion_tokens,
+            "total_tokens": total,
+            "avg_prompt": round(self._prompt_tokens / n, 1),
+            "avg_completion": round(self._completion_tokens / n, 1),
+            "avg_total": round(total / n, 1),
+        }
 
     async def complete(self, *, system: str, user: str, schema: type[ModelT]) -> ModelT:
         body: dict = {
@@ -77,7 +97,12 @@ class IdpLLMClient:
             max_retries=self._max_retries, base_delay=self._retry_base_delay,
             max_delay=self._retry_max_delay,
         )
-        content = _extract_content(response.json())
+        payload = response.json()
+        usage = payload.get("usage") or {}
+        self._calls += 1
+        self._prompt_tokens += int(usage.get("prompt_tokens") or 0)
+        self._completion_tokens += int(usage.get("completion_tokens") or 0)
+        content = _extract_content(payload)
         return _validate(content, schema)
 
 

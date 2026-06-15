@@ -25,6 +25,9 @@ import argparse
 import asyncio
 import csv
 import json
+from time import perf_counter
+
+_GEN_LAT: list[float] = []  # one_call generation wall-time per ticket, for the cost report
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -222,8 +225,10 @@ async def _eval_ticket(
                 for idx, i in enumerate(inputs)
             ]
         if args.mode in ("one_call", "both"):
+            t0 = perf_counter()
             resolved, raw_picks = await select_stages_for_all_traced(
                 condensed=ctx, inputs=inputs, llm_client=llm)
+            _GEN_LAT.append(perf_counter() - t0)  # one_call generation wall-time per ticket
             result["one_call"] = [
                 _pair_row(resolved.get(vs_id, []), gt_ids[vs_id], cand_ids[vs_id]) for vs_id in gt_ids
             ]
@@ -408,6 +413,12 @@ async def main(args: argparse.Namespace) -> None:
         "results": results_by_run,
     })
     out.write_text(json.dumps(runs, ensure_ascii=False, indent=2), encoding="utf-8")
+    if _GEN_LAT:
+        lat = sorted(_GEN_LAT); u = llm.usage
+        print(f"\ngeneration cost (one_call, per ticket):")
+        print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  max={lat[-1]:.1f}s")
+        print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
+              f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out)  [incl probes if --ground-drops]")
     print(f"\n-> appended run to {out}")
 
 
