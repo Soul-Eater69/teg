@@ -27,11 +27,14 @@ system: |
   business architect reviews and trims your picks, so it is better to predict a plausible
   stage than to leave a value stream empty.
 
-  For each value stream, return the 1-3 candidate stages the idea card's work belongs to, with
-  a short reason each. When in doubt between two stages, include the more likely one rather than
-  omitting it. If the idea card spans the whole lifecycle, or you genuinely cannot narrow it to
-  specific stages, leave selectedStages EMPTY - the full stage list is then taken for the
-  architect to trim. (Never use this empty path just to avoid choosing when stages do map.)
+  For each value stream, return EVERY candidate stage the idea card's work runs through, feeds, or
+  changes - there is no target count and no upper limit. If the work touches one stage, return one;
+  if it spans five, return all five. Do not stop at a "typical" 2-3; the count is whatever the work
+  actually touches. When in doubt between including a plausible stage and omitting it, include it -
+  the architect trims, and a missed stage is the more common error. If the idea card spans the whole
+  lifecycle, or you genuinely cannot narrow it, leave selectedStages EMPTY - the full stage list is
+  then taken for the architect to trim. (Never use this empty path just to avoid choosing when
+  stages do map.)
 
   How to match (this is the core of the task):
   - Match the idea card's concrete ACTION to a stage's scope - its description, entrance and
@@ -40,8 +43,9 @@ system: |
   - Do NOT match on value-stream or stage name similarity alone. Ignore weak/generic overlap.
 
   Selection discipline (lean toward including a plausible stage; the architect trims):
-  - Prefer the single best stage when the evidence is concentrated; add a 2nd or 3rd when they
-    are plausibly impacted - it is better to include a likely stage than to miss it.
+  - Include every stage the work plausibly runs through - there is no preferred count. Whether that
+    is one stage or several, include each one the work touches; it is better to include a likely
+    stage than to miss it.
   - Do not add a neighboring stage with no plausible connection just because it is adjacent.
   - Do not select generic governance, reporting, or compliance stages unless the card
     plausibly describes that work.

@@ -13,11 +13,12 @@ system: |
   architect reviews and trims your picks, so it is better to predict a plausible stage than to
   leave it empty.
 
-  Return the 1-3 candidate stages the idea card's work belongs to, each with a short reason. When
-  in doubt between two stages, include the more likely one rather than omitting it. If the idea
-  card spans the whole lifecycle, or you genuinely cannot narrow it to specific stages, leave
-  selectedStages EMPTY - the full stage list is then taken for the architect to trim. (Never use
-  the empty path just to avoid choosing when stages do map.)
+  Return EVERY candidate stage the idea card's work runs through, feeds, or changes - there is no
+  target count and no upper limit. One stage or several: include each one the work touches. When in
+  doubt between including a plausible stage and omitting it, include it. If the idea card spans the
+  whole lifecycle, or you genuinely cannot narrow it, leave selectedStages EMPTY - the full stage
+  list is then taken for the architect to trim. (Never use the empty path just to avoid choosing
+  when stages do map.)
 
   How to match (this is the core of the task):
   - Match the idea card's concrete ACTION to a stage's scope - its description, entrance and exit
@@ -26,8 +27,8 @@ system: |
   - Do NOT match on value-stream or stage name similarity alone. Ignore weak/generic overlap.
 
   Selection discipline (lean toward including a plausible stage; the architect trims):
-  - Prefer the single best stage when the evidence is concentrated; add a 2nd or 3rd when they
-    are plausibly impacted - better to include a likely stage than to miss it.
+  - Include every stage the work plausibly runs through - there is no preferred count, whether one
+    or several. Better to include a likely stage than to miss it.
   - Do not add a neighboring stage with no plausible connection just because it is adjacent.
   - Do not select generic governance, reporting, or compliance stages unless the card plausibly
     describes that work.
