@@ -22,7 +22,7 @@ def fig1():
         ("L2 — IDMT Engagement Request, recent", "key IDMT-*, issueType = Engagement Request,\ncreated ≥ 2023-01-01", C_FILT, 56),
         ("L3 — not in a dead status", "status NOT IN {Cancelled, Blocked, New Request}", C_FILT, 52),
         ("L4 — implemented by a linked issue", "≥1 inbound 'implemented by' link → linked keys", C_FILT, 48),
-        ("L5 — the linked issue is a Theme", "linked key is a JIRA node, issueType = Theme", C_FILT, 44),
+        ("L5 — the linked issue is a live Theme", "issueType = Theme, status NOT IN {To Do, Cancelled}", C_FILT, 52),
         ("L6 — the Theme carries a Value Stream", "Theme.businessValueStreams matches {VSR…}", C_FILT, 40),
         ("Usable ticket cohort", "distinct IDMT keys → list (no content read)", C_IO, 56),
     ]
