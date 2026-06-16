@@ -163,7 +163,9 @@ async def main(args: argparse.Namespace) -> None:
     print(f"evaluating {len(tickets)} tickets (raw text only)\n")
 
     llm = build_llm_client(settings)  # generation = production model
-    judge = build_llm_client(settings, model=args.judge_model) if args.judge_model else llm
+    # patient retries for the rate-limited judge so a 429 window is ridden out, not surfaced.
+    judge = build_llm_client(settings, model=args.judge_model, max_retries=args.judge_retries,
+                             retry_max_delay=args.judge_retry_delay) if args.judge_model else llm
     judge = ThrottledClient(judge, args.judge_concurrency)  # serialise judge calls (rate-limited gpt-5)
     if args.judge_model:
         print(f"judging with: {args.judge_model} (generation: {settings.llm_model}, "
@@ -229,6 +231,10 @@ if __name__ == "__main__":
                    help="generate only, skip the judges - measure generation latency/tokens fast")
     p.add_argument("--judge-concurrency", type=int, default=1,
                    help="max concurrent judge calls (1 = sequential; raise if the judge tolerates it)")
+    p.add_argument("--judge-retries", type=int, default=10,
+                   help="judge retry budget for 429s (rate-limited gpt-5 needs more than the default 5)")
+    p.add_argument("--judge-retry-delay", type=float, default=60.0,
+                   help="judge max backoff seconds per 429 retry (ride out the rate window)")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
     p.add_argument("--raw-budget", type=int, default=_RAW_BUDGET_CHARS)
     p.add_argument("--judge-model", default="", help="stronger model for the judges (e.g. gpt-5-idp); "

@@ -172,9 +172,16 @@ def _extract_content(payload: dict) -> str:
     return content
 
 
-def build_llm_client(settings: Settings, *, model: str | None = None) -> IdpLLMClient:
+def build_llm_client(
+    settings: Settings,
+    *,
+    model: str | None = None,
+    max_retries: int | None = None,
+    retry_max_delay: float | None = None,
+) -> IdpLLMClient:
     """Build the gateway client. ``model`` overrides settings.llm_model (e.g. a stronger judge
-    model for eval, while generation stays on the production model)."""
+    model for eval). ``max_retries`` / ``retry_max_delay`` override the retry budget - a rate-limited
+    judge (gpt-5) needs more patient retries to ride out its 429 window."""
     auth = IDPCustomAuth(
         app_id=settings.llm_app_id,
         auth_url=settings.idp_auth_url,
@@ -197,5 +204,6 @@ def build_llm_client(settings: Settings, *, model: str | None = None) -> IdpLLMC
         api_version=settings.llm_api_version,
         reasoning_effort=settings.llm_reasoning_effort or None,
         max_output_tokens=settings.llm_max_output_tokens,
-        max_retries=settings.llm_max_retries,
+        max_retries=settings.llm_max_retries if max_retries is None else max_retries,
+        retry_max_delay=30.0 if retry_max_delay is None else retry_max_delay,
     )
