@@ -19,25 +19,49 @@ as-is.
 ## 2. Flow
 
 ```
-IDMT Engagement Request (Jira)
-  → eligibility audit (iTech DB)
-  → attachment extraction + idea-card detection
-  → raw text assembly (~24k-token budget)
-  → Condense (LLM)                → summaryFields + rawText
-  → ground-truth extraction       → Value Stream, Stages, L2/L3 (from Jira)
-  → embed summaryFields
-  → write Cosmos (SoR docs + GT) + upsert idp_teg_data (searchText + content_vector)
+STAGE 0 — Ticket identification (Neo4j 5-filter funnel)
+  Neo4j JIRA graph  →  one Cypher query (L2→L6 funnel)  →  list of usable IDMT ticket keys
+
+STAGE 1 — Per-ticket ingestion (run once per identified key)
+  IDMT Engagement Request (Jira)
+    → fetch ER + linked Themes
+    → attachment extraction + idea-card detection
+    → raw text assembly (~24k-token budget)
+    → Condense (LLM)              → summaryFields + rawText
+    → ground-truth extraction     → Value Stream, Stages, L2/L3 (from Jira)
+    → embed summaryFields
+    → write Cosmos (SoR docs + GT) + upsert idp_teg_data (searchText + content_vector)
 ```
 
-## 3. Eligibility — which tickets are ingested
+## 3. Ticket identification (which tickets we ingest)
 
-We do **not** ingest every IDMT ticket. The **iTech DB audit** selects usable historical tickets:
+A **distinct first stage, upstream of the per-ticket pipeline.** We do **not** ingest every IDMT ticket
+— we first identify the **usable Value-Stream cohort** and produce a list of their keys. The per-ticket
+pipeline (Stage 1) then runs once per identified key.
 
-- Engagement Requests created **after 2023-01-01**,
-- that have **linked Theme(s)** (i.e. a Business Architect actually produced ground truth),
-- of the confirmed **Engagement Request issue type**.
+Identification runs against the **Neo4j JIRA graph** (env: `NEO4J_URI / USER / PASSWORD / DATABASE`) as
+a **single Cypher query** implementing a 5-filter funnel (the EDA notebook's L2→L6 levels;
+`scripts/fetch_idmt_vs_valid_tickets.py`). A ticket survives to the cohort only if **all** hold:
 
-Only these become ingestion candidates.
+| filter | rule |
+|---|---|
+| **L2 — is an IDMT Engagement Request, recent** | `key` starts with `IDMT-`, `issueType = "Engagement Request"`, `creationDateEpoch ≥ since` (default **2023-01-01**) |
+| **L3 — not in a dead status** | `status NOT IN {Cancelled, Blocked, New Request}` |
+| **L4 — has a linked artifact** | ≥1 inward link of type **"implemented by"** (from `inwardIssuesMetaData`), giving the linked key(s) |
+| **L5 — the link is a Theme** | the linked key resolves to a JIRA node with `issueType = "Theme"` |
+| **L6 — the Theme carries a Value Stream** | the Theme's `businessValueStreams` matches `…{VSR\d+}` (a valid Value Stream id is present) |
+
+The query returns the **distinct ER keys** (ordered) that pass all five — written one per line to a
+text file (default `output_prod/idmt_vs_valid_ticket_keys.txt`). That file is the cohort the batch
+ingestion run consumes.
+
+> **Status note.** The ER-identification status exclusion is **{Cancelled, Blocked, New Request}** —
+> *not* the same as the Epic-level skip in §7.2 (which excludes **Cancelled** only and keeps To Do).
+> The funnel rejects whole tickets that were dropped, on hold, or never started; the Epic skip only
+> drops cancelled stages within an otherwise-valid ticket.
+
+**Validity is also re-checked during ingestion:** a linked Theme whose Business Value Stream does not
+resolve to an approved Value Stream is dropped, so only genuinely labelled tickets enter the corpus.
 
 ## 4. Source extraction — idea card & attachments
 
