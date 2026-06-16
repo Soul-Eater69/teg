@@ -90,5 +90,40 @@ Merged Capabilities is a **fair trade, not free**:
   ~5% slow-call tail to size timeouts around.
 
 **Use merged** when call-count / cost / rate-limits matter and the architect reviews the output anyway.
-**Keep per-VS** when maximum L3 recall is the priority. The same approach extends to **Business Needs**
-(a batched all-VS call exists — `--mode batched`); its quality numbers are pending.
+**Keep per-VS** when maximum L3 recall is the priority.
+
+---
+
+## Business Needs — batched was tested too, and it does NOT hold
+
+We also batched Business Needs (chunking 2 Value Streams per call, `--mode batched --chunk-size 2`).
+Unlike Capabilities (short *selection*), Business Needs is long-form *writing* — and batching makes the
+model ration its output, writing **shorter, less-grounded docs**. The quality drops materially:
+
+| metric | per-VS | batched (chunk 2) |
+|---|---|---|
+| faithfulness | 0.895 | **0.715** |
+| hallucination | 0.105 | **0.285** |
+| coverage | 0.810 | **0.519** |
+
+**Why:** the batched call emits **~920 output tokens per VS vs 1,567 per-VS** — each document is ~40%
+shorter, so it reflects fewer source facts (coverage 0.52) and grounds fewer claims (hallucination
+0.28). The shorter output is the direct cause of the quality loss. *(Caveat: the per-VS numbers used an
+earlier 2-call judge, so part of the faithfulness gap is the stricter new judge — but the coverage drop
+and the ~40% shorter output are hard evidence batching itself hurts.)*
+
+**What it saves (N = 10):**
+
+| | per-VS | batched (chunk 2) |
+|---|---:|---:|
+| LLM calls | 10 | **5** |
+| input tokens | 55,200 | **28,870** |
+| output tokens | 15,670 | 9,205 |
+| cost / ticket | $0.0451 | $0.0256 |
+
+Saves **5 calls (50%)**, **~26k input tokens (48%)**, ~$0.02/ticket. But the lower output is the
+shorter docs, not a free win.
+
+**Verdict: keep Business Needs per-VS.** The call/token saving is real, but it comes by making a
+prescriptive, architect-facing artifact shorter and less grounded — a bad trade. Batch **Capabilities**
+(short selection, holds up), not **Business Needs** (long writing, degrades).

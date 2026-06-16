@@ -97,10 +97,12 @@ The first **5 calls are fixed** no matter how many Value Streams are approved �
 
 ## Cost per ticket (GPT-5-mini)
 
-GPT-5-mini pricing: **$0.25 / 1M input tokens, $2.00 / 1M output tokens.** For a ticket with **10
-approved Value Streams**:
+GPT-5-mini pricing: **$0.25 / 1M input tokens, $2.00 / 1M output tokens.** Input tokens are the
+**measured average per call** — the raw idea-card text is capped at ~24k tokens, but most idea cards
+are smaller (the measured sample averaged ~5–7k), so the average ticket sits well below the cap. For a
+ticket with **10 approved Value Streams**:
 
-| call | runs | input tokens | output tokens | cost |
+| call | runs | input tokens (avg) | output tokens | cost |
 |---|---|---:|---:|---:|
 | Condense | 1 | 6,000 | 500 | $0.0025 |
 | Choose Value Streams | 1 | 12,000 | 1,500 | $0.0060 |
@@ -108,10 +110,30 @@ approved Value Streams**:
 | Description BODY + FRAMING | 2 | 10,304 | 1,706 | $0.0060 |
 | Business Needs | 10 (per VS) | 55,200 | 15,670 | $0.0451 |
 | Capabilities (L3) | 10 (per VS) | 58,470 | 6,990 | $0.0286 |
-| **Total** | | **149,576** | **27,639** | **$0.093** |
+| **Total (average)** | | **149,576** | **27,639** | **$0.093** |
 
-- **10 Value Streams: ~$0.09 per ticket** — about **$9 per 100 tickets, $93 per 1,000.**
-- **3 Value Streams: ~$0.04 per ticket** — about **$4 per 100 tickets, $41 per 1,000.**
+- **10 Value Streams: ~$0.09 per ticket (average)** — about **$9 per 100 tickets, $93 per 1,000.**
+- **3 Value Streams: ~$0.04 per ticket (average)** — about **$4 per 100 tickets, $41 per 1,000.**
 
 Only **Business Needs** and **Capabilities** scale with the number of Value Streams; the rest is fixed
 per ticket.
+
+### Worst case — full 24k idea card on every call
+
+When a ticket's idea card fills the **full ~24k-token budget**, that 24k rides on **every** call
+(input = 24k + the call's own candidates), so the input cost roughly doubles. For **10 Value Streams**:
+
+| call | runs | input tokens | output tokens | cost |
+|---|---|---:|---:|---:|
+| Condense | 1 | 24,000 | 500 | $0.0070 |
+| Choose Value Streams | 1 | 30,000 | 1,500 | $0.0105 |
+| Stage Selection | 1 (batched) | 26,600 | 1,273 | $0.0092 |
+| Description BODY + FRAMING | 2 | 48,400 | 1,706 | $0.0155 |
+| Business Needs | 10 (per VS) | 245,200 | 15,670 | $0.0926 |
+| Capabilities (L3) | 10 (per VS) | 248,500 | 6,990 | $0.0761 |
+| **Total (24k worst case)** | | **622,700** | **27,639** | **$0.211** |
+
+- **10 Value Streams (worst case): ~$0.21 per ticket** — about **$21 per 100 tickets, $211 per 1,000.**
+- Roughly **2.3×** the average — the gap is entirely the raw idea-card text being **sent on every
+  call**. That's why batching the per-VS calls (one instead of N) saves the most on large idea cards:
+  fewer copies of the 24k raw text.
