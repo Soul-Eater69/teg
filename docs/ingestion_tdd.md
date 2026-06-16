@@ -5,11 +5,11 @@
 ## 1. Purpose & scope
 
 The ingestion module converts **historical IDMT Engagement Request tickets** into a trusted corpus that
-the data-science (generation) module retrieves from. It produces two things for every eligible ticket:
+the data-science (generation) module retrieves from. For every eligible ticket it produces:
 
 1. a **condensed, durable record** of the ticket's content (system of record), and
-2. **ground-truth labels** — the Value Streams, Stages, and L2/L3 capabilities a Business Architect
-   actually assigned in Jira — for retrieval, evaluation, and prompt precedent.
+2. each linked **Theme's** title, description, and **Value Stream** — the Business Architect's recorded
+   Value Stream for that ticket, used as retrieval precedent.
 
 Ingestion is **offline/batch** and contains no runtime generation logic. It writes to **Cosmos** (the
 system of record) and **idp_teg_data** (the retrieval index). The governed Value Stream / Stage / L2 /
@@ -25,12 +25,11 @@ STAGE 0 — Ticket identification (Neo4j 5-filter funnel)
 STAGE 1 — Per-ticket ingestion (run once per identified key)
   IDMT Engagement Request (Jira)
     → fetch ER + linked Themes
-    → attachment extraction + idea-card detection
-    → raw text assembly (~24k-token budget)
-    → Condense (LLM)              → summaryFields + rawText
-    → ground-truth extraction     → Value Stream, Stages, L2/L3 (from Jira)
-    → embed summaryFields
-    → write Cosmos (SoR docs + GT) + upsert idp_teg_data (searchText + content_vector)
+    → attachment extraction (no idea-card detection)
+    → raw text assembly (description + attachments → ~24k-token budget)
+    → Condense (LLM)              → business-context fields + rawText
+    → Theme extraction            → title, description, Value Stream (from Jira)
+    → write Cosmos (ER doc + Theme docs) + upsert idp_teg_data (searchText + content_vector)
 ```
 
 ## 3. Ticket identification (which tickets we ingest)
@@ -54,137 +53,127 @@ if **all** hold:
 The query returns the **distinct ER keys** that pass all five; that key set is the cohort the batch
 ingestion run consumes.
 
-> **Status note.** The ER-identification status exclusion is **{Cancelled, Blocked, New Request}** —
-> *not* the same as the Epic-level skip in §7.2 (which excludes **Cancelled** only and keeps To Do).
-> The funnel rejects whole tickets that were dropped, on hold, or never started; the Epic skip only
-> drops cancelled stages within an otherwise-valid ticket.
+> **Status note.** The identification status exclusion is **{Cancelled, Blocked, New Request}** — the
+> funnel rejects whole tickets that were dropped, on hold, or never started.
 
-**Validity is also re-checked during ingestion:** a linked Theme whose Business Value Stream does not
-resolve to an approved Value Stream is dropped, so only genuinely labelled tickets enter the corpus.
+## 4. Attachment extraction
 
-## 4. Source extraction — idea card & attachments
+The business content comes from the ticket's **attachments**, fetched directly — there is **no
+idea-card detection**; every supported attachment is extracted.
 
-The business content comes from the ticket description and its attachments:
-
-- **Idea-card first.** If an attachment named/tagged `idea_card.ppt` / `idea_card.pptx` exists, it is
-  the primary business-context source.
-- **Fallback.** If no idea card, use the Jira **description** plus the supported attachments — **up to
-  8** — in priority order **PowerPoint → PDF → Word**.
-- **Extraction by format:** `.pdf` (PDFium), `.pptx` (python-pptx), `.docx` (python-docx). Legacy
-  binary `.ppt` / `.doc` and image-only files yield no text and are skipped. No OCR.
+- **Supported formats:** `.pdf`, `.pptx`, `.docx`.
+- Legacy binary `.ppt` / `.doc` and image-only files would yield no text — but the EDA found **none** of
+  these in the corpus, so all attachments in scope are text-extractable. No OCR.
 
 ## 5. Raw text assembly
 
-The description and extracted attachment text are concatenated into a single **raw text** blob and
-**greedily packed into a ~24k-token budget** in source-priority order (idea card first, then
-description, then the remaining supported attachments). Highest-priority content is never displaced or
-truncated to fit a lower-priority attachment; the token budget is the only cap.
+The Jira **description** and the extracted attachment text are concatenated into a single **raw text**
+blob, greedily packed into a **~24k-token budget**. The description is part of that budget — there is no
+separate budget for it. Highest-priority content is never displaced or truncated; the token budget is
+the only cap.
 
 ## 6. Condense (LLM)
 
-A single LLM pass extracts structured context from the raw text, so downstream steps don't re-process
-it. **Output: `summaryFields`** —
+A single LLM pass extracts structured business context from the raw text, so downstream steps don't
+re-process it. It produces the LLM-derived fields stored on the IDMT document (§7), and the raw text is
+carried through as `rawText`.
 
-| field | meaning |
+## 7. Fields extracted
+
+We extract content directly from Jira (and the LLM condense pass). We do **not** extract or store
+Epics, Stages, L2/L3 capabilities, or Business Needs — only the Theme's title, description, and Value
+Stream.
+
+### 7.1 IDMT Engagement Request
+
+| field | source |
 |---|---|
-| `generatedSummary` | LLM summary of the ticket |
-| `businessProblem` | the pain point / problem statement |
-| `businessCapability` | the desired capability / outcome |
-| `keyTerms` | domain terms & acronyms |
-| `stakeholders` | stakeholder groups |
-| `systemsAndProducts` | referenced systems, platforms, products |
+| `key`, `sourceId` | Jira issue key + internal id |
+| `description` | Jira description |
+| `summary` | ticket title |
+| `creationDate`, `insightsTime` | source created / last-updated dates |
+| `status` | Jira status (stored on the index doc) |
+| `rawText` | description + attachment text, packed to ~24k tokens (§5) |
+| `businessSummary` | LLM-generated business summary (condense) |
+| `keyTerms` | domain terms & acronyms (condense) |
+| `businessProblem` | business problem / pain point (condense) |
+| `businessCapability` | desired capability / outcome (condense) |
+| `stakeholders` | stakeholder groups (condense) |
+| `systemsAndProducts` | referenced systems, platforms, products (condense) |
 
-The step also carries through **`rawText`** (the ~24k-token consolidated content). `summaryFields` are
-used for retrieval/routing; `rawText` is stored for the generation module to read at runtime.
+### 7.2 Theme
 
-## 7. Ground-truth extraction (from Jira)
+| field | source |
+|---|---|
+| `key`, `sourceId` | Jira issue key (GROUP-####) + internal id |
+| `summary` | Theme title |
+| `description` | Theme description |
+| `valueStream` | the Theme's **Business Value Stream** field, formatted `"<name> {id}"`, taken **as-is** — no fuzzy matching, no LLM, no catalogue re-resolution |
+| `creationDate`, `insightsTime` | Theme created / last-updated dates |
 
-Ground truth is the Business Architect's recorded answer — **read directly from Jira fields, not
-inferred.**
+## 8. Storage schema
 
-### 7.1 Value Stream
-Read **directly from each linked Theme's "Business Value Stream" field**, formatted `<name> {id}`
-(e.g. `Configure Price {VSR00074590}`). The name is taken **as-is** — **no fuzzy matching, no LLM
-confirmation, no catalogue re-resolution.** The field id is discovered by name once and cached.
+### 8.1 Cosmos — Engagement Request document
 
-### 7.2 Themes → Epics (the parent–child lookup)
-A Theme (GROUP issue) is connected to its Epics through the Jira **parent–child relationship**, not
-issue links — so child Epics do **not** appear in the Theme's inward/outward links. We therefore do a
-**reverse lookup**: find the Epics whose parent is the Theme.
+| field | description |
+|---|---|
+| `id` | document uuid |
+| `key` | Jira issue key, e.g. `IDMT-####` (mutable business key) |
+| `sourceId` | stable Jira internal id (e.g. 3364549); stable across IDMT-key changes |
+| `source` | origin system, e.g. Jira |
+| `entityType` | `ENGAGEMENTREQUEST` |
+| `createdAt` / `createdBy` | Cosmos creation date / actor |
+| `lastModifiedAt` / `lastModifiedBy` | Cosmos modification date / actor |
+| `parentRef` | `sourceId` (an ER has no parent) |
+| `properties` | nested object — extracted business context (below) |
 
-```jql
-parent = "GROUP-23618" AND issuetype = Epic
-"Parent Link" = "GROUP-23618" AND issuetype = Epic
-```
-
-The two JQL paths (standard `parent` and the `Parent Link` custom field) plus any implement/Epic
-issue-links on the Theme are **unioned and de-duplicated by key**. Epics in status **Cancelled** are
-excluded (To Do is kept — a planned-but-not-started stage is still valid GT).
-
-### 7.3 Stage
-For each Epic, the stage is read from its **Value Stream Stage** cascading field (the canonical stage
-id + name; `match_method = field`). Fuzzy matching of the Epic **summary** against the catalogue is a
-**fallback used only when that field is absent**. Stages whose id is **not in the governed catalogue**
-(retired / out-of-catalogue) are **dropped** from ground truth — the model can't be graded on options
-that don't exist.
-
-### 7.4 L2 / L3 capabilities & Business Needs
-Read from the Theme's fields: **L2 Business Capability Model**, **L3 Business Capability Model**, and
-**Business Needs**. These are theme-level ground truth (recorded on the live GROUP issue), not per
-stage.
-
-## 8. Storage
-
-### 8.1 Cosmos — system of record
-Durable source lineage + ground truth. Two document types:
-
-**IDMT / Engagement Request document** — top-level: `id` (uuid), `key` (IDMT-####), `sourceId`
-(7-digit stable id), `source`, `entityType`, **`domain: "WORKITEM"`**, `createdAt/By`,
-`lastModifiedAt/By` (ingestion lifecycle), `parentRef` (null). `properties`: `description`, `summary`
-(ticket title), `businessSummary` (LLM summary), `creationDate` / `insightsTime` (source ticket dates),
+**`properties`:** `description`, `summary`, `creationDate`, `insightsTime`, `businessSummary`,
 `keyTerms`, `businessProblem`, `businessCapability`, `stakeholders`, `systemsAndProducts`, `rawText`.
 
-> Themes are **separate documents** (found via `parentRef`), **not** embedded as a `themes[]` array on
-> the IDMT doc. No `generationSignals` are stored.
+### 8.2 Cosmos — Theme document
 
-**Theme document** — top-level: `id` (uuid), `key` (GROUP-####), `sourceId` (7-digit), `source`,
-`entityType`, `domain: "WORKITEM"`, `createdAt/By`, `lastModifiedAt/By` (ingestion lifecycle),
-`parentRef` (the parent IDMT's 7-digit id). `properties`: `summary` (Theme title), `description`,
-`valueStream` (string `"<Name> {vs_id}"`), `creationDate` / `insightsTime` (Theme dates).
+| field | description |
+|---|---|
+| `id` | document uuid |
+| `key` | Jira issue key (GROUP-####) |
+| `sourceId` | stable Jira internal id |
+| `source` | origin system, e.g. Jira |
+| `entityType` | `THEME` |
+| `createdAt` / `createdBy` | Cosmos creation date / actor |
+| `lastModifiedAt` / `lastModifiedBy` | Cosmos modification date / actor |
+| `parentRef` | the parent IDMT ticket's `sourceId` |
+| `properties` | nested object (below) |
 
-### 8.2 idp_teg_data — retrieval index (retrieval-only)
-Holds **only historical Engagement-Request documents**. Per document: `key`, `sourceId`, `entityType`,
-`status`, `searchText`, `content_vector`. It returns ranked ids; the corresponding ticket details are
-enriched from Cosmos at query time. **Value Streams are not indexed.**
+**`properties`:** `summary` (Theme title), `description`, `valueStream` (Value Stream linked to the
+Theme), `creationDate`, `insightsTime`.
 
-### 8.3 Azure SQL DB — governed catalogue (consumed, not produced)
-The Value Stream, Stage, and L2/L3 capability catalogue (the 50 approved Value Streams with their
-stages and capabilities) is the org's **gold data in Azure SQL**, read as-is at query time by
-`valueStreamId`. Ingestion does **not** define or store this catalogue.
+> Themes are **separate documents**, found via `parentRef` — not embedded as a `themes[]` array on the
+> IDMT document.
 
-## 9. Embedding & retrieval text
-The `summaryFields` are assembled into a single retrieval text and embedded into `content_vector`; this
-is what a live query embeds against to find similar past tickets. The same retrieval-text shape is used
-for a stored ticket and a live query, so they land in the same vector space.
+### 8.3 AI Search index (idp_teg_data) — retrieval-only
 
-## 10. Jira field reference
+Holds the historical Engagement-Request documents for retrieval.
 
-| field | location | id |
-|---|---|---|
-| Business Value Stream | Theme | discovered by name (cached) |
-| Value Stream Stage | Epic | `customfield_18700` |
-| Business Needs | Theme | `customfield_20900` |
-| L2 Business Capability Model | Theme | `customfield_18602` |
-| L3 Business Capability Model | Theme | `customfield_18603` |
-| Parent Link | Epic→Theme | `customfield_11401` |
+| field | description |
+|---|---|
+| `key` | Jira issue key, e.g. `IDMT-####` (mutable business key) |
+| `sourceId` | stable Jira internal id (stable across IDMT-key changes) |
+| `entityType` | `ENGAGEMENTREQUEST` |
+| `status` | Jira status (Cancelled / To Do / In Progress …) |
+| `searchText` | `businessSummary + businessProblem + businessCapability + keyTerms + stakeholders + systemsAndProducts` |
+| `content_vector` | vectorized `searchText` |
 
-Skipped status: **Cancelled** (`cancelled` / `canceled`). **To Do is kept.**
+The index returns ranked ids; the full ticket details are read from Cosmos at query time.
 
-## 11. Rules & conventions
-- **Ground truth is read, never inferred** — VS from the Business Value Stream field, stages from the
-  Value Stream Stage field; fuzzy/summary matching is a stage-only fallback.
-- **Uncatalogued (retired) stages are dropped** from ground truth.
-- **The index is retrieval-only** — `searchText` + `content_vector`; no labels, themes, or signals
-  stored in it.
+### 8.4 Azure SQL DB — governed catalogue (consumed, not produced)
+The Value Stream / Stage / L2 / L3 catalogue is the org's **gold data in Azure SQL**, read as-is at
+runtime. Ingestion does **not** define or store this catalogue.
+
+## 9. Rules & conventions
+- **Content is read directly from Jira** — the Theme's Value Stream is taken as-is from its Business
+  Value Stream field; no fuzzy matching, no LLM, no catalogue re-resolution.
+- **We store only the Theme's title, description, and Value Stream** — no Epics, Stages, L2/L3, or
+  Business Needs are extracted or stored.
+- **The index is retrieval-only** — `searchText` + `content_vector`; no labels or signals stored in it.
 - **The Value Stream catalogue is Azure SQL gold data**, consumed as-is — not redefined or stored here.
 - **Unit tests make no live Jira / Azure / LLM calls** — clients are injected (fakes).
