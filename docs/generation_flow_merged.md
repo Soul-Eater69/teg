@@ -1,9 +1,5 @@
 # Generation flow — batching optimisations: cost & impact analysis
 
-Two ways to cut the per-Value-Stream call count in theme generation, measured against the current
-per-VS architecture: **merged Capabilities** (all Value Streams' L3 in one call) and **batched Business
-Needs** (a few Value Streams per call). This is the cost and quality impact of each.
-
 ![Generation flow (merged Capabilities)](flow_charts/generation_flow_merged.png)
 
 GPT-5-mini pricing throughout: **$0.25 / 1M input, $2.00 / 1M output.**
