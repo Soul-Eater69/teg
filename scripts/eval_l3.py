@@ -121,7 +121,9 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
             for s in stages:                       # accumulate for the merged (all-VS) one call
                 merged_stages.append(s); stage_vs[s.stage_id] = vs_id
             merged_inputs.append(MergedCapabilityInput(
-                value_stream=vs, value_stream_description=desc, selected_stages=stages))
+                value_stream=vs, value_stream_description=desc, selected_stages=stages,
+                value_proposition=catalogue.value_proposition_for(vs_id),
+                assumptions=catalogue.assumptions_for(vs_id), trigger=catalogue.trigger_for(vs_id)))
             vs_gt_scored[vs_id] = gt_scored
 
             if args.mode in ("per_stage", "both", "all"):

@@ -100,12 +100,14 @@ assumptions: Orders originate from approved quotes.
 
 **Inputs:**
 - `content` → the ticket's raw text.
-- `valueStreams` → each approved Value Stream with its **own candidate stages**; each stage block is
-  `[sequence] Stage Name (stageId)` + description + entrance/exit criteria.
+- `valueStreams` → each approved Value Stream with its name, description, **valueProposition, trigger,
+  assumptions**, and its **own candidate stages**; each stage block is `[sequence] Stage Name (stageId)`
+  + description + entrance/exit criteria.
 
 **How the prompt tells the model to read stages:** match the work's concrete **action** to a stage's
 **scope** — its description, entrance and exit criteria, value items, stakeholders — *not* on stage-name
-similarity; return only stage ids printed under that Value Stream; no count cap.
+similarity; return only stage ids printed under that Value Stream; no count cap. The Value Stream's
+trigger and assumptions frame what that stream's work covers.
 
 **Filled prompt (user message):**
 ```
@@ -113,24 +115,30 @@ similarity; return only stage ids printed under that Value Stream; no count cap.
 - content: {raw text}
 
 ## Approved value streams (each with its own candidate stages)
-### Value Stream VSR-0042 — Configure, Price and Quote
+### Value stream VSR-0042
+Name: Configure, Price and Quote
+Description: Initiate, price and issue enterprise quotes.
+Value proposition: Faster, accurate quotes that shorten the sales cycle.
+Trigger: A qualified enterprise opportunity needs a quote.
+Assumptions: Pricing is sourced from the master pricing system.
+Candidate stages:
 [1] Opportunity to Quote (VSS-0042-01)
 description: Initiate and price an enterprise quote.
 entrance: opportunity qualified | exit: quote issued
 [2] Quote to Order (VSS-0042-02)
 description: Convert an accepted quote into an order.
 entrance: quote accepted | exit: order created
-[3] Quote Revision (VSS-0042-03)
-description: Revise an issued quote on customer request.
-entrance: revision requested | exit: revised quote issued
 
-### Value Stream VSR-0017 — Order Management
+### Value stream VSR-0017
+Name: Order Management
+Description: Capture and fulfil enterprise orders.
+Value proposition: Reliable, on-time order fulfilment.
+Trigger: An accepted quote becomes an order.
+Assumptions: Orders originate from approved quotes.
+Candidate stages:
 [1] Order Capture (VSS-0017-01)
 description: Receive and validate the enterprise order.
 entrance: order requested | exit: order validated
-[2] Order Fulfilment (VSS-0017-02)
-description: Pick, pack and ship the order.
-entrance: order confirmed | exit: order shipped
 ```
 *The stage **name** is in each block (`[1] Opportunity to Quote (VSS-0042-01)`), so the model matches on
 scope and returns the stageId.*
@@ -259,7 +267,8 @@ Business Product Feature: Order Handoff
 
 **Inputs:**
 - `content` → the ticket's raw text.
-- `valueStreams` → grouped **Value Stream → Stage → governed candidate L3**. Each candidate L3 line is
+- `valueStreams` → grouped **Value Stream → Stage → governed candidate L3**. Each Value Stream carries
+  its name, description, **valueProposition, trigger, assumptions**; each candidate L3 line is
   `capabilityId | name - description [tier] (L2: parent)`.
 
 **System:** for each stage, select L3 only from THAT stage's printed candidate list; strict stage
@@ -274,6 +283,9 @@ isolation (the same id/name repeats across stages and Value Streams — match th
 ## Approved value streams, each with its selected stages and each stage's own candidate L3
 ### Value Stream VSR-0042 — Configure, Price and Quote
 description: Initiate, price and issue enterprise quotes.
+value proposition: Faster, accurate quotes that shorten the sales cycle.
+trigger: A qualified enterprise opportunity needs a quote.
+assumptions: Pricing is sourced from the master pricing system.
 
 ### Stage VSS-0042-01
 [1] Opportunity to Quote (VSS-0042-01)
@@ -290,6 +302,9 @@ Candidate L3 capabilities (choose by id; each shows its parent L2):
 
 ### Value Stream VSR-0017 — Order Management
 description: Capture and fulfil enterprise orders.
+value proposition: Reliable, on-time order fulfilment.
+trigger: An accepted quote becomes an order.
+assumptions: Orders originate from approved quotes.
 
 ### Stage VSS-0017-01
 [1] Order Capture (VSS-0017-01)
@@ -352,14 +367,14 @@ assumptions, definedTerms, stakeholders`. What each call currently passes:
 
 | call | VS fields sent | not sent |
 |---|---|---|
-| VS Selection (candidate block) | name, id, description, category, trigger, valueProposition, **assumptions** | definedTerms, stakeholders |
-| Stage Selection | name, id, description, valueProposition | **assumptions, trigger**, category, definedTerms, stakeholders |
-| Capabilities (merged) | name, id, description | **valueProposition, assumptions, trigger**, category |
-| Business Needs | name, id, description, valueProposition | **assumptions, trigger**, category |
+| VS Selection (candidate block) | name, id, description, category, trigger, valueProposition, assumptions | definedTerms, stakeholders |
+| Stage Selection | name, id, description, valueProposition, **trigger, assumptions** | category, definedTerms, stakeholders |
+| Capabilities (merged) | name, id, description, **valueProposition, trigger, assumptions** | category, definedTerms, stakeholders |
+| Business Needs | name, id, description, valueProposition | assumptions, trigger, category |
 
 Stage candidates already carry: `stageName, description, entrance/exit criteria, valueItems, stakeholders`.
 
-**Candidate enrichments to consider (eval-gated):** `assumptions` and `trigger` describe a Value
-Stream's intended scope and what initiates it — adding them to **Stage Selection** and **Capabilities**
-(and `valueProposition` to Capabilities for parity) could sharpen mapping of work → stage → L3 at a low,
-governed token cost. These were **not** in the winning eval configs, so add and A/B test before locking.
+**Recent enrichment:** `trigger` + `assumptions` were added to **Stage Selection** and **Capabilities**
+(and `valueProposition` to Capabilities), so the model has the Value Stream's intended scope when
+mapping work → stage → L3. *(Re-run `eval_stages` / `eval_l3` to confirm the lift before final lock.)*
+Business Needs still omits assumptions/trigger — add there too if the enrichment proves out.

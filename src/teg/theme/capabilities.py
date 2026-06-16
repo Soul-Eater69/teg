@@ -132,12 +132,21 @@ class MergedCapabilityInput:
     value_stream: ApprovedValueStream
     value_stream_description: str
     selected_stages: list[CatalogueStage] = field(default_factory=list)
+    value_proposition: str = ""
+    assumptions: str = ""
+    trigger: str = ""
 
 
-def _vs_stage_block(vs: ApprovedValueStream, vs_description: str, stages: list[CatalogueStage]) -> str:
-    head = f"### Value Stream {vs.value_stream_id} — {vs.value_stream_name}"
-    if vs_description:
-        head += f"\ndescription: {vs_description}"
+def _vs_stage_block(i: MergedCapabilityInput, stages: list[CatalogueStage]) -> str:
+    head = f"### Value Stream {i.value_stream.value_stream_id} — {i.value_stream.value_stream_name}"
+    if i.value_stream_description:
+        head += f"\ndescription: {i.value_stream_description}"
+    if i.value_proposition:
+        head += f"\nvalue proposition: {i.value_proposition}"
+    if i.trigger:
+        head += f"\ntrigger: {i.trigger}"
+    if i.assumptions:
+        head += f"\nassumptions: {i.assumptions}"
     return head + "\n\n" + "\n\n".join(_stage_block(s) for s in stages)
 
 
@@ -161,8 +170,7 @@ async def generate_capabilities_merged(
     prompt = load_prompt("theme/capability_selection_merged")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        value_streams="\n\n".join(
-            _vs_stage_block(i.value_stream, i.value_stream_description, st) for i, st in groups),
+        value_streams="\n\n".join(_vs_stage_block(i, st) for i, st in groups),
     )
     result = await llm_client.complete(system=system, user=user, schema=BatchedCapabilitySelection)
 

@@ -65,6 +65,8 @@ class StageSelectionInput:
     value_stream_description: str
     value_proposition: str
     stages: list[CatalogueStage]
+    assumptions: str = ""
+    trigger: str = ""
 
 
 async def select_stages_for_all(
@@ -174,6 +176,10 @@ def _vs_block(i: StageSelectionInput) -> str:
         lines.append(f"Description: {i.value_stream_description}")
     if i.value_proposition:
         lines.append(f"Value proposition: {i.value_proposition}")
+    if i.trigger:
+        lines.append(f"Trigger: {i.trigger}")
+    if i.assumptions:
+        lines.append(f"Assumptions: {i.assumptions}")
     lines.append("Candidate stages:")
     lines.append(render_candidate_stages(i.stages))
     return "\n".join(lines)

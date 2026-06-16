@@ -203,6 +203,8 @@ async def _eval_ticket(
                 value_stream_description=catalogue.description_for(vs_id),
                 value_proposition=catalogue.value_proposition_for(vs_id),
                 stages=stages,
+                assumptions=catalogue.assumptions_for(vs_id),
+                trigger=catalogue.trigger_for(vs_id),
             ))
             gt_ids[vs_id] = entry["stages"]
             cand_ids[vs_id] = cand
