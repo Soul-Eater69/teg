@@ -22,6 +22,11 @@ from pydantic import Field
 
 from teg.domain.base import CamelModel
 from teg.integrations.llm import LLMClient
+from teg.prompts.loader import load_prompt
+
+
+def _claim_lines(claims: list[str]) -> str:
+    return "\n".join(f"- {c}" for c in claims)
 
 
 # --------------------------------------------------------------------------- #
@@ -32,19 +37,12 @@ class ClaimList(CamelModel):
     claims: list[str] = Field(default_factory=list)
 
 
-_CLAIMS_SYSTEM = (
-    "Break the generated business text into atomic factual claims - one self-contained fact per "
-    "claim, each understandable on its own. Do NOT judge, verify, or score them; only extract. "
-    "Split compound sentences into separate claims; drop pure filler/connective phrasing."
-)
-
-
 async def extract_claims(*, text: str, llm_client: LLMClient) -> list[str]:
     """Decompose the generated text into atomic claims (no grounding judgement)."""
     if not text.strip():
         return []
-    user = f"GENERATED TEXT:\n{text}\n\nList every atomic factual claim."
-    result = await llm_client.complete(system=_CLAIMS_SYSTEM, user=user, schema=ClaimList)
+    system, user = load_prompt("judges/claim_extraction").render(text=text)
+    result = await llm_client.complete(system=system, user=user, schema=ClaimList)
     return [c for c in result.claims if c.strip()]
 
 
@@ -68,23 +66,14 @@ class FaithfulnessResult(CamelModel):
         return [c.claim for c in self.claims if not c.supported]
 
 
-_FAITHFULNESS_SYSTEM = (
-    "You verify claims against a SOURCE. For EACH claim listed, decide whether it is supported by the "
-    "source - i.e. the source states or directly implies it. A claim invented, assumed, or not "
-    "derivable from the source is NOT supported. Judge only against the source; do not use outside "
-    "knowledge. Return every claim with its supported flag."
-)
-
-
 async def judge_faithfulness(
     *, claims: list[str], source: str, llm_client: LLMClient
 ) -> FaithfulnessResult:
     """Per pre-extracted claim: is it supported by the source? (faithfulness; hallucination = 1-it)."""
     if not claims:
         return FaithfulnessResult()
-    listed = "\n".join(f"- {c}" for c in claims)
-    user = f"SOURCE:\n{source}\n\nCLAIMS:\n{listed}\n\nReturn each claim with its supported flag."
-    return await llm_client.complete(system=_FAITHFULNESS_SYSTEM, user=user, schema=FaithfulnessResult)
+    system, user = load_prompt("judges/faithfulness").render(source=source, claims=_claim_lines(claims))
+    return await llm_client.complete(system=system, user=user, schema=FaithfulnessResult)
 
 
 # --------------------------------------------------------------------------- #
@@ -107,25 +96,14 @@ class CoverageResult(CamelModel):
         return [f.fact for f in self.facts if not f.covered]
 
 
-_COVERAGE_SYSTEM = (
-    "You check whether a generated business description covers the important content of its SOURCE. "
-    "Extract the KEY facts a theme description for this work should convey from the source (the "
-    "business change, who/what it affects, the core capability/outcome - not trivia). For EACH key "
-    "fact, decide whether the generated description reflects it. Judge coverage by meaning, not "
-    "wording. Return every key fact with its covered flag."
-)
-
-
 async def judge_coverage(
     *, description: str, source: str, llm_client: LLMClient
 ) -> CoverageResult:
     """Extract the source's key facts and mark each as covered by the description."""
     if not source.strip():
         return CoverageResult()
-    user = (f"SOURCE:\n{source}\n\nGENERATED DESCRIPTION:\n{description}\n\n"
-            f"List the source's key facts, each with whether the description covers it.")
-    return await llm_client.complete(
-        system=_COVERAGE_SYSTEM, user=user, schema=CoverageResult)
+    system, user = load_prompt("judges/coverage").render(source=source, description=description)
+    return await llm_client.complete(system=system, user=user, schema=CoverageResult)
 
 
 # --------------------------------------------------------------------------- #
@@ -148,21 +126,11 @@ class CorrectnessResult(CamelModel):
         return [c.claim for c in self.claims if not c.correct]
 
 
-_CORRECTNESS_SYSTEM = (
-    "You check the ACCURACY of claims against a SOURCE. For EACH claim, decide whether it is correct - "
-    "i.e. it states what the source says WITHOUT distortion: right entities, numbers, scope and "
-    "intent, no exaggeration, reversal, or overstated certainty. A claim can be loosely supported yet "
-    "still incorrect if it twists a detail. Judge only against the source; do not use outside "
-    "knowledge. Return every claim with its correct flag."
-)
-
-
 async def judge_correctness(
     *, claims: list[str], source: str, llm_client: LLMClient
 ) -> CorrectnessResult:
     """Per pre-extracted claim: is it an accurate, undistorted statement of the source?"""
     if not claims:
         return CorrectnessResult()
-    listed = "\n".join(f"- {c}" for c in claims)
-    user = f"SOURCE:\n{source}\n\nCLAIMS:\n{listed}\n\nReturn each claim with its correct flag."
-    return await llm_client.complete(system=_CORRECTNESS_SYSTEM, user=user, schema=CorrectnessResult)
+    system, user = load_prompt("judges/correctness").render(source=source, claims=_claim_lines(claims))
+    return await llm_client.complete(system=system, user=user, schema=CorrectnessResult)

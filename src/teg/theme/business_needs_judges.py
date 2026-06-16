@@ -18,6 +18,7 @@ from pydantic import Field
 from teg.domain.base import CamelModel
 from teg.ingestion.catalogues.models import CatalogueStage
 from teg.integrations.llm import LLMClient
+from teg.prompts.loader import load_prompt
 from teg.theme.stage_catalogue import render_candidate_stages
 
 
@@ -51,25 +52,12 @@ class StageUsageResult(CamelModel):
         return [f"{s.stage_id}: {s.note}" for s in self.stages if s.addressed and not s.aligned]
 
 
-_SYSTEM = (
-    "You audit a Business Needs document that should contain one section per SELECTED lifecycle "
-    "stage ('Value Stage: <name>'). For EACH selected stage below, decide: addressed = the document "
-    "has a section covering that stage's work; aligned = the needs written for it actually fit THAT "
-    "stage's scope (its description and entrance/exit criteria), not work that belongs to a different "
-    "stage. A stage with no section is addressed=false (and aligned=false). Judge by meaning. Return "
-    "every selected stage with both flags and a short note."
-)
-
-
 async def judge_stage_usage(
     *, business_needs: str, stages: list[CatalogueStage], llm_client: LLMClient
 ) -> StageUsageResult:
     """Per selected stage: is it addressed in the Business Needs, and are its needs in-scope?"""
     if not stages or not business_needs.strip():
         return StageUsageResult()
-    user = (
-        f"SELECTED STAGES (with their scope):\n{render_candidate_stages(stages)}\n\n"
-        f"BUSINESS NEEDS DOCUMENT:\n{business_needs}\n\n"
-        f"For each selected stage, return addressed + aligned."
-    )
-    return await llm_client.complete(system=_SYSTEM, user=user, schema=StageUsageResult)
+    system, user = load_prompt("judges/stage_usage").render(
+        stages=render_candidate_stages(stages), business_needs=business_needs)
+    return await llm_client.complete(system=system, user=user, schema=StageUsageResult)
