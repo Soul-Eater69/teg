@@ -100,10 +100,14 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw
                 value_stream_description=catalogue.description_for(v),
                 value_proposition=catalogue.value_proposition_for(v),
                 selected_stages=st) for v, st in vs_stages.items()]
+            print(f"  {ticket_id}: generating (batched, {len(inputs)} VS, chunk={args.chunk_size})...", flush=True)
             t0 = perf_counter()
             needs_by_vs = await generate_business_needs_batched(
                 condensed=ctx, inputs=inputs, llm_client=llm, chunk_size=args.chunk_size)
-            _BATCHED_LAT.append(perf_counter() - t0)  # wall-time per TICKET (chunks run concurrently)
+            dt = perf_counter() - t0
+            _BATCHED_LAT.append(dt)  # wall-time per TICKET (chunks run concurrently)
+            print(f"  {ticket_id}: generation done in {dt:.1f}s"
+                  + ("" if args.no_judge else " - judging...") , flush=True)
         else:
             needs_by_vs = {}
             for v, st in vs_stages.items():
@@ -123,13 +127,16 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw
             if args.no_judge:  # latency-only run: generate, skip the judges
                 rows.append({"ticket_id": ticket_id, "value_stream_id": vs_id, "n_stages": len(stages)})
                 continue
+            print(f"    {ticket_id}/{vs_id}: claim extraction...", flush=True)
             claims = await extract_claims(text=needs, llm_client=judge)  # 1. extract once
+            print(f"    {ticket_id}/{vs_id}: judging {len(claims)} claims (faith/corr/cov/usage)...", flush=True)
             faith, corr, cov, usage = await asyncio.gather(             # 2/4 on claims, 3 coverage, + stage usage
                 judge_faithfulness(claims=claims, source=source, llm_client=judge),
                 judge_correctness(claims=claims, source=source, llm_client=judge),
                 judge_coverage(description=needs, source=source, llm_client=judge),
                 judge_stage_usage(business_needs=needs, stages=stages, llm_client=judge),
             )
+            print(f"    {ticket_id}/{vs_id}: judged ✓", flush=True)
             rows.append({
                 "ticket_id": ticket_id, "value_stream_id": vs_id, "n_stages": len(stages),
                 "faithfulness": round(faith.score(), 3), "hallucination": round(1 - faith.score(), 3),

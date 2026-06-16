@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import sys
 
 import httpx
 
@@ -47,17 +48,22 @@ async def post_with_retry(
     while True:
         try:
             response = await http.post(path, json=json)
-        except (httpx.TransportError, httpx.TimeoutException):
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
             timeout_tries += 1
             if timeout_tries > timeout_retries:  # a recurring timeout won't fix itself - stop looping
                 raise
-            await asyncio.sleep(_backoff(timeout_tries - 1, base_delay, max_delay))
+            d = _backoff(timeout_tries - 1, base_delay, max_delay)
+            print(f"[retry] {type(exc).__name__} (call too slow) -> retry {timeout_tries}/{timeout_retries} "
+                  f"in {d:.0f}s", file=sys.stderr, flush=True)
+            await asyncio.sleep(d)
             continue
         if response.status_code == 429 or response.status_code >= 500:
             rate_tries += 1
             if rate_tries > max_retries:
                 response.raise_for_status()  # out of retries -> surface the real error
             delay = retry_after_seconds(response) or _backoff(rate_tries - 1, base_delay, max_delay)
+            print(f"[retry] HTTP {response.status_code} (rate/server) -> retry {rate_tries}/{max_retries} "
+                  f"in {delay:.0f}s", file=sys.stderr, flush=True)
             await asyncio.sleep(delay)
             continue
         response.raise_for_status()  # other 4xx -> fail fast
