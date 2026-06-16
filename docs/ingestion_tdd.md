@@ -99,15 +99,20 @@ The business content comes from the ticket's **attachments**, fetched directly �
 idea-card detection**; every supported attachment is extracted.
 
 - **Supported formats:** `.pdf`, `.pptx`, `.docx`.
+- **Priority order: PowerPoint → PDF → Word.** Attachments are ordered by format priority
+  (`.pptx` first, then `.pdf`, then `.docx`); within the same format, Jira's original order is kept.
+  PowerPoint is highest because SMEs confirmed it is the most common idea-card format. This order is
+  what the raw-text packing (§4.2) follows when the budget is tight.
 - Legacy binary `.ppt` / `.doc` and image-only files would yield no text — but the EDA found **none** of
   these in the corpus, so all attachments in scope are text-extractable. No OCR.
 
 ### 4.2 Raw text assembly
 
 The Jira **description** and the extracted attachment text are concatenated into a single **raw text**
-blob, greedily packed into a **~24k-token budget**. The description is part of that budget — there is no
-separate budget for it. Highest-priority content is never displaced or truncated; the token budget is
-the only cap.
+blob, greedily packed into a **~24k-token budget**, attachments taken in the priority order from §4.1
+(PowerPoint → PDF → Word). The description is part of that budget — there is no separate budget for it.
+Highest-priority content is never displaced or truncated to fit a lower-priority attachment; the token
+budget is the only cap.
 
 ### 4.3 Condense (LLM)
 
