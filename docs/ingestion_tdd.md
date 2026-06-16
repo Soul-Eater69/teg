@@ -84,32 +84,41 @@ We extract content directly from Jira (and the LLM condense pass). We do **not**
 Epics, Stages, L2/L3 capabilities, or Business Needs — only the Theme's title, description, and Value
 Stream.
 
-### 7.1 IDMT Engagement Request
+### 7.1 IDMT Engagement Request — from Jira
 
 | field | source |
 |---|---|
-| `key`, `sourceId` | Jira issue key + internal id |
+| `key` | Jira issue key (IDMT-####) |
+| `sourceId` | stable Jira internal id |
 | `description` | Jira description |
 | `summary` | ticket title |
-| `creationDate`, `insightsTime` | source created / last-updated dates |
+| `creationDate` | source creation date |
+| `insightsTime` | source last-updated date |
 | `status` | Jira status (stored on the index doc) |
 | `rawText` | description + attachment text, packed to ~24k tokens (§5) |
-| `businessSummary` | LLM-generated business summary (condense) |
-| `keyTerms` | domain terms & acronyms (condense) |
-| `businessProblem` | business problem / pain point (condense) |
-| `businessCapability` | desired capability / outcome (condense) |
-| `stakeholders` | stakeholder groups (condense) |
-| `systemsAndProducts` | referenced systems, platforms, products (condense) |
 
-### 7.2 Theme
+### 7.2 IDMT Engagement Request — from Condense (LLM)
 
 | field | source |
 |---|---|
-| `key`, `sourceId` | Jira issue key (GROUP-####) + internal id |
+| `businessSummary` | LLM-generated business summary |
+| `keyTerms` | domain terms & acronyms |
+| `businessProblem` | business problem / pain point |
+| `businessCapability` | desired capability / outcome |
+| `stakeholders` | stakeholder groups |
+| `systemsAndProducts` | referenced systems, platforms, products |
+
+### 7.3 Theme — from Jira
+
+| field | source |
+|---|---|
+| `key` | Jira issue key (GROUP-####) |
+| `sourceId` | stable Jira internal id |
 | `summary` | Theme title |
 | `description` | Theme description |
 | `valueStream` | the Theme's **Business Value Stream** field, formatted `"<name> {id}"`, taken **as-is** — no fuzzy matching, no LLM, no catalogue re-resolution |
-| `creationDate`, `insightsTime` | Theme created / last-updated dates |
+| `creationDate` | Theme creation date |
+| `insightsTime` | Theme last-updated date |
 
 ## 8. Storage schema
 
