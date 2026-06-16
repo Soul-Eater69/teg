@@ -36,7 +36,12 @@ from teg.theme.description import (
     generate_description_body,
     generate_vs_framings,
 )
-from teg.theme.description_judges import judge_coverage, judge_faithfulness
+from teg.theme.description_judges import (
+    extract_claims,
+    judge_correctness,
+    judge_coverage,
+    judge_faithfulness,
+)
 from teg.theme.stage_catalogue import StageCatalogue
 
 _RAW_BUDGET_CHARS = 96_000  # ~24k tokens of raw ticket text (the locked theme-gen budget)
@@ -90,17 +95,22 @@ async def _eval_ticket(ticket_id, props, vs_list, *, catalogue, llm, judge, raw_
         rows: list[dict] = []
         for vs_id, vs_name in vs_list:
             description = assemble_description(framings.get(vs_id, ""), body)
-            faith, cov = await asyncio.gather(
-                judge_faithfulness(description=description, source=source, llm_client=judge),
+            # 1. extract claims once, then 2/4 judge them + 3 coverage on the source (4 calls).
+            claims = await extract_claims(text=description, llm_client=judge)
+            faith, corr, cov = await asyncio.gather(
+                judge_faithfulness(claims=claims, source=source, llm_client=judge),
+                judge_correctness(claims=claims, source=source, llm_client=judge),
                 judge_coverage(description=description, source=source, llm_client=judge),
             )
             rows.append({
                 "ticket_id": ticket_id, "value_stream_id": vs_id, "value_stream_name": vs_name,
                 "faithfulness": round(faith.score(), 3),
                 "hallucination": round(1 - faith.score(), 3),
+                "correctness": round(corr.score(), 3),
                 "coverage": round(cov.score(), 3),
-                "n_claims": len(faith.claims), "n_unsupported": len(faith.unsupported()),
+                "n_claims": len(claims), "n_unsupported": len(faith.unsupported()),
                 "unsupported": " | ".join(faith.unsupported()),
+                "incorrect": " | ".join(corr.incorrect()),
                 "missed_facts": " | ".join(cov.missed()),
             })
         print(f"  {ticket_id}: {len(rows)} VS descriptions judged")
@@ -140,6 +150,7 @@ async def main(args: argparse.Namespace) -> None:
     print(f"\n=== description eval (reference-free, vs source) | {n} VS descriptions ===")
     print(f"  faithfulness : {avg('faithfulness'):.3f}  (claims grounded in the source)")
     print(f"  hallucination: {avg('hallucination'):.3f}  (unsupported claims)")
+    print(f"  correctness  : {avg('correctness'):.3f}  (claims accurately stated, no distortion)")
     print(f"  coverage     : {avg('coverage'):.3f}  (source key facts reflected)")
     print(f"  avg claims/desc={avg('n_claims'):.1f}  avg unsupported/desc={avg('n_unsupported'):.2f}")
 
@@ -151,7 +162,8 @@ async def main(args: argparse.Namespace) -> None:
     runs = out.with_suffix(".runs.json")
     prior = json.loads(runs.read_text(encoding="utf-8")) if runs.exists() else []
     prior.append({"n": n, "faithfulness": round(avg("faithfulness"), 4),
-                  "hallucination": round(avg("hallucination"), 4), "coverage": round(avg("coverage"), 4)})
+                  "hallucination": round(avg("hallucination"), 4),
+                  "correctness": round(avg("correctness"), 4), "coverage": round(avg("coverage"), 4)})
     runs.write_text(json.dumps(prior, indent=2), encoding="utf-8")
     if _GEN_LAT:
         lat = sorted(_GEN_LAT)

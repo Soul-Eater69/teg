@@ -34,7 +34,12 @@ from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
 from teg.theme.business_needs import generate_business_needs
 from teg.theme.business_needs_judges import judge_stage_usage
-from teg.theme.description_judges import judge_coverage, judge_faithfulness
+from teg.theme.description_judges import (
+    extract_claims,
+    judge_correctness,
+    judge_coverage,
+    judge_faithfulness,
+)
 from teg.theme.stage_catalogue import StageCatalogue
 
 _RAW_BUDGET_CHARS = 96_000  # ~24k tokens (locked theme-gen budget)
@@ -88,17 +93,21 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw
             _GEN_LAT.append(perf_counter() - t0)  # per-VS generation wall-time
             if not needs.strip():
                 continue
-            faith, cov, usage = await asyncio.gather(
-                judge_faithfulness(description=needs, source=source, llm_client=judge),
+            claims = await extract_claims(text=needs, llm_client=judge)  # 1. extract once
+            faith, corr, cov, usage = await asyncio.gather(             # 2/4 on claims, 3 coverage, + stage usage
+                judge_faithfulness(claims=claims, source=source, llm_client=judge),
+                judge_correctness(claims=claims, source=source, llm_client=judge),
                 judge_coverage(description=needs, source=source, llm_client=judge),
                 judge_stage_usage(business_needs=needs, stages=stages, llm_client=judge),
             )
             rows.append({
                 "ticket_id": ticket_id, "value_stream_id": vs_id, "n_stages": len(stages),
                 "faithfulness": round(faith.score(), 3), "hallucination": round(1 - faith.score(), 3),
+                "correctness": round(corr.score(), 3),
                 "coverage": round(cov.score(), 3),
                 "stage_usage": round(usage.usage(), 3), "stage_align": round(usage.alignment(), 3),
                 "unsupported": " | ".join(faith.unsupported()),
+                "incorrect": " | ".join(corr.incorrect()),
                 "missed_facts": " | ".join(cov.missed()),
                 "unused_stages": " | ".join(usage.unused()),
                 "misaligned_stages": " | ".join(usage.misaligned_notes()),
@@ -139,6 +148,7 @@ async def main(args: argparse.Namespace) -> None:
     print(f"\n=== business needs eval (reference-free, vs source) | {n} VS docs ===")
     print(f"  faithfulness : {avg('faithfulness'):.3f}  (claims grounded in the source)")
     print(f"  hallucination: {avg('hallucination'):.3f}  (unsupported claims)")
+    print(f"  correctness  : {avg('correctness'):.3f}  (claims accurately stated, no distortion)")
     print(f"  coverage     : {avg('coverage'):.3f}  (source key facts reflected)")
     print(f"  stage usage  : {avg('stage_usage'):.3f}  (selected stages addressed)")
     print(f"  stage align  : {avg('stage_align'):.3f}  (addressed stages in-scope)")
@@ -151,7 +161,8 @@ async def main(args: argparse.Namespace) -> None:
     runs = out.with_suffix(".runs.json")
     prior = json.loads(runs.read_text(encoding="utf-8")) if runs.exists() else []
     prior.append({"n": n, "faithfulness": round(avg("faithfulness"), 4),
-                  "hallucination": round(avg("hallucination"), 4), "coverage": round(avg("coverage"), 4),
+                  "hallucination": round(avg("hallucination"), 4),
+                  "correctness": round(avg("correctness"), 4), "coverage": round(avg("coverage"), 4),
                   "stage_usage": round(avg("stage_usage"), 4), "stage_align": round(avg("stage_align"), 4)})
     runs.write_text(json.dumps(prior, indent=2), encoding="utf-8")
     if _GEN_LAT:
