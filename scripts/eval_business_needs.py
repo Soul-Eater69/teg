@@ -120,6 +120,9 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw
             needs = needs_by_vs.get(vs_id, "")
             if not needs.strip():
                 continue
+            if args.no_judge:  # latency-only run: generate, skip the judges
+                rows.append({"ticket_id": ticket_id, "value_stream_id": vs_id, "n_stages": len(stages)})
+                continue
             claims = await extract_claims(text=needs, llm_client=judge)  # 1. extract once
             faith, corr, cov, usage = await asyncio.gather(             # 2/4 on claims, 3 coverage, + stage usage
                 judge_faithfulness(claims=claims, source=source, llm_client=judge),
@@ -174,26 +177,29 @@ async def main(args: argparse.Namespace) -> None:
     rows = [r for ticket in results for r in ticket]
     n = len(rows)
     avg = lambda k: sum(r[k] for r in rows) / n if n else 0.0
-    print(f"\n=== business needs eval (reference-free, vs source) | {n} VS docs ===")
-    print(f"  faithfulness : {avg('faithfulness'):.3f}  (claims grounded in the source)")
-    print(f"  hallucination: {avg('hallucination'):.3f}  (unsupported claims)")
-    print(f"  correctness  : {avg('correctness'):.3f}  (claims accurately stated, no distortion)")
-    print(f"  coverage     : {avg('coverage'):.3f}  (source key facts reflected)")
-    print(f"  stage usage  : {avg('stage_usage'):.3f}  (selected stages addressed)")
-    print(f"  stage align  : {avg('stage_align'):.3f}  (addressed stages in-scope)")
+    if not args.no_judge:
+        print(f"\n=== business needs eval (reference-free, vs source) | {n} VS docs ===")
+        print(f"  faithfulness : {avg('faithfulness'):.3f}  (claims grounded in the source)")
+        print(f"  hallucination: {avg('hallucination'):.3f}  (unsupported claims)")
+        print(f"  correctness  : {avg('correctness'):.3f}  (claims accurately stated, no distortion)")
+        print(f"  coverage     : {avg('coverage'):.3f}  (source key facts reflected)")
+        print(f"  stage usage  : {avg('stage_usage'):.3f}  (selected stages addressed)")
+        print(f"  stage align  : {avg('stage_align'):.3f}  (addressed stages in-scope)")
 
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-        w.writeheader(); w.writerows(rows)
-    runs = out.with_suffix(".runs.json")
-    prior = json.loads(runs.read_text(encoding="utf-8")) if runs.exists() else []
-    prior.append({"n": n, "faithfulness": round(avg("faithfulness"), 4),
-                  "hallucination": round(avg("hallucination"), 4),
-                  "correctness": round(avg("correctness"), 4), "coverage": round(avg("coverage"), 4),
-                  "stage_usage": round(avg("stage_usage"), 4), "stage_align": round(avg("stage_align"), 4)})
-    runs.write_text(json.dumps(prior, indent=2), encoding="utf-8")
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+            w.writeheader(); w.writerows(rows)
+        runs = out.with_suffix(".runs.json")
+        prior = json.loads(runs.read_text(encoding="utf-8")) if runs.exists() else []
+        prior.append({"n": n, "faithfulness": round(avg("faithfulness"), 4),
+                      "hallucination": round(avg("hallucination"), 4),
+                      "correctness": round(avg("correctness"), 4), "coverage": round(avg("coverage"), 4),
+                      "stage_usage": round(avg("stage_usage"), 4), "stage_align": round(avg("stage_align"), 4)})
+        runs.write_text(json.dumps(prior, indent=2), encoding="utf-8")
+    else:
+        print(f"\n=== business needs (LATENCY ONLY, no judge) | {n} VS docs generated ===")
     if _GEN_LAT:
         lat = sorted(_GEN_LAT); u = llm.usage
         print(f"\ngeneration cost (per VS business-needs doc):")
@@ -206,7 +212,8 @@ async def main(args: argparse.Namespace) -> None:
         print(f"  latency  avg={sum(lat)/n:.1f}s  median={lat[n//2]:.1f}s  max={lat[-1]:.1f}s  (n={n} tickets)")
         print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
               f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out), {u['total_tokens']} total")
-    print(f"\nper-VS CSV -> {out}\nrun metrics -> {runs}")
+    if not args.no_judge:
+        print(f"\nper-VS CSV -> {out}\nrun metrics -> {runs}")
 
 
 if __name__ == "__main__":
@@ -218,6 +225,8 @@ if __name__ == "__main__":
     p.add_argument("--chunk-size", type=int, default=2,
                    help="batched mode: value streams per call (0=all in one; small avoids huge stalling "
                         "responses - business needs are long). Default 2.")
+    p.add_argument("--no-judge", action="store_true",
+                   help="generate only, skip the judges - measure generation latency/tokens fast")
     p.add_argument("--judge-concurrency", type=int, default=1,
                    help="max concurrent judge calls (1 = sequential; raise if the judge tolerates it)")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
