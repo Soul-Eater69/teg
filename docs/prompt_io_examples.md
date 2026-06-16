@@ -2,23 +2,8 @@
 
 Every LLM call in the current design, in pipeline order. For each: an **Inputs** list (field → what it
 is), the **filled prompt** the model receives (template variables substituted with data), and the
-**output** (structured-output schema + example).
-
-**Two conventions, locked from the EDA/experiments:**
-- Every generation and selection prompt reads the **raw text** (the ticket's consolidated content,
-  ~24k tokens). It is **not** a summary. In the prompts this content sits in a slot the code still
-  labels `ideaCard` / `IDEA CARD SUMMARY` for legacy reasons — the *content* is raw text; the label is
-  stale.
-- The **summary** is used **only** as the embedding query to *find* the 6 similar past tickets
-  (retrieval). It never goes into a generation prompt. ("Summary to find, raw to decide.")
-
-To avoid repeating the 24k blob, the raw text is shown once and referenced as **`{raw text}`** below:
-
-> **`{raw text}`** = "Enabling Real-Time Quote Automation for Enterprise Accounts. Sales Operations needs
-> a real-time CPQ integration so enterprise quotes go out same-day instead of taking 3-5 days. Pricing
-> comes live from Oracle ERP via Salesforce CPQ. Discounts above 20% route to VP approval. Accepted
-> quotes hand off to order fulfilment; the Deal Desk SLA target is 4 hours. [...full consolidated
-> ticket content...]"
+**output** (structured-output schema + example). Generation and selection prompts read the ticket's
+**raw text** (`{raw text}` below = the full consolidated ticket content, ~24k tokens).
 
 ---
 
@@ -64,8 +49,6 @@ generation prompts below.*
 
 **Filled prompt (user message):**
 ```
-IDEA CARD SUMMARY:     ← legacy label; the content below is the raw text
-
 {raw text}
 
 REQUESTED VALUE STREAM COUNT (exact):
@@ -155,7 +138,7 @@ scope and returns the stageId.*
 **Output** — one entry per Value Stream:
 ```json
 {
-  "value_streams": [
+  "valueStreams": [
     { "valueStreamId": "VSR-0042", "selectedStages": [
         { "stageId": "VSS-0042-01", "stageName": "Opportunity to Quote", "reason": "Ticket targets the quoting initiation workflow." },
         { "stageId": "VSS-0042-02", "stageName": "Quote to Order", "reason": "Quote-to-order handoff is in scope." } ] },
@@ -349,97 +332,3 @@ One package per approved Value Stream:
 ```
 
 ---
-
-# Evaluation judges (eval-only, reference-free)
-
-Never run in production. They judge a generated artifact against its **source** (the raw text), not
-ground truth. Claim extraction runs once; its claims feed faithfulness and correctness.
-
-## J1. Claim extraction  ·  `judges/claim_extraction`
-**Inputs:** `text` → the generated artifact.
-**Filled prompt:**
-```
-GENERATED TEXT:
-This theme automates enterprise quoting by integrating Salesforce CPQ with live Oracle ERP pricing,
-cutting the quote cycle from five days to same-day. Discounts above 20% route to VP approval, and
-accepted quotes hand off to order fulfilment.
-
-List every atomic factual claim.
-```
-**Output** — `ClaimList`:
-```json
-{ "claims": [
-  "The integration cuts the enterprise quote cycle from five days to same-day",
-  "Discounts above 20% route to VP approval",
-  "Accepted quotes hand off to order fulfilment" ] }
-```
-
-## J2. Faithfulness / hallucination  ·  `judges/faithfulness`
-**Inputs:** `source` → the raw text; `claims` → the extracted claims.
-**Filled prompt:**
-```
-SOURCE:
-{raw text}
-
-CLAIMS:
-- The integration cuts the enterprise quote cycle from five days to same-day
-- Discounts above 20% route to VP approval
-- The feature launches in Q3
-
-Return each claim with its supported flag.
-```
-**Output** — `FaithfulnessResult` (faithfulness = supported/total; hallucination = 1 − it):
-```json
-{ "claims": [
-  { "claim": "...quote cycle from five days to same-day", "supported": true },
-  { "claim": "Discounts above 20% route to VP approval", "supported": true },
-  { "claim": "The feature launches in Q3", "supported": false } ] }   // -> faithfulness 0.67
-```
-
-## J3. Correctness  ·  `judges/correctness`
-**Inputs:** `source` + `claims` (same shape as faithfulness). Checks accuracy / no distortion.
-**Output** — `CorrectnessResult` (correct/total):
-```json
-{ "claims": [
-  { "claim": "Discounts above 20% require VP approval", "correct": true },
-  { "claim": "All discounts require VP approval", "correct": false } ] }   // scope distorted
-```
-
-## J4. Coverage  ·  `judges/coverage`
-**Inputs:** `source` → the raw text; `description` → the generated artifact.
-**Filled prompt:**
-```
-SOURCE:
-{raw text}
-
-GENERATED ARTIFACT:
-This theme automates enterprise quoting ... cutting the quote cycle to same-day.
-
-Extract the source's key facts and return each with whether the generated artifact covers it.
-```
-**Output** — `CoverageResult` (covered/total):
-```json
-{ "facts": [
-  { "fact": "Cut quote cycle from 5 days to same-day", "covered": true },
-  { "fact": "Hand off accepted quotes to fulfilment", "covered": false } ] }   // -> coverage 0.5
-```
-
-## J5. Stage usage (Business Needs only)  ·  `judges/stage_usage`
-**Inputs:** `stages` → the selected stages with scope; `business_needs` → the generated document.
-**Filled prompt:**
-```
-SELECTED STAGES (with their scope):
-[1] Opportunity to Quote (VSS-0042-01)  description: Initiate and price a quote. entrance: ... | exit: quote issued
-[2] Quote to Order (VSS-0042-02)        description: Convert an accepted quote into an order. ...
-
-BUSINESS NEEDS DOCUMENT:
-Value Stage: Opportunity to Quote ... Value Stage: Quote to Order ...
-
-For each selected stage, return addressed + aligned + a short note.
-```
-**Output** — `StageUsageResult` (usage = addressed/selected; alignment = aligned/addressed):
-```json
-{ "stages": [
-  { "stageId": "VSS-0042-01", "addressed": true, "aligned": true, "note": "Real-time quoting needs are in scope." },
-  { "stageId": "VSS-0042-02", "addressed": true, "aligned": false, "note": "An order-creation need is filed here but belongs to a later stage." } ] }
-```
