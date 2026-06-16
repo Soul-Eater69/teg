@@ -31,7 +31,7 @@ from teg.theme.stage_catalogue import render_candidate_stages
 
 class CapabilitySelectionItem(CamelModel):
     capability_id: str
-    capability_name: str = ""  # echoed for anchoring; the catalogue name stays canonical
+    name: str = ""  # echoed for anchoring only (unused); the catalogue name is canonical on resolve
     reason: str = ""
 
 

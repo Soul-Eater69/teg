@@ -303,12 +303,12 @@ Candidate L3 capabilities (choose by id; each shows its parent L2):
 {
   "stages": [
     { "stageId": "VSS-0042-01", "capabilities": [
-        { "capabilityId": "L3-0042-0011", "capabilityName": "Real-Time Pricing Engine Integration", "reason": "Live CPQ pricing feed from Oracle ERP." },
-        { "capabilityId": "L3-0042-0012", "capabilityName": "Automated Discount Approval Workflow", "reason": "Discounts above 20% require VP approval." } ] },
+        { "capabilityId": "L3-0042-0011", "name": "Real-Time Pricing Engine Integration", "reason": "Live CPQ pricing feed from Oracle ERP." },
+        { "capabilityId": "L3-0042-0012", "name": "Automated Discount Approval Workflow", "reason": "Discounts above 20% require VP approval." } ] },
     { "stageId": "VSS-0042-02", "capabilities": [
-        { "capabilityId": "L3-0042-0021", "capabilityName": "Order Handoff Orchestration", "reason": "Accepted quotes hand off to fulfilment." } ] },
+        { "capabilityId": "L3-0042-0021", "name": "Order Handoff Orchestration", "reason": "Accepted quotes hand off to fulfilment." } ] },
     { "stageId": "VSS-0017-01", "capabilities": [
-        { "capabilityId": "L3-0017-0011", "capabilityName": "Order Intake Automation", "reason": "Captures the order on quote acceptance." } ] }
+        { "capabilityId": "L3-0017-0011", "name": "Order Intake Automation", "reason": "Captures the order on quote acceptance." } ] }
   ]
 }
 ```
@@ -332,3 +332,34 @@ One package per approved Value Stream:
 ```
 
 ---
+
+## Schema conventions (locked)
+
+- **Casing:** all output fields serialize **camelCase** on the wire (`valueStreamId`, `stageName`,
+  `capabilityId`). Pydantic models are snake_case internally.
+- **Names are canonical from the catalogue.** The model *echoes* `stageName` / capability `name` as a
+  selection anchor, but on resolve we **overwrite them with the governed catalogue name** — consumers
+  trust the resolved value, not the model's echo. (Capability uses `name`; stage uses `stageName`.)
+- **`confidence` is 0–100** (the model emits 0–1; selection scales it).
+- **Empty `reason` is valid**, not an error: a salvaged capability/stage (reassigned to its true owner)
+  and every derived **L2** carry `reason: ""` because they weren't reasoned in place.
+- **`supportType`** is the enum `direct | implied`; `sourceTickets` is populated only for `implied`.
+
+## Inputs sent to each call (Value Stream catalogue fields)
+
+The governed Value Stream catalogue has: `name, id, description, valueProposition, trigger, category,
+assumptions, definedTerms, stakeholders`. What each call currently passes:
+
+| call | VS fields sent | not sent |
+|---|---|---|
+| VS Selection (candidate block) | name, id, description, category, trigger, valueProposition, **assumptions** | definedTerms, stakeholders |
+| Stage Selection | name, id, description, valueProposition | **assumptions, trigger**, category, definedTerms, stakeholders |
+| Capabilities (merged) | name, id, description | **valueProposition, assumptions, trigger**, category |
+| Business Needs | name, id, description, valueProposition | **assumptions, trigger**, category |
+
+Stage candidates already carry: `stageName, description, entrance/exit criteria, valueItems, stakeholders`.
+
+**Candidate enrichments to consider (eval-gated):** `assumptions` and `trigger` describe a Value
+Stream's intended scope and what initiates it — adding them to **Stage Selection** and **Capabilities**
+(and `valueProposition` to Capabilities for parity) could sharpen mapping of work → stage → L3 at a low,
+governed token cost. These were **not** in the winning eval configs, so add and A/B test before locking.
