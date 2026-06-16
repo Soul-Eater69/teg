@@ -35,7 +35,12 @@ from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
 from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
-from teg.theme.capabilities import generate_capabilities, generate_capabilities_traced
+from teg.theme.capabilities import (
+    MergedCapabilityInput,
+    generate_capabilities,
+    generate_capabilities_merged,
+    generate_capabilities_traced,
+)
 from teg.theme.context import render_ticket_context
 from teg.theme.l3_drop_explainer import classify_l3_drop_grounding, classify_l3_pick_relevance
 from teg.theme.stage_catalogue import StageCatalogue
@@ -92,7 +97,8 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
         ctx = _ctx(props)
         res = {"ticket_id": ticket_id, "per_vs_pairs": [], "one_call_pairs": [], "mislink": [],
                "merged_pairs": [], "merged_mislink": [], "coverage": [], "drops": [], "picks": []}
-        merged_stages: list = []   # all scorable stages across every VS (for the merged one-call mode)
+        merged_stages: list = []   # all scorable stages across every VS (for mislink scoring)
+        merged_inputs: list = []   # per-VS inputs for the merged call (VS -> stages -> L3)
         stage_vs: dict = {}        # stage_id -> vs_id, to attribute merged picks back to a VS
         vs_gt_scored: dict = {}    # vs_id -> answerable GT L3
         for vs_id, entry in gt_by_vs.items():
@@ -114,6 +120,8 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
             desc = catalogue.description_for(vs_id)
             for s in stages:                       # accumulate for the merged (all-VS) one call
                 merged_stages.append(s); stage_vs[s.stage_id] = vs_id
+            merged_inputs.append(MergedCapabilityInput(
+                value_stream=vs, value_stream_description=desc, selected_stages=stages))
             vs_gt_scored[vs_id] = gt_scored
 
             if args.mode in ("per_stage", "both", "all"):
@@ -172,13 +180,10 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, args, sem)
         # MERGED: one single call for the whole ticket - all VS's stages together. The candidates
         # stay per-stage (strict isolation), salvage re-routes by stage owner (ids are global), and
         # picks are attributed back to a VS by stage to score per-VS like the other modes.
-        if args.mode in ("merged", "all") and merged_stages:
-            merged_vs = ApprovedValueStream(value_stream_id="ALL",
-                                            value_stream_name="all approved value streams")
+        if args.mode in ("merged", "all") and merged_inputs:
             t0 = perf_counter()
-            l3, _l2, raw = await generate_capabilities_traced(
-                condensed=ctx, value_stream=merged_vs, value_stream_description="",
-                selected_stages=merged_stages, llm_client=llm)
+            l3, _l2, raw = await generate_capabilities_merged(
+                condensed=ctx, inputs=merged_inputs, llm_client=llm)  # grouped VS -> stage -> L3
             _MERGED_LAT.append(perf_counter() - t0)  # one call per TICKET (all VS)
             pred_by_vs: dict = {}
             for sc in l3:

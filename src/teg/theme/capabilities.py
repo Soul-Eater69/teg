@@ -10,6 +10,8 @@ selected L3 maps 1-1 to its L2, so the L2 list is derived as the unique parents.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from pydantic import Field
 
 from teg.contracts.theme_io import (
@@ -120,6 +122,61 @@ async def generate_capabilities_traced(
         l2.append(stage_l2)
         raw_picks[stage.stage_id] = [c.capability_id for c in (entry.capabilities if entry else [])]
     _salvage_mislinks(active, raw_picks, l3)
+    return l3, l2, raw_picks
+
+
+@dataclass
+class MergedCapabilityInput:
+    """One value stream's inputs for the merged (all-VS) capability call."""
+
+    value_stream: ApprovedValueStream
+    value_stream_description: str
+    selected_stages: list[CatalogueStage] = field(default_factory=list)
+
+
+def _vs_stage_block(vs: ApprovedValueStream, vs_description: str, stages: list[CatalogueStage]) -> str:
+    head = f"### Value Stream {vs.value_stream_id} — {vs.value_stream_name}"
+    if vs_description:
+        head += f"\ndescription: {vs_description}"
+    return head + "\n\n" + "\n\n".join(_stage_block(s) for s in stages)
+
+
+async def generate_capabilities_merged(
+    *,
+    condensed: CondensedContext,
+    inputs: list[MergedCapabilityInput],
+    llm_client: LLMClient,
+) -> tuple[list[StageCapabilities], list[StageCapabilities], dict[str, list[str]]]:
+    """ONE call for ALL value streams' stages, grouped Value Stream -> Stage -> candidate L3.
+
+    Each VS keeps its name/description as context; stages stay keyed by stageId. Returns
+    (l3, l2, raw_picks) like the traced per-VS call; salvage spans every stage (ids are global).
+    """
+    groups = [(i, [s for s in i.selected_stages if s.capabilities]) for i in inputs]
+    groups = [(i, st) for i, st in groups if st]
+    if not groups:
+        return [], [], {}
+    all_stages = [s for _, st in groups for s in st]
+
+    prompt = load_prompt("theme/capability_selection_merged")
+    system, user = prompt.render(
+        ticket_context=render_ticket_context(condensed),
+        value_streams="\n\n".join(
+            _vs_stage_block(i.value_stream, i.value_stream_description, st) for i, st in groups),
+    )
+    result = await llm_client.complete(system=system, user=user, schema=BatchedCapabilitySelection)
+
+    by_stage = {s.stage_id: s for s in result.stages}
+    l3: list[StageCapabilities] = []
+    l2: list[StageCapabilities] = []
+    raw_picks: dict[str, list[str]] = {}
+    for stage in all_stages:
+        entry = by_stage.get(stage.stage_id)
+        stage_l3, stage_l2 = _resolve(entry, stage)
+        l3.append(stage_l3)
+        l2.append(stage_l2)
+        raw_picks[stage.stage_id] = [c.capability_id for c in (entry.capabilities if entry else [])]
+    _salvage_mislinks(all_stages, raw_picks, l3)
     return l3, l2, raw_picks
 
 
