@@ -1,7 +1,8 @@
 """Build the Cosmos IDMT/ER document and the Cosmos Theme documents.
 
-Single source of truth for these two shapes. The ER is a root (no parent); each Theme points
-at its ER via parentId. Level-1 fields are the Cosmos document's own lifecycle (id, ingestedDate);
+Single source of truth for these two shapes. An ER has no parent, so its parentRef is its own
+sourceId; each Theme points at its ER via parentRef. Level-1 fields are the Cosmos document's
+own lifecycle (id, ingestedDate);
 the SOURCE ticket's audit (created/modified by/date) lives inside properties alongside the rest of
 the business data. id is the stable Jira internal issue id (deterministic -> idempotent upsert);
 ticketId is the mutable business key (IDMT-####).
@@ -69,7 +70,7 @@ def build_idmt_document(
         "createdBy": INGEST_ACTOR,
         "lastModifiedAt": now,
         "lastModifiedBy": INGEST_ACTOR,
-        "parentRef": None,  # ER is a root - no parent
+        "parentRef": er.stable_id,  # an ER has no parent -> its own sourceId
         "properties": {
             "description": clean_text(condensed.description),
             "summary": condensed.ticket_title or er.title,  # the ticket TITLE

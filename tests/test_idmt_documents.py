@@ -56,7 +56,7 @@ def test_idmt_document_shape() -> None:
     assert doc["id"] == build_idmt_document(er=_er(), condensed=_condensed(), theme_gt=gt)["id"]
     assert doc["entityType"] == "EngagementRequest"  # PascalCase
     assert doc["createdAt"] and doc["createdBy"] == "teg-ingestion"  # Cosmos lifecycle, level 1
-    assert doc["lastModifiedAt"] and doc["parentRef"] is None  # ER is a root
+    assert doc["lastModifiedAt"] and doc["parentRef"] == "3364549"  # ER -> own sourceId
     props = doc["properties"]
     assert props["summary"] == "CP 2026 Women's and Family Health"  # the ticket TITLE
     assert props["businessSummary"] == "Automate appeals handling"  # LLM summary
