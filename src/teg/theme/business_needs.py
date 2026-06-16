@@ -18,21 +18,9 @@ from teg.domain.base import CamelModel
 from teg.ingestion.catalogues.models import CatalogueStage
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
-from teg.theme.context import render_generation_signals, render_ticket_context
+from teg.theme.context import render_ticket_context
 from teg.theme.stage_catalogue import render_candidate_stages
 
-# Generation signals fed to the business needs prompt (Contract C, section 5.1).
-_BUSINESS_NEEDS_SIGNALS = [
-    "businessSolutionObjectives",
-    "dependencies",
-    "resourcesNeeded",
-    "digitalExperienceSignals",
-    "businessRules",
-    "operationalSignals",
-    "reportingSignals",
-    "trainingSignals",
-    "notes",
-]
 
 
 class _GeneratedBusinessNeeds(CamelModel):
@@ -55,7 +43,6 @@ async def generate_business_needs(
     prompt = load_prompt("theme/business_needs")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _BUSINESS_NEEDS_SIGNALS),
         value_stream_id=value_stream.value_stream_id,
         value_stream_name=value_stream.value_stream_name,
         value_stream_description=value_stream_description,
@@ -108,7 +95,6 @@ async def _batched_call(
     prompt = load_prompt("theme/business_needs_batched")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _BUSINESS_NEEDS_SIGNALS),
         value_streams="\n\n".join(_vs_needs_block(i) for i in chunk),
     )
     result = await llm_client.complete(system=system, user=user, schema=_BatchedBusinessNeeds)

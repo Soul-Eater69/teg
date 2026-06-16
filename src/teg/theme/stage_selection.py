@@ -18,14 +18,13 @@ from teg.domain.base import CamelModel
 from teg.ingestion.catalogues.models import CatalogueStage
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
-from teg.theme.context import render_generation_signals, render_ticket_context
+from teg.theme.context import render_ticket_context
 from teg.theme.stage_catalogue import render_candidate_stages
 
 # Stage selection is about matching the idea-card ACTION to a stage; that lives in the
 # summary fields. Most generation signals (plans, funding, networks, operational, reporting)
 # are about availability/needs and add noise here - only the solution objectives (the
 # concrete feature list) genuinely help map work to stages.
-_STAGE_SIGNALS = ["businessSolutionObjectives"]
 
 
 class StageSelectionItem(CamelModel):
@@ -100,7 +99,6 @@ async def select_stages_for_all_traced(
     prompt = load_prompt("theme/stage_selection")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _STAGE_SIGNALS),
         value_streams="\n\n".join(_vs_block(i) for i in active),
     )
     result = await llm_client.complete(system=system, user=user, schema=BatchedStageSelection)
@@ -160,7 +158,6 @@ async def select_stages(
     prompt = load_prompt("theme/stage_selection_single")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _STAGE_SIGNALS),
         value_stream=_vs_block(input_),
     )
     result = await llm_client.complete(system=system, user=user, schema=SingleStageSelection)

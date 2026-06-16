@@ -1,7 +1,7 @@
 # Business Needs generation for the selected stages of an approved Value Stream (Contract C).
 # The LLM returns ONE consolidated Business Needs text (the final draft), following the
 # template. Output is the _GeneratedBusinessNeeds pydantic model { text }.
-# Template vars: {ticket_context}, {generation_signals}, {value_stream_id},
+# Template vars: {ticket_context}, {value_stream_id},
 #                {value_stream_name}, {value_stream_description}, {value_proposition},
 #                {selected_stages}
 
@@ -73,6 +73,3 @@ user: |
 
   ## Ticket context
   {ticket_context}
-
-  ## Generation signals
-  {generation_signals}

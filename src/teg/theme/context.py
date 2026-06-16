@@ -30,10 +30,3 @@ def render_ticket_context(condensed: CondensedContext) -> str:
     if sf.systems_and_products:
         lines.append(f"- systemsAndProducts: {', '.join(sf.systems_and_products)}")
     return "\n".join(lines)
-
-
-def render_generation_signals(condensed: CondensedContext, fields: list[str]) -> str:
-    """Render the named generation-signal fields that are populated (camelCase labels)."""
-    data = condensed.generation_signals.model_dump(by_alias=True)
-    lines = [f"- {name}: {'; '.join(data[name])}" for name in fields if data.get(name)]
-    return "\n".join(lines) if lines else "- (none provided)"

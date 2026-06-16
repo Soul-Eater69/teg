@@ -2,7 +2,7 @@
 # every approved value stream's theme: these sections come from ticket-level signals and are
 # identical for all themes. The VS-specific opening paragraph is added separately (framing).
 # Output is the _GeneratedDescription pydantic model { text }.
-# Template vars: {ticket_context}, {generation_signals}
+# Template vars: {ticket_context}
 
 system: |
   You are a senior healthcare business architect writing the shared body of a Jira Theme
@@ -68,6 +68,3 @@ system: |
 user: |
   Ticket context:
   {ticket_context}
-
-  Generation signals:
-  {generation_signals}

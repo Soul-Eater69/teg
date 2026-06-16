@@ -4,7 +4,7 @@
 # never invent, rename, merge, or use one stage's capability for another. Each selected L3 maps 1-1
 # to its L2 (derived by us, not the model).
 # Output structure is the BatchedCapabilitySelection pydantic model (structured output).
-# Template vars: {ticket_context}, {generation_signals}, {value_stream_name},
+# Template vars: {ticket_context}, {value_stream_name},
 #                {value_stream_description}, {stages}
 
 system: |
@@ -48,9 +48,6 @@ system: |
 user: |
   ## Ticket context
   {ticket_context}
-
-  ## Generation signals
-  {generation_signals}
 
   ## Approved value stream
   Name: {value_stream_name}

@@ -2,7 +2,7 @@
 # eval mode). No cross-value-stream concern: there is exactly one value stream and one candidate
 # list, so the model focuses purely on matching the idea card's action to this value stream's
 # lifecycle stages. Output is SingleStageSelection (structured output).
-# Template vars: {ticket_context}, {generation_signals}, {value_stream}
+# Template vars: {ticket_context}, {value_stream}
 
 system: |
   You are a senior healthcare business architect selecting the lifecycle stages of ONE
@@ -40,8 +40,6 @@ user: |
   ## Ticket context
   {ticket_context}
 
-  ## Generation signals
-  {generation_signals}
 
   ## Approved value stream (with its candidate stages)
   {value_stream}

@@ -15,27 +15,8 @@ from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
 from teg.domain.base import CamelModel
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
-from teg.theme.context import render_generation_signals, render_ticket_context
+from teg.theme.context import render_ticket_context
 
-# Ticket-level signals fed to the shared description body (Contract C, section 4.1).
-_DESCRIPTION_SIGNALS = [
-    "marketSegments",
-    "fundingModelSignals",
-    "marketOpportunity",
-    "businessSolutionObjectives",
-    "valueProposition",
-    "estimatedBenefits",
-    "dependencies",
-    "resourcesNeeded",
-    "digitalExperienceSignals",
-    "productAvailabilitySignals",
-    "planSignals",
-    "networkSignals",
-    "productPairingSignals",
-    "operationalSignals",
-    "reportingSignals",
-    "notes",
-]
 
 
 class _GeneratedDescription(CamelModel):
@@ -62,7 +43,6 @@ async def generate_description_body(
     prompt = load_prompt("theme/description_body")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _DESCRIPTION_SIGNALS),
     )
     result = await llm_client.complete(system=system, user=user, schema=_GeneratedDescription)
     return result.text

@@ -2,7 +2,7 @@
 # one call). For EACH value stream you pick the lifecycle stages from its candidate list that
 # the idea card impacts - you are NOT selecting value streams.
 # Output structure is the BatchedStageSelection pydantic model (structured output).
-# Template vars: {ticket_context}, {generation_signals}, {value_streams}
+# Template vars: {ticket_context}, {value_streams}
 
 system: |
   You are a senior healthcare business architect selecting the lifecycle stages of the
@@ -68,8 +68,6 @@ user: |
   ## Ticket context
   {ticket_context}
 
-  ## Generation signals
-  {generation_signals}
 
   ## Approved value streams (each with its own candidate stages)
   {value_streams}

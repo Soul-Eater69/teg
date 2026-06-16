@@ -22,10 +22,9 @@ from teg.domain.base import CamelModel
 from teg.ingestion.catalogues.models import CatalogueCapability, CatalogueStage
 from teg.integrations.llm import LLMClient
 from teg.prompts.loader import load_prompt
-from teg.theme.context import render_generation_signals, render_ticket_context
+from teg.theme.context import render_ticket_context
 from teg.theme.stage_catalogue import render_candidate_stages
 
-_CAPABILITY_SIGNALS = ["businessSolutionObjectives"]
 
 
 class CapabilitySelectionItem(CamelModel):
@@ -62,7 +61,6 @@ async def generate_capabilities(
     prompt = load_prompt("theme/capability_selection")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _CAPABILITY_SIGNALS),
         value_stream_name=value_stream.value_stream_name,
         value_stream_description=value_stream_description,
         stages="\n\n".join(_stage_block(s) for s in active),
@@ -105,7 +103,6 @@ async def generate_capabilities_traced(
     prompt = load_prompt("theme/capability_selection")
     system, user = prompt.render(
         ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _CAPABILITY_SIGNALS),
         value_stream_name=value_stream.value_stream_name,
         value_stream_description=value_stream_description,
         stages="\n\n".join(_stage_block(s) for s in active),

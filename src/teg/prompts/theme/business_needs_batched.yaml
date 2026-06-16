@@ -2,7 +2,7 @@
 # The LLM returns one consolidated Business Needs text per value stream, keyed by value_stream_id,
 # each following the same template as the per-VS prompt. Output is the _BatchedBusinessNeeds pydantic
 # model { value_streams: [{ value_stream_id, text }] }.
-# Template vars: {ticket_context}, {generation_signals}, {value_streams}
+# Template vars: {ticket_context}, {value_streams}
 
 system: |
   You are a senior healthcare business architect writing the Business Needs for the selected Value
@@ -73,6 +73,3 @@ user: |
 
   ## Ticket context
   {ticket_context}
-
-  ## Generation signals
-  {generation_signals}
