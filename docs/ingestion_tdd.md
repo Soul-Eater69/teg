@@ -77,7 +77,11 @@ The funnel is one Cypher query — no per-ticket round trips — and each level 
 The output is purely the **list of ticket keys** — no content is read in Stage 0. Reading content,
 attachments, and the Theme details happens per-ticket in Stage 1.
 
+![Stage 0 — identification funnel](ingestion_charts/fig1_identification.png)
+
 ## 4. Stage 1 — how a ticket is processed
+
+![Stage 1 — per-ticket pipeline](ingestion_charts/fig2_pipeline.png)
 
 For each key in the cohort, the per-ticket pipeline runs once. It takes **one ticket id** and assumes
 Stage 0 already qualified it. The steps:
@@ -98,7 +102,14 @@ The sub-steps below detail each part.
 The business content comes from the ticket's **attachments**, fetched directly — there is **no
 idea-card detection**; every supported attachment is extracted.
 
-- **Supported formats:** `.pdf`, `.pptx`, `.docx`.
+- **Supported formats & extraction libraries:**
+
+  | format | library |
+  |---|---|
+  | `.pdf` | **pypdfium2** (PDFium via ctypes — fast, releases the GIL while parsing) |
+  | `.pptx` | **python-pptx** |
+  | `.docx` | **python-docx** |
+
 - **Priority order: PowerPoint → PDF → Word.** Attachments are ordered by format priority
   (`.pptx` first, then `.pdf`, then `.docx`); within the same format, Jira's original order is kept.
   PowerPoint is highest because SMEs confirmed it is the most common idea-card format. This order is
@@ -119,6 +130,9 @@ budget is the only cap.
 A single LLM pass extracts structured business context from the raw text, so downstream steps don't
 re-process it. It produces the LLM-derived fields stored on the IDMT document (§4.4), and the raw text
 is carried through as `rawText`.
+
+- **Model:** `gpt-5-mini-idp` (the condense/summarization model).
+- **Output** is a typed structured-output schema, not free-form JSON in the prompt.
 
 ### 4.4 Fields extracted
 
@@ -163,6 +177,8 @@ Stream.
 | `insightsTime` | Theme last-updated date |
 
 ## 5. Storage schema
+
+![Storage — what goes where](ingestion_charts/fig3_storage.png)
 
 ### 5.1 Cosmos — Engagement Request document
 
@@ -214,6 +230,7 @@ Holds the historical Engagement-Request documents for retrieval.
 | `searchText` | `businessSummary + businessProblem + businessCapability + keyTerms + stakeholders + systemsAndProducts` |
 | `content_vector` | vectorized `searchText` |
 
+`content_vector` is produced by the **`text-embedding-3-small-idp`** embedding model (1536 dimensions).
 The index returns ranked ids; the full ticket details are read from Cosmos at query time.
 
 ### 5.4 Azure SQL DB — governed catalogue (consumed, not produced)
