@@ -33,6 +33,8 @@ from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
 from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
+
+from _judge_throttle import ThrottledClient
 from teg.theme.business_needs import (
     BusinessNeedsInput,
     generate_business_needs,
@@ -158,8 +160,10 @@ async def main(args: argparse.Namespace) -> None:
 
     llm = build_llm_client(settings)  # generation = production model
     judge = build_llm_client(settings, model=args.judge_model) if args.judge_model else llm
+    judge = ThrottledClient(judge, args.judge_concurrency)  # serialise judge calls (rate-limited gpt-5)
     if args.judge_model:
-        print(f"judging with: {args.judge_model} (generation: {settings.llm_model})")
+        print(f"judging with: {args.judge_model} (generation: {settings.llm_model}, "
+              f"judge-concurrency={args.judge_concurrency})")
     sem = asyncio.Semaphore(args.concurrency)
     results = await asyncio.gather(*(
         _eval_ticket(t, condensed[t], gt[t], catalogue=catalogue, llm=llm, judge=judge,
@@ -210,6 +214,8 @@ if __name__ == "__main__":
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json", help="VS + stages")
     p.add_argument("--mode", choices=["per_vs", "batched"], default="per_vs",
                    help="per_vs = one call per value stream (current); batched = ONE call for all VS")
+    p.add_argument("--judge-concurrency", type=int, default=1,
+                   help="max concurrent judge calls (1 = sequential; raise if the judge tolerates it)")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
     p.add_argument("--raw-budget", type=int, default=_RAW_BUDGET_CHARS)
     p.add_argument("--judge-model", default="", help="stronger model for the judges (e.g. gpt-5-idp); "
