@@ -1,129 +1,106 @@
-# Generation flow (merged variant) — Capabilities in one call for all Value Streams
+# Generation flow — batching optimisations: cost & impact analysis
 
-A variant of the [generation flow](generation_flow.md) where **L2/L3 Capabilities** are produced by a
-**single batched call covering every Value Stream's stages**, instead of one call per Value Stream.
-Everything else is unchanged. This trades a little quality for fewer calls, lower input tokens, and
-simpler orchestration.
+Two ways to cut the per-Value-Stream call count in theme generation, measured against the current
+per-VS architecture: **merged Capabilities** (all Value Streams' L3 in one call) and **batched Business
+Needs** (a few Value Streams per call). This is the cost and quality impact of each.
 
-![Generation flow (merged)](flow_charts/generation_flow_merged.png)
+![Generation flow (merged Capabilities)](flow_charts/generation_flow_merged.png)
 
-## What changed
+GPT-5-mini pricing throughout: **$0.25 / 1M input, $2.00 / 1M output.**
 
-| | per-VS (current) | merged (this variant) |
-|---|---|---|
-| Capabilities (L3) | one call **per Value Stream** | **one call for ALL Value Streams** |
+## Baseline cost — current architecture (all per-VS), 10 Value Streams
 
-The merged call puts every Value Stream's selected stages — each with its own governed candidate L3 —
-into one prompt. Candidates stay per-stage (strict isolation), and a deterministic salvage step
-re-routes any L3 placed under the wrong stage to its true owner (a capability id belongs to exactly one
-stage), so the **output is correct regardless**.
+**Average tokens** (the measured sample's idea cards sit below the 24k cap):
 
-## Call count
+| call | runs | input | output | cost |
+|---|---|---:|---:|---:|
+| Condense | 1 | 6,000 | 500 | $0.0025 |
+| Choose Value Streams | 1 | 12,000 | 1,500 | $0.0060 |
+| Stage Selection | 1 | 7,602 | 1,273 | $0.0044 |
+| Description BODY + FRAMING | 2 | 10,304 | 1,706 | $0.0060 |
+| Business Needs | 10 | 55,200 | 15,670 | $0.0451 |
+| Capabilities (L3) | 10 | 58,470 | 6,990 | $0.0286 |
+| **Total (average)** | **25 calls** | | | **$0.093** |
 
-For **N** approved Value Streams:
+**24k worst case** — every call carries the full 24k raw idea-card text:
 
-| | per-VS | merged |
-|---|---|---|
-| Capabilities calls | **N** | **1** |
-| total LLM calls | **5 + 2N** | **6 + N** |
-| at N = 3 | 11 | 9 |
-| at N = 10 | 25 | **16** |
+| call | runs | input | output | cost |
+|---|---|---:|---:|---:|
+| Condense | 1 | 24,000 | 500 | $0.0070 |
+| Choose Value Streams | 1 | 30,000 | 1,500 | $0.0105 |
+| Stage Selection | 1 | 26,600 | 1,273 | $0.0092 |
+| Description BODY + FRAMING | 2 | 48,400 | 1,706 | $0.0155 |
+| Business Needs | 10 | 245,200 | 15,670 | $0.0926 |
+| Capabilities (L3) | 10 | 248,500 | 6,990 | $0.0761 |
+| **Total (24k)** | **25 calls** | | | **$0.211** |
 
-Capabilities collapses from N calls to 1, removing **N − 1** calls per ticket (9 at N = 10).
-
-## Quality — measured (merged L3 eval, 118 tickets)
-
-| metric | per-VS (one_call) | **merged (all VS)** |
-|---|---|---|
-| precision | 0.53 | **0.43** |
-| recall | 0.90 | **0.84** |
-| F1 | 0.67 | **0.57** |
-| cross-stage/VS mislink (raw) | 5.1% | 17.0% |
-| mislink **in the output** (after salvage) | **0** | **0** |
-| hallucinated ids | 0.0% | **0.0%** |
-
-- **Recall drops ~6 points** (0.90 → 0.84) — the real cost; one big prompt spreads attention thinner.
-- **Precision drops ~10 points** strict, but a pick-relevance judge showed only **~18% of the non-GT
-  picks are genuinely irrelevant** — the rest is plausible capabilities the ground truth didn't tag
-  (under-tagging), so the *real* precision gap is much smaller.
-- **Mislink looks worse (17% vs 5% raw) but is 0 in the delivered output either way** — salvage fixes
-  it. Nothing is hallucinated.
-
-## Cost (GPT-5-mini: $0.25/1M in, $2.00/1M out; average tokens)
-
-Capabilities only:
-
-| | per-VS | merged |
-|---|---|---|
-| calls | 10 | 1 |
-| input tokens | 58,470 | ~14,500 |
-| output tokens | 6,990 | 6,990 |
-| **capabilities cost / ticket (10 VS)** | **$0.0286** | **$0.0176** |
-
-The **output tokens are the same** (you still generate the same L3, just in one response — that's the
-expensive $2/1M side), so the saving is on **input**: the raw idea-card text is sent **once** instead
-of 10 times. **Capabilities cost drops ~38% (~$0.011/ticket)** at average idea-card size — and **more on
-large idea cards**, where the per-call 24k raw text dominates (9 fewer copies of up to 24k tokens).
-
-Per-ticket total (10 VS, average tokens): **~$0.093 → ~$0.082**.
-
-## Latency (measured)
-
-| | per-VS (one_call) | merged |
-|---|---|---|
-| unit | per Value Stream | per ticket (1 call) |
-| avg / median | 4.4s / 4.0s | 10.9s / **6.4s** |
-
-- Merged is **one ~6.4s call** vs N per-VS calls. If you run the per-VS calls **in parallel**, wall-clock
-  is ~4.4s — so merged is slightly slower on the clock but **1 call instead of N**. If they ran
-  sequentially, merged is far faster (6.4s vs 10×4.4s).
-- The slow tail (≈5% of tickets over 30s, max 160s) is **concurrency-induced queueing**, not the model —
-  big idea cards + concurrent load. Size timeouts for the p95 (~35s), not the average.
-
-## Verdict
-
-Merged Capabilities is a **fair trade, not free**:
-
-- **Wins:** N → 1 calls (9 fewer at N=10), ~38% lower Capabilities input cost (more on big cards),
-  simpler orchestration, less rate-limit exposure. 0 mislink in output, 0 hallucination.
-- **Cost:** ~6 pts recall, ~10 pts strict precision (much of it under-tagging, not real error), and a
-  ~5% slow-call tail to size timeouts around.
-
-**Use merged** when call-count / cost / rate-limits matter and the architect reviews the output anyway.
-**Keep per-VS** when maximum L3 recall is the priority.
+So the baseline is **$0.093/ticket average, $0.211 worst case** (10 VS).
 
 ---
 
-## Business Needs — batched was tested too, and it does NOT hold
+## The changes and how they impacted quality
 
-We also batched Business Needs (chunking 2 Value Streams per call, `--mode batched --chunk-size 2`).
-Unlike Capabilities (short *selection*), Business Needs is long-form *writing* — and batching makes the
-model ration its output, writing **shorter, less-grounded docs**. The quality drops materially:
+### Merged Capabilities (L3) — all Value Streams in one call
 
-| metric | per-VS | batched (chunk 2) |
+| metric | per-VS | merged |
 |---|---|---|
-| faithfulness | 0.895 | **0.715** |
-| hallucination | 0.105 | **0.285** |
-| coverage | 0.810 | **0.519** |
+| precision | 0.53 | 0.43 |
+| recall | 0.90 | 0.84 |
+| F1 | 0.67 | 0.57 |
+| mislink in output (after salvage) | 0 | 0 |
+| hallucinated ids | 0% | 0% |
 
-**Why:** the batched call emits **~920 output tokens per VS vs 1,567 per-VS** — each document is ~40%
-shorter, so it reflects fewer source facts (coverage 0.52) and grounds fewer claims (hallucination
-0.28). The shorter output is the direct cause of the quality loss. *(Caveat: the per-VS numbers used an
-earlier 2-call judge, so part of the faithfulness gap is the stricter new judge — but the coverage drop
-and the ~40% shorter output are hard evidence batching itself hurts.)*
+Recall −6, strict precision −10 (much of which is plausible picks the ground truth didn't tag, not real
+error). Nothing hallucinated; mislink is 0 in the output either way. **Quality holds up well** — L3 is
+short *selection*, which batches cleanly.
 
-**What it saves (N = 10):**
+### Batched Business Needs — a few Value Streams per call
 
-| | per-VS | batched (chunk 2) |
+| metric | per-VS | batched |
+|---|---|---|
+| faithfulness | 0.895 | 0.715 |
+| hallucination | 0.105 | 0.285 |
+| coverage | 0.810 | 0.519 |
+
+Faithfulness −18, coverage −29, hallucination +18. **Quality degrades materially.** Business Needs is
+long-form *writing*: the batched call emits **~920 output tokens per VS vs 1,567 per-VS** — each
+document is ~40% shorter, so it reflects fewer source facts and grounds fewer claims. The shorter output
+is the direct cause.
+
+---
+
+## Cost comparison 1 — merged Capabilities (whole flow, 10 VS)
+
+| | baseline (per-VS) | merged Capabilities |
 |---|---:|---:|
-| LLM calls | 10 | **5** |
-| input tokens | 55,200 | **28,870** |
-| output tokens | 15,670 | 9,205 |
-| cost / ticket | $0.0451 | $0.0256 |
+| LLM calls | 25 | **16** |
+| cost — average | $0.093 | **$0.082** |
+| cost — 24k worst case | $0.211 | **$0.157** |
 
-Saves **5 calls (50%)**, **~26k input tokens (48%)**, ~$0.02/ticket. But the lower output is the
-shorter docs, not a free win.
+Capabilities collapses from 10 calls to 1: **9 fewer calls**, **−12% cost average**, **−26% at 24k**
+(the raw text is sent once instead of 10 times — the saving grows with idea-card size).
 
-**Verdict: keep Business Needs per-VS.** The call/token saving is real, but it comes by making a
-prescriptive, architect-facing artifact shorter and less grounded — a bad trade. Batch **Capabilities**
-(short selection, holds up), not **Business Needs** (long writing, degrades).
+## Cost comparison 2 — batched Business Needs (whole flow, 10 VS)
+
+| | baseline (per-VS) | batched Business Needs |
+|---|---:|---:|
+| LLM calls | 25 | **20** |
+| cost — average | $0.093 | **$0.073** |
+| cost — 24k worst case | $0.211 | **$0.168** |
+
+Business Needs goes from 10 calls to 5 (chunked): **5 fewer calls**, **−21% cost average**, **−20% at
+24k**.
+
+---
+
+## Verdict
+
+| change | calls saved | cost saved (avg / 24k) | quality |
+|---|---|---|---|
+| **merged Capabilities** | 9 | 12% / 26% | small, acceptable trade |
+| **batched Business Needs** | 5 | 21% / 20% | **materially worse** (shorter, less-grounded docs) |
+
+**Adopt merged Capabilities** — it's the bigger call-count saving, the cost drop grows on large idea
+cards, and the quality trade is small (and nothing is hallucinated). **Keep Business Needs per-VS** —
+the saving is real, but it comes by making a prescriptive, architect-facing artifact ~40% shorter and
+notably less grounded, which is a bad trade.
