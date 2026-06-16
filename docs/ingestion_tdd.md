@@ -56,7 +56,44 @@ ingestion run consumes.
 > **Status note.** The identification status exclusion is **{Cancelled, Blocked, New Request}** — the
 > funnel rejects whole tickets that were dropped, on hold, or never started.
 
-## 4. Attachment extraction
+### How the funnel filters (single pass)
+
+The funnel is one Cypher query — no per-ticket round trips — and each level narrows the previous set:
+
+1. **Start from IDMT Engagement Requests (L2+L3).** Match graph nodes whose key begins `IDMT-`, whose
+   issue type is *Engagement Request*, created on/after the cutoff, and whose status is not one of the
+   dead states. This is the candidate pool.
+2. **Pull each candidate's linked keys (L4).** From the IDMT node's inbound-link metadata, keep only the
+   links of type *"implemented by"* and extract the linked issue keys. A candidate with no such link is
+   dropped here — it has no implementing artifact, so no ground truth.
+3. **Resolve the links to Themes (L5).** Look up each linked key as a graph node and keep it only if its
+   issue type is *Theme*. (An "implemented by" link to a non-Theme issue does not qualify.)
+4. **Require a Value Stream on the Theme (L6).** Keep the candidate only if at least one of its Themes
+   has a `businessValueStreams` value matching `{VSR…}` — i.e. the Theme actually carries a Value
+   Stream. A Theme with a blank or malformed Value Stream does not qualify the ticket.
+5. **Return distinct, ordered IDMT keys.** A ticket that survives all four narrowings is emitted once,
+   regardless of how many qualifying Themes it has.
+
+The output is purely the **list of ticket keys** — no content is read in Stage 0. Reading content,
+attachments, and the Theme details happens per-ticket in Stage 1.
+
+## 4. Stage 1 — how a ticket is processed
+
+For each key in the cohort, the per-ticket pipeline runs once. It takes **one ticket id** and assumes
+Stage 0 already qualified it. The steps:
+
+1. **Fetch from Jira.** Pull the Engagement Request (its fields + issue links). The links give the
+   **linked Theme keys**; each Theme is then fetched with its Business Value Stream field. A linked
+   issue that is not a real Theme (no Value Stream) is dropped, so only genuine Themes remain.
+2. **Extract attachments** and **assemble the raw text** (§4.1, §4.2).
+3. **Condense** the raw text into the business-context fields (§4.3).
+4. **Read each Theme's** title, description, and Value Stream (§4.4).
+5. **Write** the Cosmos Engagement-Request document, one Cosmos Theme document per linked Theme, and the
+   AI-search index document (embedded) (§5).
+
+The sub-steps below detail each part.
+
+### 4.1 Attachment extraction
 
 The business content comes from the ticket's **attachments**, fetched directly — there is **no
 idea-card detection**; every supported attachment is extracted.
@@ -65,26 +102,26 @@ idea-card detection**; every supported attachment is extracted.
 - Legacy binary `.ppt` / `.doc` and image-only files would yield no text — but the EDA found **none** of
   these in the corpus, so all attachments in scope are text-extractable. No OCR.
 
-## 5. Raw text assembly
+### 4.2 Raw text assembly
 
 The Jira **description** and the extracted attachment text are concatenated into a single **raw text**
 blob, greedily packed into a **~24k-token budget**. The description is part of that budget — there is no
 separate budget for it. Highest-priority content is never displaced or truncated; the token budget is
 the only cap.
 
-## 6. Condense (LLM)
+### 4.3 Condense (LLM)
 
 A single LLM pass extracts structured business context from the raw text, so downstream steps don't
-re-process it. It produces the LLM-derived fields stored on the IDMT document (§7), and the raw text is
-carried through as `rawText`.
+re-process it. It produces the LLM-derived fields stored on the IDMT document (§4.4), and the raw text
+is carried through as `rawText`.
 
-## 7. Fields extracted
+### 4.4 Fields extracted
 
 We extract content directly from Jira (and the LLM condense pass). We do **not** extract or store
 Epics, Stages, L2/L3 capabilities, or Business Needs — only the Theme's title, description, and Value
 Stream.
 
-### 7.1 IDMT Engagement Request — from Jira
+#### IDMT Engagement Request — from Jira
 
 | field | source |
 |---|---|
@@ -95,9 +132,9 @@ Stream.
 | `creationDate` | source creation date |
 | `insightsTime` | source last-updated date |
 | `status` | Jira status (stored on the index doc) |
-| `rawText` | description + attachment text, packed to ~24k tokens (§5) |
+| `rawText` | description + attachment text, packed to ~24k tokens (§4.2) |
 
-### 7.2 IDMT Engagement Request — from Condense (LLM)
+#### IDMT Engagement Request — from Condense (LLM)
 
 | field | source |
 |---|---|
@@ -108,7 +145,7 @@ Stream.
 | `stakeholders` | stakeholder groups |
 | `systemsAndProducts` | referenced systems, platforms, products |
 
-### 7.3 Theme — from Jira
+#### Theme — from Jira
 
 | field | source |
 |---|---|
@@ -120,9 +157,9 @@ Stream.
 | `creationDate` | Theme creation date |
 | `insightsTime` | Theme last-updated date |
 
-## 8. Storage schema
+## 5. Storage schema
 
-### 8.1 Cosmos — Engagement Request document
+### 5.1 Cosmos — Engagement Request document
 
 | field | description |
 |---|---|
@@ -139,7 +176,7 @@ Stream.
 **`properties`:** `description`, `summary`, `creationDate`, `insightsTime`, `businessSummary`,
 `keyTerms`, `businessProblem`, `businessCapability`, `stakeholders`, `systemsAndProducts`, `rawText`.
 
-### 8.2 Cosmos — Theme document
+### 5.2 Cosmos — Theme document
 
 | field | description |
 |---|---|
@@ -159,7 +196,7 @@ Theme), `creationDate`, `insightsTime`.
 > Themes are **separate documents**, found via `parentRef` — not embedded as a `themes[]` array on the
 > IDMT document.
 
-### 8.3 AI Search index (idp_teg_data) — retrieval-only
+### 5.3 AI Search index (idp_teg_data) — retrieval-only
 
 Holds the historical Engagement-Request documents for retrieval.
 
@@ -174,11 +211,11 @@ Holds the historical Engagement-Request documents for retrieval.
 
 The index returns ranked ids; the full ticket details are read from Cosmos at query time.
 
-### 8.4 Azure SQL DB — governed catalogue (consumed, not produced)
+### 5.4 Azure SQL DB — governed catalogue (consumed, not produced)
 The Value Stream / Stage / L2 / L3 catalogue is the org's **gold data in Azure SQL**, read as-is at
 runtime. Ingestion does **not** define or store this catalogue.
 
-## 9. Rules & conventions
+## 6. Rules & conventions
 - **Content is read directly from Jira** — the Theme's Value Stream is taken as-is from its Business
   Value Stream field; no fuzzy matching, no LLM, no catalogue re-resolution.
 - **We store only the Theme's title, description, and Value Stream** — no Epics, Stages, L2/L3, or
