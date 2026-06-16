@@ -1,34 +1,40 @@
-# Prompt input/output reference — every LLM call, with the filled-in prompt
+# Prompt input/output reference — inputs, filled prompt, and output per call
 
-Each LLM call in the current design, in pipeline order. For each: a one-line note on what the system
-prompt instructs, the **filled-in prompt the model actually receives** (template variables substituted
-with real data), and the **output** (typed structured-output schema + example). All generation calls
-read the **raw text** — no generation signals. The output schema is passed to the gateway as structured
-output, never as a JSON block inside the prompt.
+Every LLM call in the current design, in pipeline order. For each: an **Inputs** list (field → what it
+is), the **filled prompt** the model receives (template variables substituted with data), and the
+**output** (structured-output schema + example).
 
-Running example: **IDMT-19761 — "Enabling Real-Time Quote Automation for Enterprise Accounts."** Sales
-Operations needs a real-time CPQ integration to cut the enterprise quote cycle from five days to
-same-day; discounts above 20% require VP approval; accepted quotes hand off to order fulfilment within a
-4-hour Deal Desk SLA.
+**Two conventions, locked from the EDA/experiments:**
+- Every generation and selection prompt reads the **raw text** (the ticket's consolidated content,
+  ~24k tokens). It is **not** a summary. In the prompts this content sits in a slot the code still
+  labels `ideaCard` / `IDEA CARD SUMMARY` for legacy reasons — the *content* is raw text; the label is
+  stale.
+- The **summary** is used **only** as the embedding query to *find* the 6 similar past tickets
+  (retrieval). It never goes into a generation prompt. ("Summary to find, raw to decide.")
+
+To avoid repeating the 24k blob, the raw text is shown once and referenced as **`{raw text}`** below:
+
+> **`{raw text}`** = "Enabling Real-Time Quote Automation for Enterprise Accounts. Sales Operations needs
+> a real-time CPQ integration so enterprise quotes go out same-day instead of taking 3-5 days. Pricing
+> comes live from Oracle ERP via Salesforce CPQ. Discounts above 20% route to VP approval. Accepted
+> quotes hand off to order fulfilment; the Deal Desk SLA target is 4 hours. [...full consolidated
+> ticket content...]"
 
 ---
 
 ## 1. Condense  (LLM ×1, per ticket)
 
-**System:** extract structured context from the ticket source in one pass; return the summary fields.
+**Inputs:**
+- `ticketId` → the ticket id, for traceability.
+- `consolidatedText` → the full raw text (description + extracted attachments, ~24k tokens).
 
 **Filled prompt (user message):**
 ```
 Ticket ID: IDMT-19761
 
 Source material:
-[Idea card] Enabling Real-Time Quote Automation for Enterprise Accounts. Sales Operations needs a
-real-time CPQ integration so enterprise quotes go out same-day instead of taking 3-5 days. Pricing
-must come live from Oracle ERP via Salesforce CPQ. Discounts above 20% must route to VP approval.
-Accepted quotes hand off to order fulfilment; the Deal Desk SLA target is 4 hours.
-[Attachment: business_case.pdf] ...
+{raw text}
 ```
-*(`Source material` is the full ~24k-token raw text.)*
 
 **Output** — `SummaryFields`:
 ```json
@@ -41,22 +47,26 @@ Accepted quotes hand off to order fulfilment; the Deal Desk SLA target is 4 hour
   "systemsAndProducts": ["Salesforce CPQ", "Oracle ERP", "Deal Desk Portal"]
 }
 ```
+*The summary fields are used for **retrieval** (embedding query) and routing — not fed into the
+generation prompts below.*
 
 ---
 
 ## 2. Value Stream Selection  (LLM ×1, per ticket)
 
-**System:** pick the relevant Value Streams from the candidates; weigh the new ticket's raw text against
-the similar past tickets; return exactly the requested count with a reason and support type.
+**Inputs:**
+- `content` → the new ticket's **raw text** (what the model reads to decide). *(The summary is used
+  separately as the embedding query to fetch the 6 past tickets — it is not in this prompt.)*
+- `requestedCount` → how many Value Streams to return (exact; default 10).
+- `historicEvidence` → the **6 similar past tickets**, each shown as its summary + the Value Streams it
+  was tagged with (precedent).
+- `candidateBlocks` → **all 50 governed Value Streams**, one compact block each.
 
 **Filled prompt (user message):**
 ```
-IDEA CARD SUMMARY:
+IDEA CARD SUMMARY:     ← legacy label; the content below is the raw text
 
-Sales Operations needs a real-time CPQ integration so enterprise quotes go out same-day instead of
-taking 3-5 days. Pricing comes live from Oracle ERP via Salesforce CPQ. Discounts above 20% route to
-VP approval. Accepted quotes hand off to order fulfilment; Deal Desk SLA target is 4 hours.
-[...full raw text...]
+{raw text}
 
 REQUESTED VALUE STREAM COUNT (exact):
 10
@@ -99,27 +109,25 @@ assumptions: Orders originate from approved quotes.
   ]
 }
 ```
-
 *Human approval gate — the SME confirms the Value Stream set before any generation runs.*
 
 ---
 
 ## 3. Stage Selection  (LLM ×1, all Value Streams batched)
 
-**System:** for every approved Value Stream, select which of its governed stages the work touches; pick
-only ids printed under that Value Stream; no count cap.
+**Inputs:**
+- `content` → the ticket's raw text.
+- `valueStreams` → each approved Value Stream with its **own candidate stages**; each stage block is
+  `[sequence] Stage Name (stageId)` + description + entrance/exit criteria.
+
+**How the prompt tells the model to read stages:** match the work's concrete **action** to a stage's
+**scope** — its description, entrance and exit criteria, value items, stakeholders — *not* on stage-name
+similarity; return only stage ids printed under that Value Stream; no count cap.
 
 **Filled prompt (user message):**
 ```
 ## Ticket context
-- ideaCard: Sales Operations needs real-time CPQ so enterprise quotes go out same-day; pricing live
-  from Oracle ERP via Salesforce CPQ; discounts >20% need VP approval; accepted quotes hand off to
-  order fulfilment within a 4-hour SLA.
-- businessProblem: Manual quoting delays enterprise deal closures by 3-5 days.
-- businessCapability: Automated real-time quote generation for enterprise accounts.
-- keyTerms: CPQ, quoting, enterprise, Salesforce, Deal Desk
-- stakeholders: Sales Ops, IT, Finance
-- systemsAndProducts: Salesforce CPQ, Oracle ERP, Deal Desk Portal
+- content: {raw text}
 
 ## Approved value streams (each with its own candidate stages)
 ### Value Stream VSR-0042 — Configure, Price and Quote
@@ -137,10 +145,14 @@ entrance: revision requested | exit: revised quote issued
 [1] Order Capture (VSS-0017-01)
 description: Receive and validate the enterprise order.
 entrance: order requested | exit: order validated
-...
+[2] Order Fulfilment (VSS-0017-02)
+description: Pick, pack and ship the order.
+entrance: order confirmed | exit: order shipped
 ```
+*The stage **name** is in each block (`[1] Opportunity to Quote (VSS-0042-01)`), so the model matches on
+scope and returns the stageId.*
 
-**Output** — one entry per Value Stream, keyed by id:
+**Output** — one entry per Value Stream:
 ```json
 {
   "value_streams": [
@@ -152,27 +164,23 @@ entrance: order requested | exit: order validated
   ]
 }
 ```
-*A stage placed under the wrong Value Stream is salvaged to its owner. An empty list means "take the
-whole governed list for the architect to trim."*
+*A stage placed under the wrong Value Stream is salvaged to its owner. Empty list = "take the whole
+governed list for the architect to trim."*
 
 ---
 
 ## 4. Description BODY  (LLM ×1, per ticket, VS-agnostic)
 
-**System:** write the shared narrative body; every statement must trace to a phrase in the raw text;
-optional availability/plan lines only when the text explicitly states them.
+**Inputs:**
+- `content` → the ticket's raw text.
+
+**System:** write the shared narrative body; every statement must trace to a phrase in the content;
+availability/plan lines only when the content explicitly states them.
 
 **Filled prompt (user message):**
 ```
 Ticket context:
-- ideaCard: Sales Operations needs real-time CPQ so enterprise quotes go out same-day; pricing live
-  from Oracle ERP via Salesforce CPQ; discounts >20% need VP approval; accepted quotes hand off to
-  order fulfilment within a 4-hour SLA.
-- businessProblem: Manual quoting delays enterprise deal closures by 3-5 days.
-- businessCapability: Automated real-time quote generation for enterprise accounts.
-- keyTerms: CPQ, quoting, enterprise, Salesforce, Deal Desk
-- stakeholders: Sales Ops, IT, Finance
-- systemsAndProducts: Salesforce CPQ, Oracle ERP, Deal Desk Portal
+- content: {raw text}
 ```
 
 **Output** — `{ text }`:
@@ -186,14 +194,14 @@ accepted quotes hand off to order fulfilment within the Deal Desk's 4-hour SLA.
 
 ## 5. Description FRAMING  (LLM ×1, all Value Streams batched)
 
-**System:** write one short intro paragraph per approved Value Stream; same grounding rule as the body.
+**Inputs:**
+- `content` → the ticket's raw text.
+- `valueStreams` → each approved Value Stream: `valueStreamId, valueStreamName, valueStreamDescription, valueProposition`.
 
 **Filled prompt (user message):**
 ```
 Ticket context:
-- ideaCard: Sales Operations needs real-time CPQ so enterprise quotes go out same-day ... (as above)
-- businessProblem: Manual quoting delays enterprise deal closures by 3-5 days.
-- ...
+- content: {raw text}
 
 Approved value streams:
 - valueStreamId: VSR-0042
@@ -221,8 +229,13 @@ Approved value streams:
 
 ## 6. Business Needs  (LLM ×1 per Value Stream)
 
-**System:** write the consolidated Business Needs for one Value Stream's selected stages; every need,
-dependency and rule must trace to a phrase in the raw text; one "Value Stage:" block per stage.
+**Inputs:**
+- `valueStream` → `valueStreamId, valueStreamName, valueStreamDescription, valueProposition`.
+- `selectedStages` → that VS's selected stages (`[seq] Stage Name (stageId)` + description + criteria).
+- `content` → the ticket's raw text.
+
+**System:** write the consolidated Business Needs; every need, dependency, and rule must trace to a
+phrase in the content; one "Value Stage:" block per stage.
 
 **Filled prompt (user message):**
 ```
@@ -239,9 +252,7 @@ description: Initiate and price an enterprise quote. entrance: opportunity quali
 description: Convert an accepted quote into an order. entrance: quote accepted | exit: order created
 
 ## Ticket context
-- ideaCard: Sales Operations needs real-time CPQ so enterprise quotes go out same-day ... (as above)
-- businessProblem: Manual quoting delays enterprise deal closures by 3-5 days.
-- ...
+- content: {raw text}
 ```
 
 **Output** — `{ text }` (one consolidated document):
@@ -263,16 +274,19 @@ Business Product Feature: Order Handoff
 
 ## 7. Capabilities (L3)  (LLM ×1, ALL Value Streams merged)
 
-**System:** for each stage, select the applicable L3 from THAT stage's own candidate list; strict stage
-isolation; the same id/name repeats across stages and Value Streams — match the exact printed id only.
+**Inputs:**
+- `content` → the ticket's raw text.
+- `valueStreams` → grouped **Value Stream → Stage → governed candidate L3**. Each candidate L3 line is
+  `capabilityId | name - description [tier] (L2: parent)`.
+
+**System:** for each stage, select L3 only from THAT stage's printed candidate list; strict stage
+isolation (the same id/name repeats across stages and Value Streams — match the exact printed id only).
 **L2 is derived 1-1 from the selected L3 — no separate L2 call.**
 
 **Filled prompt (user message):**
 ```
 ## Ticket context
-- ideaCard: Sales Operations needs real-time CPQ so enterprise quotes go out same-day ... (as above)
-- businessProblem: Manual quoting delays enterprise deal closures by 3-5 days.
-- ...
+- content: {raw text}
 
 ## Approved value streams, each with its selected stages and each stage's own candidate L3
 ### Value Stream VSR-0042 — Configure, Price and Quote
@@ -316,14 +330,13 @@ Candidate L3 capabilities (choose by id; each shows its parent L2):
 }
 ```
 *Strict isolation + salvage keep each L3 under its owning stage. **L2** = the unique parent L2s of the
-selected L3, derived per Value Stream (here: Pricing and Discounting, Approval and Governance, Order
-Management).*
+selected L3, derived per Value Stream.*
 
 ---
 
 ## Final Theme package (deterministic — no LLM)
 
-One package per approved Value Stream, assembled from the calls above:
+One package per approved Value Stream:
 ```json
 {
   "themeTitle": "Enabling Real-Time Quote Automation -- Configure, Price and Quote",
@@ -339,12 +352,12 @@ One package per approved Value Stream, assembled from the calls above:
 
 # Evaluation judges (eval-only, reference-free)
 
-These never run in production. They judge a generated artifact against its **source** (the raw text),
-not ground truth. Claim extraction runs once and its claims feed both faithfulness and correctness.
+Never run in production. They judge a generated artifact against its **source** (the raw text), not
+ground truth. Claim extraction runs once; its claims feed faithfulness and correctness.
 
 ## J1. Claim extraction  ·  `judges/claim_extraction`
-
-**Filled prompt (user message):**
+**Inputs:** `text` → the generated artifact.
+**Filled prompt:**
 ```
 GENERATED TEXT:
 This theme automates enterprise quoting by integrating Salesforce CPQ with live Oracle ERP pricing,
@@ -362,12 +375,11 @@ List every atomic factual claim.
 ```
 
 ## J2. Faithfulness / hallucination  ·  `judges/faithfulness`
-
-**Filled prompt (user message):**
+**Inputs:** `source` → the raw text; `claims` → the extracted claims.
+**Filled prompt:**
 ```
 SOURCE:
-Sales Operations needs real-time CPQ so enterprise quotes go out same-day; discounts >20% need VP
-approval; accepted quotes hand off to order fulfilment. [...raw text...]
+{raw text}
 
 CLAIMS:
 - The integration cuts the enterprise quote cycle from five days to same-day
@@ -379,14 +391,13 @@ Return each claim with its supported flag.
 **Output** — `FaithfulnessResult` (faithfulness = supported/total; hallucination = 1 − it):
 ```json
 { "claims": [
-  { "claim": "The integration cuts the enterprise quote cycle from five days to same-day", "supported": true },
+  { "claim": "...quote cycle from five days to same-day", "supported": true },
   { "claim": "Discounts above 20% route to VP approval", "supported": true },
   { "claim": "The feature launches in Q3", "supported": false } ] }   // -> faithfulness 0.67
 ```
 
 ## J3. Correctness  ·  `judges/correctness`
-
-Same filled shape as faithfulness (`SOURCE` + `CLAIMS`), but checks accuracy/no-distortion.
+**Inputs:** `source` + `claims` (same shape as faithfulness). Checks accuracy / no distortion.
 **Output** — `CorrectnessResult` (correct/total):
 ```json
 { "claims": [
@@ -395,12 +406,11 @@ Same filled shape as faithfulness (`SOURCE` + `CLAIMS`), but checks accuracy/no-
 ```
 
 ## J4. Coverage  ·  `judges/coverage`
-
-**Filled prompt (user message):**
+**Inputs:** `source` → the raw text; `description` → the generated artifact.
+**Filled prompt:**
 ```
 SOURCE:
-Sales Operations needs real-time CPQ ... cut quote cycle from 5 days to same-day; accepted quotes
-hand off to fulfilment. [...raw text...]
+{raw text}
 
 GENERATED ARTIFACT:
 This theme automates enterprise quoting ... cutting the quote cycle to same-day.
@@ -415,8 +425,8 @@ Extract the source's key facts and return each with whether the generated artifa
 ```
 
 ## J5. Stage usage (Business Needs only)  ·  `judges/stage_usage`
-
-**Filled prompt (user message):**
+**Inputs:** `stages` → the selected stages with scope; `business_needs` → the generated document.
+**Filled prompt:**
 ```
 SELECTED STAGES (with their scope):
 [1] Opportunity to Quote (VSS-0042-01)  description: Initiate and price a quote. entrance: ... | exit: quote issued
