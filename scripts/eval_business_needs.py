@@ -26,13 +26,18 @@ from pathlib import Path
 from time import perf_counter
 
 _GEN_LAT: list[float] = []  # per-VS generation wall-time, for the cost report
+_BATCHED_LAT: list[float] = []  # batched mode: one call per TICKET (all VS together)
 
 from teg.config.settings import load_settings
 from teg.contracts.theme_io import ApprovedValueStream, CondensedContext
 from teg.domain.condensed import GenerationSignals, SummaryFields
 from teg.ingestion.catalogues.loader import load_value_stream_catalogue
 from teg.integrations.llm import build_llm_client
-from teg.theme.business_needs import generate_business_needs
+from teg.theme.business_needs import (
+    BusinessNeedsInput,
+    generate_business_needs,
+    generate_business_needs_batched,
+)
 from teg.theme.business_needs_judges import judge_stage_usage
 from teg.theme.description_judges import (
     extract_claims,
@@ -75,22 +80,41 @@ def _raw_context(props: dict, raw_budget: int) -> tuple[CondensedContext, str]:
     return ctx, raw
 
 
-async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw_budget, sem) -> list[dict]:
+async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw_budget, args, sem) -> list[dict]:
     async with sem:
         ctx, source = _raw_context(props, raw_budget)
         rows: list[dict] = []
-        for vs_id, entry in gt_by_vs.items():
-            stages = [s for s in catalogue.stages_for(vs_id) if s.stage_id in entry["stages"]]
-            if not stages:
-                continue
+        # value streams with usable stages for this ticket
+        vs_stages = {vs_id: [s for s in catalogue.stages_for(vs_id) if s.stage_id in entry["stages"]]
+                     for vs_id, entry in gt_by_vs.items()}
+        vs_stages = {v: st for v, st in vs_stages.items() if st}
+        if not vs_stages:
+            print(f"  {ticket_id}: 0 VS"); return rows
+
+        # produce Business Needs per VS: batched = ONE call for all VS; per_vs = N calls.
+        if args.mode == "batched":
+            inputs = [BusinessNeedsInput(
+                value_stream=ApprovedValueStream(value_stream_id=v, value_stream_name=gt_by_vs[v]["name"]),
+                value_stream_description=catalogue.description_for(v),
+                value_proposition=catalogue.value_proposition_for(v),
+                selected_stages=st) for v, st in vs_stages.items()]
             t0 = perf_counter()
-            needs = await generate_business_needs(
-                condensed=ctx,
-                value_stream=ApprovedValueStream(value_stream_id=vs_id, value_stream_name=entry["name"]),
-                value_stream_description=catalogue.description_for(vs_id),
-                value_proposition=catalogue.value_proposition_for(vs_id),
-                selected_stages=stages, llm_client=llm)
-            _GEN_LAT.append(perf_counter() - t0)  # per-VS generation wall-time
+            needs_by_vs = await generate_business_needs_batched(condensed=ctx, inputs=inputs, llm_client=llm)
+            _BATCHED_LAT.append(perf_counter() - t0)  # one call per TICKET
+        else:
+            needs_by_vs = {}
+            for v, st in vs_stages.items():
+                t0 = perf_counter()
+                needs_by_vs[v] = await generate_business_needs(
+                    condensed=ctx,
+                    value_stream=ApprovedValueStream(value_stream_id=v, value_stream_name=gt_by_vs[v]["name"]),
+                    value_stream_description=catalogue.description_for(v),
+                    value_proposition=catalogue.value_proposition_for(v),
+                    selected_stages=st, llm_client=llm)
+                _GEN_LAT.append(perf_counter() - t0)  # per-VS generation wall-time
+
+        for vs_id, stages in vs_stages.items():
+            needs = needs_by_vs.get(vs_id, "")
             if not needs.strip():
                 continue
             claims = await extract_claims(text=needs, llm_client=judge)  # 1. extract once
@@ -139,7 +163,7 @@ async def main(args: argparse.Namespace) -> None:
     sem = asyncio.Semaphore(args.concurrency)
     results = await asyncio.gather(*(
         _eval_ticket(t, condensed[t], gt[t], catalogue=catalogue, llm=llm, judge=judge,
-                     raw_budget=args.raw_budget, sem=sem)
+                     raw_budget=args.raw_budget, args=args, sem=sem)
         for t in tickets
     ))
     rows = [r for ticket in results for r in ticket]
@@ -171,6 +195,12 @@ async def main(args: argparse.Namespace) -> None:
         print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  max={lat[-1]:.1f}s")
         print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
               f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out), {u['total_tokens']} total")
+    if _BATCHED_LAT:
+        lat = sorted(_BATCHED_LAT); u = llm.usage; n = len(lat)
+        print(f"\ngeneration cost (batched, ONE call per TICKET / all VS):")
+        print(f"  latency  avg={sum(lat)/n:.1f}s  median={lat[n//2]:.1f}s  max={lat[-1]:.1f}s  (n={n} tickets)")
+        print(f"  tokens   {u['calls']} calls, avg {u['avg_total']:.0f}/call "
+              f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out), {u['total_tokens']} total")
     print(f"\nper-VS CSV -> {out}\nrun metrics -> {runs}")
 
 
@@ -178,6 +208,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Reference-free Business Needs eval + stage usage.")
     p.add_argument("condensed", help="index docs json (e.g. out/idmt/cosmos_idmt.json)")
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json", help="VS + stages")
+    p.add_argument("--mode", choices=["per_vs", "batched"], default="per_vs",
+                   help="per_vs = one call per value stream (current); batched = ONE call for all VS")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
     p.add_argument("--raw-budget", type=int, default=_RAW_BUDGET_CHARS)
     p.add_argument("--judge-model", default="", help="stronger model for the judges (e.g. gpt-5-idp); "
