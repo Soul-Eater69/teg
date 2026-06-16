@@ -293,9 +293,15 @@ async def main(args: argparse.Namespace) -> None:
               f"({u['avg_prompt']:.0f} in / {u['avg_completion']:.0f} out)  [incl probes if --ground-drops]")
     if _MERGED_LAT:
         lat = sorted(_MERGED_LAT)
+        n = len(lat)
+        p = lambda q: lat[min(n - 1, int(q * n))]
+        thr = args.slow_threshold
+        slow = sum(1 for x in lat if x > thr)
         print(f"\ngeneration cost (merged, ONE call per TICKET / all VS):")
-        print(f"  latency  avg={sum(lat)/len(lat):.1f}s  median={lat[len(lat)//2]:.1f}s  "
-              f"max={lat[-1]:.1f}s  (n={len(lat)} tickets)")
+        print(f"  latency  avg={sum(lat)/n:.1f}s  median={lat[n//2]:.1f}s  "
+              f"p90={p(0.9):.1f}s  p95={p(0.95):.1f}s  max={lat[-1]:.1f}s  (n={n} tickets)")
+        print(f"  over {thr:.0f}s: {slow}/{n} ({_div(slow, n):.0%})"
+              + (f"  -> {', '.join(f'{x:.0f}s' for x in lat if x > thr)}" if slow else ""))
     print(f"\n-> {out}")
 
 
@@ -316,5 +322,7 @@ if __name__ == "__main__":
     p.add_argument("--seed", type=int, default=13)
     p.add_argument("--count", type=int, default=0)
     p.add_argument("--concurrency", type=int, default=4)
+    p.add_argument("--slow-threshold", type=float, default=30.0,
+                   help="merged latency: report how many tickets' single call ran over this (seconds)")
     p.add_argument("--out", default="out/l3_eval/eval_l3.runs.json")
     asyncio.run(main(p.parse_args()))
