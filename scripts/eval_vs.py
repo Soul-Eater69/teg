@@ -28,6 +28,7 @@ from teg.bootstrap import build_value_stream_service
 from teg.config.settings import load_settings
 from teg.contracts.value_stream_io import ValueStreamRequest
 from teg.domain.condensed import SummaryFields
+from teg.ingestion.extraction.value_stream_field import parse_value_stream
 from teg.integrations.llm import build_llm_client
 from teg.integrations.search import HistoricalValueStreamLabel
 from teg.value_stream.config import ValueStreamConfig
@@ -47,6 +48,19 @@ def _load(path: str) -> list[dict]:
     return docs
 
 
+def _value_stream_id_name(raw: object) -> tuple[str, str]:
+    """The Theme's Value Stream id+name from either the Cosmos ``<name> {id}`` string or the
+    legacy nested object. Returns ("", "") when absent."""
+    if isinstance(raw, dict):
+        return raw.get("valueStreamId") or "", raw.get("valueStreamName") or ""
+    if isinstance(raw, str) and raw.strip():
+        parsed = parse_value_stream(raw)  # ("<name>", "<id>")
+        if parsed:
+            name, vs_id = parsed
+            return vs_id, name
+    return "", ""
+
+
 def _attach_gt_from_themes(idmt_docs: list[dict], idmt_path: Path) -> None:
     """Reconstruct each ER's properties.themes (the VS ground truth) from the sibling themes file.
 
@@ -64,13 +78,13 @@ def _attach_gt_from_themes(idmt_docs: list[dict], idmt_path: Path) -> None:
     by_parent: dict[str, list[dict]] = {}
     for t in theme_docs:
         parent = t.get("parentRef")
-        vs = (t.get("properties") or {}).get("valueStream") or {}
-        if parent and vs.get("valueStreamId"):
+        vs_id, vs_name = _value_stream_id_name((t.get("properties") or {}).get("valueStream"))
+        if parent and vs_id:
             by_parent.setdefault(parent, []).append({
                 "key": t.get("key"),
                 "sourceId": t.get("sourceId"),
-                "valueStreamId": vs.get("valueStreamId"),
-                "valueStreamName": vs.get("valueStreamName"),
+                "valueStreamId": vs_id,
+                "valueStreamName": vs_name,
             })
     for doc in idmt_docs:
         doc.setdefault("properties", {})["themes"] = by_parent.get(doc.get("sourceId"), [])
