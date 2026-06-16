@@ -40,19 +40,18 @@ A **distinct first stage, upstream of the per-ticket pipeline.** We do **not** i
 pipeline (Stage 1) then runs once per identified key.
 
 Identification runs against the **Neo4j JIRA graph** (env: `NEO4J_URI / USER / PASSWORD / DATABASE`) as
-a **single Cypher query** implementing a 5-filter funnel (the EDA notebook's L2→L6 levels;
-`scripts/fetch_idmt_vs_valid_tickets.py`). A ticket survives to the cohort only if **all** hold:
+a **single Cypher query** implementing a 5-filter funnel (L2→L6). A ticket survives to the cohort only
+if **all** hold:
 
 | filter | rule |
 |---|---|
 | **L2 — is an IDMT Engagement Request, recent** | `key` starts with `IDMT-`, `issueType = "Engagement Request"`, `creationDateEpoch ≥ since` (default **2023-01-01**) |
 | **L3 — not in a dead status** | `status NOT IN {Cancelled, Blocked, New Request}` |
-| **L4 — has a linked artifact** | ≥1 inward link of type **"implemented by"** (from `inwardIssuesMetaData`), giving the linked key(s) |
-| **L5 — the link is a Theme** | the linked key resolves to a JIRA node with `issueType = "Theme"` |
+| **L4 — is implemented by a linked issue** | the IDMT has ≥1 **inbound "implemented by"** link — i.e. a Theme *implements* it. (From the IDMT's side this relationship is inward; the same link is outward "implements" on the Theme. We read it from the IDMT, so it appears inward.) |
+| **L5 — the linked issue is a Theme** | the linked key resolves to a JIRA node with `issueType = "Theme"` |
 | **L6 — the Theme carries a Value Stream** | the Theme's `businessValueStreams` matches `…{VSR\d+}` (a valid Value Stream id is present) |
 
-The query returns the **distinct ER keys** (ordered) that pass all five — written one per line to a
-text file (default `output_prod/idmt_vs_valid_ticket_keys.txt`). That file is the cohort the batch
+The query returns the **distinct ER keys** that pass all five; that key set is the cohort the batch
 ingestion run consumes.
 
 > **Status note.** The ER-identification status exclusion is **{Cancelled, Blocked, New Request}** —
