@@ -37,23 +37,28 @@ async def post_with_retry(
     max_retries: int = 5,
     base_delay: float = 1.0,
     max_delay: float = 30.0,
+    timeout_retries: int = 2,
 ) -> httpx.Response:
-    """POST json to path, retrying 429/5xx/transient-network with backoff. Returns the response
-    (status already checked OK); raises on non-retryable 4xx or after exhausting retries."""
-    for attempt in range(max_retries + 1):
+    """POST json to path. Retries 429/5xx PATIENTLY (``max_retries`` - waiting helps a rate window),
+    but a TIMEOUT / transient-network error means the call itself is too slow, so retrying just
+    repeats the timeout - cap those at ``timeout_retries`` (fail fast, don't loop). Returns the OK
+    response; raises on non-retryable 4xx or after exhausting retries."""
+    rate_tries = timeout_tries = 0
+    while True:
         try:
             response = await http.post(path, json=json)
-        except (httpx.TransportError, httpx.TimeoutException) as exc:  # transient network
-            if attempt >= max_retries:
+        except (httpx.TransportError, httpx.TimeoutException):
+            timeout_tries += 1
+            if timeout_tries > timeout_retries:  # a recurring timeout won't fix itself - stop looping
                 raise
-            await asyncio.sleep(_backoff(attempt, base_delay, max_delay))
+            await asyncio.sleep(_backoff(timeout_tries - 1, base_delay, max_delay))
             continue
         if response.status_code == 429 or response.status_code >= 500:
-            if attempt >= max_retries:
+            rate_tries += 1
+            if rate_tries > max_retries:
                 response.raise_for_status()  # out of retries -> surface the real error
-            delay = retry_after_seconds(response) or _backoff(attempt, base_delay, max_delay)
+            delay = retry_after_seconds(response) or _backoff(rate_tries - 1, base_delay, max_delay)
             await asyncio.sleep(delay)
             continue
         response.raise_for_status()  # other 4xx -> fail fast
         return response
-    raise RuntimeError("unreachable retry state")  # pragma: no cover
