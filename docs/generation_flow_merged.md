@@ -12,8 +12,6 @@ simpler orchestration.
 | | per-VS (current) | merged (this variant) |
 |---|---|---|
 | Capabilities (L3) | one call **per Value Stream** | **one call for ALL Value Streams** |
-| isolation | per-VS, stage isolation | strict **stage isolation across all VS** + salvage |
-| everything else | — | identical |
 
 The merged call puts every Value Stream's selected stages — each with its own governed candidate L3 —
 into one prompt. Candidates stay per-stage (strict isolation), and a deterministic salvage step
@@ -75,8 +73,6 @@ Per-ticket total (10 VS, average tokens): **~$0.093 → ~$0.082**.
 |---|---|---|
 | unit | per Value Stream | per ticket (1 call) |
 | avg / median | 4.4s / 4.0s | 10.9s / **6.4s** |
-| p90 / p95 | — | 21.5s / 34.6s |
-| over 30s | — | **5% of tickets** (concurrency tail) |
 
 - Merged is **one ~6.4s call** vs N per-VS calls. If you run the per-VS calls **in parallel**, wall-clock
   is ~4.4s — so merged is slightly slower on the clock but **1 call instead of N**. If they ran
