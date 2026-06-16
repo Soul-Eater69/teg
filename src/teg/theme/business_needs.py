@@ -8,6 +8,7 @@ condensed context; no invention, no assumptions (deferred). Returns the text str
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 from pydantic import Field
@@ -101,23 +102,40 @@ def _vs_needs_block(i: BusinessNeedsInput) -> str:
     )
 
 
+async def _batched_call(
+    condensed: CondensedContext, chunk: list[BusinessNeedsInput], llm_client: LLMClient
+) -> dict[str, str]:
+    prompt = load_prompt("theme/business_needs_batched")
+    system, user = prompt.render(
+        ticket_context=render_ticket_context(condensed),
+        generation_signals=render_generation_signals(condensed, _BUSINESS_NEEDS_SIGNALS),
+        value_streams="\n\n".join(_vs_needs_block(i) for i in chunk),
+    )
+    result = await llm_client.complete(system=system, user=user, schema=_BatchedBusinessNeeds)
+    by_id = {v.value_stream_id: v.text for v in result.value_streams}
+    return {i.value_stream.value_stream_id: by_id.get(i.value_stream.value_stream_id, "") for i in chunk}
+
+
 async def generate_business_needs_batched(
     *,
     condensed: CondensedContext,
     inputs: list[BusinessNeedsInput],
     llm_client: LLMClient,
+    chunk_size: int = 0,
 ) -> dict[str, str]:
-    """One call for all value streams -> {value_stream_id: Business Needs text}. Empty VS omitted."""
+    """Generate Business Needs for several value streams in batched calls -> {value_stream_id: text}.
+
+    ``chunk_size`` value streams per call (0 = all in one call). Business Needs are long, so a full
+    batch can produce a huge response that stalls / hits the output cap; a small chunk (e.g. 2) keeps
+    each response small while still cutting the call count. Chunks run concurrently.
+    """
     active = [i for i in inputs if i.selected_stages]
     if not active:
         return {}
-    prompt = load_prompt("theme/business_needs_batched")
-    system, user = prompt.render(
-        ticket_context=render_ticket_context(condensed),
-        generation_signals=render_generation_signals(condensed, _BUSINESS_NEEDS_SIGNALS),
-        value_streams="\n\n".join(_vs_needs_block(i) for i in active),
-    )
-    result = await llm_client.complete(system=system, user=user, schema=_BatchedBusinessNeeds)
-    by_id = {v.value_stream_id: v.text for v in result.value_streams}
-    return {i.value_stream.value_stream_id: by_id.get(i.value_stream.value_stream_id, "")
-            for i in active}
+    cs = chunk_size if chunk_size and chunk_size > 0 else len(active)
+    chunks = [active[i:i + cs] for i in range(0, len(active), cs)]
+    results = await asyncio.gather(*(_batched_call(condensed, c, llm_client) for c in chunks))
+    merged: dict[str, str] = {}
+    for r in results:
+        merged.update(r)
+    return merged

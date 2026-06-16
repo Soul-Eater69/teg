@@ -101,8 +101,9 @@ async def _eval_ticket(ticket_id, props, gt_by_vs, *, catalogue, llm, judge, raw
                 value_proposition=catalogue.value_proposition_for(v),
                 selected_stages=st) for v, st in vs_stages.items()]
             t0 = perf_counter()
-            needs_by_vs = await generate_business_needs_batched(condensed=ctx, inputs=inputs, llm_client=llm)
-            _BATCHED_LAT.append(perf_counter() - t0)  # one call per TICKET
+            needs_by_vs = await generate_business_needs_batched(
+                condensed=ctx, inputs=inputs, llm_client=llm, chunk_size=args.chunk_size)
+            _BATCHED_LAT.append(perf_counter() - t0)  # wall-time per TICKET (chunks run concurrently)
         else:
             needs_by_vs = {}
             for v, st in vs_stages.items():
@@ -213,7 +214,10 @@ if __name__ == "__main__":
     p.add_argument("condensed", help="index docs json (e.g. out/idmt/cosmos_idmt.json)")
     p.add_argument("--gt", default="out/stage_eval/stage_ground_truth.json", help="VS + stages")
     p.add_argument("--mode", choices=["per_vs", "batched"], default="per_vs",
-                   help="per_vs = one call per value stream (current); batched = ONE call for all VS")
+                   help="per_vs = one call per value stream (current); batched = chunked all-VS calls")
+    p.add_argument("--chunk-size", type=int, default=2,
+                   help="batched mode: value streams per call (0=all in one; small avoids huge stalling "
+                        "responses - business needs are long). Default 2.")
     p.add_argument("--judge-concurrency", type=int, default=1,
                    help="max concurrent judge calls (1 = sequential; raise if the judge tolerates it)")
     p.add_argument("--catalogue", default="data/value_stream_capability_map.json")
