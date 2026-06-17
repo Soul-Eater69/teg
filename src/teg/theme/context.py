@@ -15,9 +15,9 @@ def render_ticket_context(condensed: CondensedContext) -> str:
     sf = condensed.summary_fields
     lines: list[str] = []
     if sf.generated_summary:
-        # Neutral label: this carries the idea card's content - the LLM summary in production, or
-        # the full raw ticket text in the raw-input eval. Not labelled 'summary' so raw isn't framed
-        # as a summary it isn't.
+        # Neutral label: this carries the idea card's RAW text - theme generation reads raw
+        # ("raw to decide"); the caller passes rawText here with the other summary fields empty.
+        # Named 'ideaCard', not 'summary', so the raw content isn't framed as a summary it isn't.
         lines.append(f"- ideaCard: {sf.generated_summary}")
     if sf.business_problem:
         lines.append(f"- businessProblem: {sf.business_problem}")
