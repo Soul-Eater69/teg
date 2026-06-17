@@ -23,6 +23,7 @@ from pathlib import Path
 
 from teg.bootstrap import build_idmt_ingestion
 from teg.config.settings import load_settings
+from teg.integrations.cosmos.documents import to_cosmos_doc
 from teg.ingestion.upload.search_uploader import build_search_uploader
 
 
@@ -117,8 +118,11 @@ async def main(tickets_path: str, catalogue_path: str, out_dir: str, upload: boo
         _report_timings(timings, out)
 
     # Persist BEFORE upload so the fetch+condense work is never lost to an upload failure.
-    _write(out / "cosmos_idmt.json", idmt_docs)
-    _write(out / "cosmos_themes.json", theme_docs)
+    # Write the REAL Cosmos container schema directly (to_cosmos_doc: uppercase source/entityType/
+    # createdBy/lastModifiedBy, add domain=WORKITEM, drop properties.themes) - no separate localize
+    # step. The eval reconstructs its GT from the sibling Theme docs, so dropping themes here is fine.
+    _write(out / "cosmos_idmt.json", [to_cosmos_doc(d) for d in idmt_docs])
+    _write(out / "cosmos_themes.json", [to_cosmos_doc(d) for d in theme_docs])
     _write(out / "index_historical.json", historical_docs)
     if failed:
         (out / "failed_tickets.txt").write_text("\n".join(failed) + "\n", encoding="utf-8")
