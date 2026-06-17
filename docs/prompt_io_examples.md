@@ -49,6 +49,8 @@ generation prompts below.*
 
 **Filled prompt (user message):**
 ```
+TICKET CONTENT:
+
 {raw text}
 
 REQUESTED VALUE STREAM COUNT (exact):

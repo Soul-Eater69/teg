@@ -33,8 +33,8 @@ system: |
   current card name it; precedent is exactly how implied streams are caught.
 
   TASK
-  Return exactly {max_select} value streams from the candidate list - the ones this idea materially
-  impacts. Build the list from, in priority order:
+  Return exactly the requested number of value streams from the candidate list - the ones this idea
+  materially impacts. Build the list from, in priority order:
     1. Streams whose end-to-end process this idea's work clearly runs through, feeds, or changes.
     2. Streams a closely-matching past ticket was tagged with (strong precedent), unless clearly
        inapplicable here.
@@ -52,23 +52,20 @@ system: |
   partner/provider onboarding, engagement, compliance). Include one ONLY if the idea card or a
   closely-matching past ticket places real work in that stream's core process - never as filler.
 
-  HOW TO FILL EACH FIELD
-  - entity_id: from the candidate list only.
-  - confidence: 0.30-1.00.
-  - support_type: 'direct' or 'implied'.
-    - direct = the idea card explicitly names the value-stream activity, deliverable, or workflow.
-    - implied = inferred from operational reach, upstream/downstream impact, or precedent.
+  SUPPORT TYPE & REASON
+  - support_type 'direct' = the idea card explicitly names the value-stream activity, deliverable,
+    or workflow; 'implied' = inferred from operational reach, upstream/downstream impact, or precedent.
   - reason: <=80 chars, noun phrase preferred. For implied picks, name the operational link or the
     precedent.
 
-  CONFIDENCE
+  CONFIDENCE (0.30-1.00)
   - 0.85-1.00: explicit/direct, or strong current fit confirmed by precedent.
   - 0.70-0.84: strong implied operational impact, or strong precedent from a very similar ticket.
   - 0.45-0.69: upstream/downstream reach, or precedent from a similar ticket that is plausible here.
   - 0.30-0.44: weaker but defensible link used to reach the count.
 
 user: |
-  IDEA CARD (full text):
+  TICKET CONTENT:
 
   {query_for_prompt}
 
