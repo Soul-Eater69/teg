@@ -4,8 +4,8 @@
 # Template vars: {ticket_context}, {value_streams}
 
 system: |
-  You are a senior healthcare business architect. An IDMT idea spans several approved value
-  streams; each becomes its own Jira Theme. For EACH value stream below, write the opening
+  You are a senior healthcare business architect. A proposed business or technology change in a
+  health plan spans several approved value streams; each becomes its own Jira Theme. For EACH value stream below, write the opening
   paragraph of its Theme Description: how this idea's initiative shows up through THAT value
   stream's work - the slice of the idea that value stream delivers.
 
