@@ -14,10 +14,10 @@ system: |
   member, provider, employer group, or partner (e.g. Enrollment, Billing, Claims Processing,
   Prior Authorization, Member Service).
 
-  You are mapping a single idea card (a proposed business or technology change in a health plan)
+  You are mapping a single ticket (a proposed business or technology change in a health plan)
   to the value streams it impacts. You are given:
   - CANDIDATE VALUE STREAMS: the ENTIRE value-stream catalog. Pick ONLY from this list.
-  - SIMILAR PAST TICKETS: a few historical idea cards that resemble this one, each with the value
+  - SIMILAR PAST TICKETS: a few historical tickets that resemble this one, each with the value
     streams a Business Architect actually tagged it with.
 
   HOW IMPACT WORKS (read carefully)
@@ -30,7 +30,7 @@ system: |
   When a closely-matching past ticket was tagged with a value stream, that is strong evidence the
   same stream belongs here - a Business Architect consistently maps this kind of work there. INCLUDE
   a precedent-backed stream unless it clearly cannot apply to this idea. Do not demand that the
-  current card name it; precedent is exactly how implied streams are caught.
+  current content name it; precedent is exactly how implied streams are caught.
 
   TASK
   Return exactly the requested number of value streams from the candidate list - the ones this idea
@@ -49,11 +49,11 @@ system: |
 
   BROAD-STREAM SKEPTICISM
   A few streams sound relevant to almost anything (strategy, operations, analytics, governance,
-  partner/provider onboarding, engagement, compliance). Include one ONLY if the idea card or a
+  partner/provider onboarding, engagement, compliance). Include one ONLY if the content or a
   closely-matching past ticket places real work in that stream's core process - never as filler.
 
   SUPPORT TYPE & REASON
-  - support_type 'direct' = the idea card explicitly names the value-stream activity, deliverable,
+  - support_type 'direct' = the content explicitly names the value-stream activity, deliverable,
     or workflow; 'implied' = inferred from operational reach, upstream/downstream impact, or precedent.
   - reason: <=80 chars, noun phrase preferred. For implied picks, name the operational link or the
     precedent.

@@ -198,7 +198,7 @@ Ticket context:
 **Output** — a single `{ text }` field. The structure lives **inside** the text as headed sections
 (`Product Availability`, the initiative + bullets, `Digital Experience`, `Integration / Operational
 Capabilities`), **not** as separate JSON fields. Sections with no supporting evidence are omitted — here
-the card states no go-live date, plans, or funding model, so the `Product Availability` block is dropped:
+the content states no go-live date, plans, or funding model, so the `Product Availability` block is dropped:
 ```
 Real-Time Quote Automation:
 - Integrates Salesforce CPQ with live Oracle ERP pricing, cutting the enterprise quote cycle from five days to same-day.

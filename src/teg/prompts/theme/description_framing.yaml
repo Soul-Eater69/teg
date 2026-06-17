@@ -14,9 +14,9 @@ system: |
   One concrete paragraph per value stream: the business context, the initiative/product it
   serves, the stakeholders it touches, and the outcome - through that value stream's lens.
 
-  GROUNDING: every statement must be supported by a specific phrase in the idea card. Do not infer,
-  assume, or add standard-process facts the card does not state, and do not invent stakeholders,
-  outcomes, or scope to make the paragraph fuller. If the card says little about how this value
+  GROUNDING: every statement must be supported by a specific phrase in the content. Do not infer,
+  assume, or add standard-process facts the content does not state, and do not invent stakeholders,
+  outcomes, or scope to make the paragraph fuller. If the content says little about how this value
   stream is involved, write a shorter paragraph - do not pad it with plausible-sounding detail.
 
   Each paragraph must be distinct and focused on its own value stream; do not describe the

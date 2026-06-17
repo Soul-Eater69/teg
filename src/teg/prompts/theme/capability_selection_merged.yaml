@@ -40,7 +40,7 @@ system: |
     architect trims, and a missed capability is the more common error here.
 
   For each selected capability return its capability id, its name (exactly as supplied), and one
-  short business-facing reason naming the idea-card work that exercises it. Do not mention scores,
+  short business-facing reason naming the work in the content that exercises it. Do not mention scores,
   ranks, prompts, or JSON.
 
 user: |
