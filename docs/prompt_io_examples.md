@@ -184,8 +184,8 @@ governed list for the architect to trim."*
 **Inputs:**
 - `content` → the ticket's raw text.
 
-**System:** write the shared narrative body; every statement must trace to a phrase in the content;
-availability/plan lines only when the content explicitly states them.
+**System:** write the shared **structured** body; every statement must trace to a phrase in the
+content; availability/plan lines only when the content explicitly states them.
 
 **Filled prompt (user message):**
 ```
@@ -193,11 +193,21 @@ Ticket context:
 - content: {raw text}
 ```
 
-**Output** — `{ text }`:
+**Output** — a single `{ text }` field. The structure lives **inside** the text as headed sections
+(`Product Availability`, the initiative + bullets, `Digital Experience`, `Integration / Operational
+Capabilities`), **not** as separate JSON fields. Sections with no supporting evidence are omitted — here
+the card states no go-live date, plans, or funding model, so the `Product Availability` block is dropped:
 ```
-This theme automates enterprise quoting by integrating Salesforce CPQ with live Oracle ERP pricing,
-cutting the quote cycle from five days to same-day. Discounts above 20% route to VP approval, and
-accepted quotes hand off to order fulfilment within the Deal Desk's 4-hour SLA.
+Real-Time Quote Automation:
+- Integrates Salesforce CPQ with live Oracle ERP pricing, cutting the enterprise quote cycle from five days to same-day.
+- Routes discounts above 20% to VP approval.
+
+Digital Experience:
+- Faster self-serve quoting for enterprise sales reps.
+
+Integration / Operational Capabilities:
+- Salesforce CPQ to Oracle ERP pricing integration.
+- Accepted quotes hand off to order fulfilment within the Deal Desk's 4-hour SLA.
 ```
 
 ---

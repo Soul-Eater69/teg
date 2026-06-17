@@ -214,16 +214,25 @@ governed list for the architect to trim.&quot;</em></p>
 <ul>
 <li><code>content</code> → the ticket's raw text.</li>
 </ul>
-<p><strong>System:</strong> write the shared narrative body; every statement must trace to a phrase in the content;
-availability/plan lines only when the content explicitly states them.</p>
+<p><strong>System:</strong> write the shared <strong>structured</strong> body; every statement must trace to a phrase in the
+content; availability/plan lines only when the content explicitly states them.</p>
 <p><strong>Filled prompt (user message):</strong></p>
 <pre><code>Ticket context:
 - content: {raw text}
 </code></pre>
-<p><strong>Output</strong> — <code>{ text }</code>:</p>
-<pre><code>This theme automates enterprise quoting by integrating Salesforce CPQ with live Oracle ERP pricing,
-cutting the quote cycle from five days to same-day. Discounts above 20% route to VP approval, and
-accepted quotes hand off to order fulfilment within the Deal Desk's 4-hour SLA.
+<p><strong>Output</strong> — a single <code>{ text }</code> field. The structure lives <strong>inside</strong> the text as headed sections
+(<code>Product Availability</code>, the initiative + bullets, <code>Digital Experience</code>, <code>Integration / Operational Capabilities</code>), <strong>not</strong> as separate JSON fields. Sections with no supporting evidence are omitted — here
+the card states no go-live date, plans, or funding model, so the <code>Product Availability</code> block is dropped:</p>
+<pre><code>Real-Time Quote Automation:
+- Integrates Salesforce CPQ with live Oracle ERP pricing, cutting the enterprise quote cycle from five days to same-day.
+- Routes discounts above 20% to VP approval.
+
+Digital Experience:
+- Faster self-serve quoting for enterprise sales reps.
+
+Integration / Operational Capabilities:
+- Salesforce CPQ to Oracle ERP pricing integration.
+- Accepted quotes hand off to order fulfilment within the Deal Desk's 4-hour SLA.
 </code></pre>
 <hr />
 <h2>5. Description FRAMING  (LLM ×1, all Value Streams batched)</h2>
