@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prompt io examples</title>
+<style>
+:root { color-scheme: light dark; }
+body { max-width: 880px; margin: 2rem auto; padding: 0 1.2rem;
+       font: 16px/1.6 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+       color: #1f2328; background: #fff; }
+h1, h2, h3 { line-height: 1.25; margin-top: 1.8rem; }
+h1 { border-bottom: 2px solid #d0d7de; padding-bottom: .3rem; }
+h2 { border-bottom: 1px solid #d8dee4; padding-bottom: .25rem; }
+img { max-width: 100%; height: auto; display: block; margin: 1rem 0;
+      border: 1px solid #d0d7de; border-radius: 6px; }
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; table-layout: auto; }
+th, td { border: 1px solid #d0d7de; padding: 6px 13px; text-align: left;
+         overflow-wrap: anywhere; word-break: break-word; }
+th { background: #f6f8fa; }
+tr:nth-child(2n) td { background: #f6f8fa; }
+code { background: #eff1f3; padding: .15em .35em; border-radius: 4px;
+       font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Wrap long code lines instead of scrolling - a horizontal scrollbar clips in print/PDF. */
+pre { background: #f6f8fa; padding: 1rem; border-radius: 6px;
+      white-space: pre-wrap; overflow-wrap: anywhere; }
+pre code { background: none; padding: 0; }
+blockquote { border-left: 4px solid #d0d7de; margin: 1rem 0; padding: .2rem 1rem; color: #57606a; }
+
+/* PRINT / PDF: use the full page, shrink wide tables to fit, never clip - so the PDF matches the
+   markdown exactly (no cut-off columns or code lines). */
+@page { size: A4; margin: 12mm; }
+@media print {
+  body { max-width: none; margin: 0; padding: 0; font-size: 10.5pt; color: #000; }
+  h1 { margin-top: 0; }
+  h1, h2, h3, h4 { break-after: avoid; }
+  table, pre, blockquote { break-inside: avoid; }
+  table { font-size: 8.5pt; width: 100%; }
+  th, td { padding: 3px 6px; }
+  pre, code { font-size: 8.5pt; }
+  /* Cap tall (portrait) diagrams so they scale to fit one page next to the heading,
+     instead of overflowing and pushing themselves onto an otherwise-empty next page. */
+  img { border: 1px solid #ccc; max-height: 245mm; width: auto; margin: .4rem auto; }
+}
+</style>
+</head>
+<body>
+<h1>Prompt input/output reference — inputs, filled prompt, and output per call</h1>
+<p>Every LLM call in the current design, in pipeline order. For each: an <strong>Inputs</strong> list (field → what it
+is), the <strong>filled prompt</strong> the model receives (template variables substituted with data), and the
+<strong>output</strong> (structured-output schema + example). Generation and selection prompts read the ticket's
+<strong>raw text</strong> (<code>{raw text}</code> below = the full consolidated ticket content, ~24k tokens).</p>
+<hr />
+<h2>1. Condense  (LLM ×1, per ticket)</h2>
+<p><strong>Inputs:</strong></p>
+<ul>
+<li><code>ticketId</code> → the ticket id, for traceability.</li>
+<li><code>consolidatedText</code> → the full raw text (description + extracted attachments, ~24k tokens).</li>
+</ul>
+<p><strong>Filled prompt (user message):</strong></p>
+<pre><code>Ticket ID: IDMT-19761
+
+Source material:
+{raw text}
+</code></pre>
+<p><strong>Output</strong> — <code>SummaryFields</code>:</p>
+<pre><code class="language-json">{
+  &quot;generatedSummary&quot;: &quot;Sales Operations needs a real-time CPQ integration to cut the enterprise quote cycle from five days to same-day, with automated discount approval and a handoff to order fulfilment.&quot;,
+  &quot;businessProblem&quot;: &quot;Manual quoting delays enterprise deal closures by 3-5 days.&quot;,
+  &quot;businessCapability&quot;: &quot;Automated real-time quote generation for enterprise accounts.&quot;,
+  &quot;keyTerms&quot;: [&quot;CPQ&quot;, &quot;quoting&quot;, &quot;enterprise&quot;, &quot;Salesforce&quot;, &quot;Deal Desk&quot;],
+  &quot;stakeholders&quot;: [&quot;Sales Ops&quot;, &quot;IT&quot;, &quot;Finance&quot;],
+  &quot;systemsAndProducts&quot;: [&quot;Salesforce CPQ&quot;, &quot;Oracle ERP&quot;, &quot;Deal Desk Portal&quot;]
+}
+</code></pre>
+<p><em>The summary fields are used for <strong>retrieval</strong> (embedding query) and routing — not fed into the
+generation prompts below.</em></p>
+<hr />
+<h2>2. Value Stream Selection  (LLM ×1, per ticket)</h2>
+<p><strong>Inputs:</strong></p>
+<ul>
+<li><code>content</code> → the new ticket's <strong>raw text</strong> (what the model reads to decide). <em>(The summary is used
+separately as the embedding query to fetch the 6 past tickets — it is not in this prompt.)</em></li>
+<li><code>requestedCount</code> → how many Value Streams to return (exact; default 10).</li>
+<li><code>historicEvidence</code> → the <strong>6 similar past tickets</strong>, each shown as its summary + the Value Streams it
+was tagged with (precedent).</li>
+<li><code>candidateBlocks</code> → <strong>all 50 governed Value Streams</strong>, one compact block each.</li>
+</ul>
+<p><strong>Filled prompt (user message):</strong></p>
+<pre><code>{raw text}
+
+REQUESTED VALUE STREAM COUNT (exact):
+10
+
+SIMILAR PAST TICKETS (evidence - the value streams these were tagged with):
+- IDMT-17432: CPQ enhancements for the large Deal Desk; automated pricing configuration for enterprise tiers.
+  -&gt; tagged value streams: Configure, Price and Quote (VSR-0042), Order Management (VSR-0017)
+- IDMT-16890: Order fulfilment integration with CPQ; quote-to-order handoff latency reduction.
+  -&gt; tagged value streams: Order Management (VSR-0017)
+
+CANDIDATE VALUE STREAMS:
+
+Candidate: Configure, Price and Quote
+entity_id: VSR-0042
+description: Initiate, price and issue enterprise quotes.
+category: Sales and Enrollment
+trigger: A qualified enterprise opportunity needs a quote.
+value: Faster, accurate quotes that shorten the sales cycle.
+assumptions: Pricing is sourced from the master pricing system.
+
+Candidate: Order Management
+entity_id: VSR-0017
+description: Capture and fulfil enterprise orders.
+category: Fulfilment
+trigger: An accepted quote becomes an order.
+value: Reliable, on-time order fulfilment.
+assumptions: Orders originate from approved quotes.
+
+[... 48 more candidate blocks, all 50 governed Value Streams ...]
+</code></pre>
+<p><strong>Output</strong> — <code>recommendations[]</code>:</p>
+<pre><code class="language-json">{
+  &quot;recommendations&quot;: [
+    { &quot;valueStreamId&quot;: &quot;VSR-0042&quot;, &quot;valueStreamName&quot;: &quot;Configure, Price and Quote&quot;, &quot;confidence&quot;: 91,
+      &quot;supportType&quot;: &quot;direct&quot;, &quot;reason&quot;: &quot;Ticket explicitly targets CPQ automation for enterprise quoting.&quot;, &quot;sourceTickets&quot;: [] },
+    { &quot;valueStreamId&quot;: &quot;VSR-0017&quot;, &quot;valueStreamName&quot;: &quot;Order Management&quot;, &quot;confidence&quot;: 74,
+      &quot;supportType&quot;: &quot;implied&quot;, &quot;reason&quot;: &quot;Quote-to-order handoff implied by the fulfilment requirement.&quot;, &quot;sourceTickets&quot;: [&quot;IDMT-16890&quot;] }
+  ]
+}
+</code></pre>
+<p><em>Human approval gate — the SME confirms the Value Stream set before any generation runs.</em></p>
+<hr />
+<h2>3. Stage Selection  (LLM ×1, all Value Streams batched)</h2>
+<p><strong>Inputs:</strong></p>
+<ul>
+<li><code>content</code> → the ticket's raw text.</li>
+<li><code>valueStreams</code> → each approved Value Stream with its name, description, <strong>valueProposition, trigger,
+assumptions</strong>, and its <strong>own candidate stages</strong>; each stage block is <code>[sequence] Stage Name (stageId)</code>
+<ul>
+<li>description + entrance/exit criteria.</li>
+</ul>
+</li>
+</ul>
+<p><strong>How the prompt tells the model to read stages:</strong> match the work's concrete <strong>action</strong> to a stage's
+<strong>scope</strong> — its description, entrance and exit criteria, value items, stakeholders — <em>not</em> on stage-name
+similarity; return only stage ids printed under that Value Stream; no count cap. The Value Stream's
+trigger and assumptions frame what that stream's work covers.</p>
+<p><strong>Filled prompt (user message):</strong></p>
+<pre><code>## Ticket context
+- content: {raw text}
+
+## Approved value streams (each with its own candidate stages)
+### Value stream VSR-0042
+Name: Configure, Price and Quote
+Description: Initiate, price and issue enterprise quotes.
+Value proposition: Faster, accurate quotes that shorten the sales cycle.
+Trigger: A qualified enterprise opportunity needs a quote.
+Assumptions: Pricing is sourced from the master pricing system.
+Candidate stages:
+[1] Opportunity to Quote (VSS-0042-01)
+description: Initiate and price an enterprise quote.
+entrance: opportunity qualified | exit: quote issued
+[2] Quote to Order (VSS-0042-02)
+description: Convert an accepted quote into an order.
+entrance: quote accepted | exit: order created
+
+### Value stream VSR-0017
+Name: Order Management
+Description: Capture and fulfil enterprise orders.
+Value proposition: Reliable, on-time order fulfilment.
+Trigger: An accepted quote becomes an order.
+Assumptions: Orders originate from approved quotes.
+Candidate stages:
+[1] Order Capture (VSS-0017-01)
+description: Receive and validate the enterprise order.
+entrance: order requested | exit: order validated
+</code></pre>
+<p><em>The stage <strong>name</strong> is in each block (<code>[1] Opportunity to Quote (VSS-0042-01)</code>), so the model matches on
+scope and returns the stageId.</em></p>
+<p><strong>Output</strong> — one entry per Value Stream:</p>
+<pre><code class="language-json">{
+  &quot;valueStreams&quot;: [
+    { &quot;valueStreamId&quot;: &quot;VSR-0042&quot;, &quot;selectedStages&quot;: [
+        { &quot;stageId&quot;: &quot;VSS-0042-01&quot;, &quot;stageName&quot;: &quot;Opportunity to Quote&quot;, &quot;reason&quot;: &quot;Ticket targets the quoting initiation workflow.&quot; },
+        { &quot;stageId&quot;: &quot;VSS-0042-02&quot;, &quot;stageName&quot;: &quot;Quote to Order&quot;, &quot;reason&quot;: &quot;Quote-to-order handoff is in scope.&quot; } ] },
+    { &quot;valueStreamId&quot;: &quot;VSR-0017&quot;, &quot;selectedStages&quot;: [
+        { &quot;stageId&quot;: &quot;VSS-0017-01&quot;, &quot;stageName&quot;: &quot;Order Capture&quot;, &quot;reason&quot;: &quot;Accepted quotes are captured as orders.&quot; } ] }
+  ]
+}
+</code></pre>
+<p><em>A stage placed under the wrong Value Stream is salvaged to its owner. Empty list = &quot;take the whole
+governed list for the architect to trim.&quot;</em></p>
+<hr />
+<h2>4. Description BODY  (LLM ×1, per ticket, VS-agnostic)</h2>
+<p><strong>Inputs:</strong></p>
+<ul>
+<li><code>content</code> → the ticket's raw text.</li>
+</ul>
+<p><strong>System:</strong> write the shared narrative body; every statement must trace to a phrase in the content;
+availability/plan lines only when the content explicitly states them.</p>
+<p><strong>Filled prompt (user message):</strong></p>
+<pre><code>Ticket context:
+- content: {raw text}
+</code></pre>
+<p><strong>Output</strong> — <code>{ text }</code>:</p>
+<pre><code>This theme automates enterprise quoting by integrating Salesforce CPQ with live Oracle ERP pricing,
+cutting the quote cycle from five days to same-day. Discounts above 20% route to VP approval, and
+accepted quotes hand off to order fulfilment within the Deal Desk's 4-hour SLA.
+</code></pre>
+<hr />
+<h2>5. Description FRAMING  (LLM ×1, all Value Streams batched)</h2>
+<p><strong>Inputs:</strong></p>
+<ul>
+<li><code>content</code> → the ticket's raw text.</li>
+<li><code>valueStreams</code> → each approved Value Stream: <code>valueStreamId, valueStreamName, valueStreamDescription, valueProposition</code>.</li>
+</ul>
+<p><strong>Filled prompt (user message):</strong></p>
+<pre><code>Ticket context:
+- content: {raw text}
+
+Approved value streams:
+- valueStreamId: VSR-0042
+  valueStreamName: Configure, Price and Quote
+  valueStreamDescription: Initiate, price and issue enterprise quotes.
+  valueProposition: Faster, accurate quotes that shorten the sales cycle.
+- valueStreamId: VSR-0017
+  valueStreamName: Order Management
+  valueStreamDescription: Capture and fulfil enterprise orders.
+  valueProposition: Reliable, on-time order fulfilment.
+</code></pre>
+<p><strong>Output</strong> — <code>framings[]</code>:</p>
+<pre><code class="language-json">{
+  &quot;framings&quot;: [
+    { &quot;valueStreamId&quot;: &quot;VSR-0042&quot;, &quot;text&quot;: &quot;Within Configure, Price and Quote, this initiative makes enterprise quoting real-time and rule-driven.&quot; },
+    { &quot;valueStreamId&quot;: &quot;VSR-0017&quot;, &quot;text&quot;: &quot;For Order Management, it ensures accepted quotes flow cleanly into fulfilment.&quot; }
+  ]
+}
+</code></pre>
+<p><em>Final per-VS description = its framing paragraph + the shared body, concatenated deterministically.</em></p>
+<hr />
+<h2>6. Business Needs  (LLM ×1 per Value Stream)</h2>
+<p><strong>Inputs:</strong></p>
+<ul>
+<li><code>valueStream</code> → <code>valueStreamId, valueStreamName, valueStreamDescription, valueProposition</code>.</li>
+<li><code>selectedStages</code> → that VS's selected stages (<code>[seq] Stage Name (stageId)</code> + description + criteria).</li>
+<li><code>content</code> → the ticket's raw text.</li>
+</ul>
+<p><strong>System:</strong> write the consolidated Business Needs; every need, dependency, and rule must trace to a
+phrase in the content; one &quot;Value Stage:&quot; block per stage.</p>
+<p><strong>Filled prompt (user message):</strong></p>
+<pre><code>## Approved value stream
+ID: VSR-0042
+Name: Configure, Price and Quote
+Description: Initiate, price and issue enterprise quotes.
+Value proposition: Faster, accurate quotes that shorten the sales cycle.
+
+## Selected stages (write needs for these stages only)
+[1] Opportunity to Quote (VSS-0042-01)
+description: Initiate and price an enterprise quote. entrance: opportunity qualified | exit: quote issued
+[2] Quote to Order (VSS-0042-02)
+description: Convert an accepted quote into an order. entrance: quote accepted | exit: order created
+
+## Ticket context
+- content: {raw text}
+</code></pre>
+<p><strong>Output</strong> — <code>{ text }</code> (one consolidated document):</p>
+<pre><code>Value Stage: Opportunity to Quote
+
+Business Product Feature: Real-Time Quoting
+1. Sales Operations requires real-time quote generation to replace the current 3-5 day manual cycle.
+   Dependency: Salesforce CPQ and the Oracle pricing API.
+   Business Rule: Discounts above 20% require VP approval.
+
+Value Stage: Quote to Order
+
+Business Product Feature: Order Handoff
+1. Accepted quotes must hand off to order fulfilment within the Deal Desk 4-hour SLA.
+</code></pre>
+<hr />
+<h2>7. Capabilities (L3)  (LLM ×1, ALL Value Streams merged)</h2>
+<p><strong>Inputs:</strong></p>
+<ul>
+<li><code>content</code> → the ticket's raw text.</li>
+<li><code>valueStreams</code> → grouped <strong>Value Stream → Stage → governed candidate L3</strong>. Each Value Stream carries
+its name, description, <strong>valueProposition, trigger, assumptions</strong>; each candidate L3 line is
+<code>capabilityId | name - description [tier] (L2: parent)</code>.</li>
+</ul>
+<p><strong>System:</strong> for each stage, select L3 only from THAT stage's printed candidate list; strict stage
+isolation (the same id/name repeats across stages and Value Streams — match the exact printed id only).
+<strong>L2 is derived 1-1 from the selected L3 — no separate L2 call.</strong></p>
+<p><strong>Filled prompt (user message):</strong></p>
+<pre><code>## Ticket context
+- content: {raw text}
+
+## Approved value streams, each with its selected stages and each stage's own candidate L3
+### Value Stream VSR-0042 — Configure, Price and Quote
+description: Initiate, price and issue enterprise quotes.
+value proposition: Faster, accurate quotes that shorten the sales cycle.
+trigger: A qualified enterprise opportunity needs a quote.
+assumptions: Pricing is sourced from the master pricing system.
+
+### Stage VSS-0042-01
+[1] Opportunity to Quote (VSS-0042-01)
+description: Initiate and price an enterprise quote. entrance: opportunity qualified | exit: quote issued
+Candidate L3 capabilities (choose by id; each shows its parent L2):
+- L3-0042-0011 | Real-Time Pricing Engine Integration - live CPQ pricing feed [tier: core] (L2: Pricing and Discounting)
+- L3-0042-0012 | Automated Discount Approval Workflow - routes discounts for approval (L2: Approval and Governance)
+
+### Stage VSS-0042-02
+[2] Quote to Order (VSS-0042-02)
+description: Convert an accepted quote into an order. entrance: quote accepted | exit: order created
+Candidate L3 capabilities (choose by id; each shows its parent L2):
+- L3-0042-0021 | Order Handoff Orchestration - passes the quote to fulfilment (L2: Order Management)
+
+### Value Stream VSR-0017 — Order Management
+description: Capture and fulfil enterprise orders.
+value proposition: Reliable, on-time order fulfilment.
+trigger: An accepted quote becomes an order.
+assumptions: Orders originate from approved quotes.
+
+### Stage VSS-0017-01
+[1] Order Capture (VSS-0017-01)
+description: Receive and validate the enterprise order. entrance: order requested | exit: order validated
+Candidate L3 capabilities (choose by id; each shows its parent L2):
+- L3-0017-0011 | Order Intake Automation - captures order data (L2: Order Management)
+</code></pre>
+<p><strong>Output</strong> — keyed by stageId (re-attributed to each Value Stream afterward):</p>
+<pre><code class="language-json">{
+  &quot;stages&quot;: [
+    { &quot;stageId&quot;: &quot;VSS-0042-01&quot;, &quot;capabilities&quot;: [
+        { &quot;capabilityId&quot;: &quot;L3-0042-0011&quot;, &quot;name&quot;: &quot;Real-Time Pricing Engine Integration&quot;, &quot;reason&quot;: &quot;Live CPQ pricing feed from Oracle ERP.&quot; },
+        { &quot;capabilityId&quot;: &quot;L3-0042-0012&quot;, &quot;name&quot;: &quot;Automated Discount Approval Workflow&quot;, &quot;reason&quot;: &quot;Discounts above 20% require VP approval.&quot; } ] },
+    { &quot;stageId&quot;: &quot;VSS-0042-02&quot;, &quot;capabilities&quot;: [
+        { &quot;capabilityId&quot;: &quot;L3-0042-0021&quot;, &quot;name&quot;: &quot;Order Handoff Orchestration&quot;, &quot;reason&quot;: &quot;Accepted quotes hand off to fulfilment.&quot; } ] },
+    { &quot;stageId&quot;: &quot;VSS-0017-01&quot;, &quot;capabilities&quot;: [
+        { &quot;capabilityId&quot;: &quot;L3-0017-0011&quot;, &quot;name&quot;: &quot;Order Intake Automation&quot;, &quot;reason&quot;: &quot;Captures the order on quote acceptance.&quot; } ] }
+  ]
+}
+</code></pre>
+<p><em>Strict isolation + salvage keep each L3 under its owning stage. <strong>L2</strong> = the unique parent L2s of the
+selected L3, derived per Value Stream.</em></p>
+<hr />
+<h2>Final Theme package (deterministic — no LLM)</h2>
+<p>One package per approved Value Stream:</p>
+<pre><code class="language-json">{
+  &quot;themeTitle&quot;: &quot;Enabling Real-Time Quote Automation -- Configure, Price and Quote&quot;,
+  &quot;themeDescription&quot;: &quot;&lt;framing + body&gt;&quot;,
+  &quot;selectedStages&quot;: [ { &quot;stageId&quot;: &quot;VSS-0042-01&quot;, &quot;stageName&quot;: &quot;Opportunity to Quote&quot;, &quot;reason&quot;: &quot;...&quot; } ],
+  &quot;businessNeeds&quot;: &quot;&lt;consolidated text&gt;&quot;,
+  &quot;l3Capabilities&quot;: [ { &quot;stageId&quot;: &quot;VSS-0042-01&quot;, &quot;capabilities&quot;: [ ... ] } ],
+  &quot;l2Capabilities&quot;: [ { &quot;stageId&quot;: &quot;VSS-0042-01&quot;, &quot;capabilities&quot;: [ { &quot;capabilityId&quot;: &quot;L2-0042-001&quot;, &quot;name&quot;: &quot;Pricing and Discounting&quot; } ] } ]
+}
+</code></pre>
+<hr />
+<h2>Schema conventions (locked)</h2>
+<ul>
+<li><strong>Casing:</strong> all output fields serialize <strong>camelCase</strong> on the wire (<code>valueStreamId</code>, <code>stageName</code>,
+<code>capabilityId</code>). Pydantic models are snake_case internally.</li>
+<li><strong>Names are canonical from the catalogue.</strong> The model <em>echoes</em> <code>stageName</code> / capability <code>name</code> as a
+selection anchor, but on resolve we <strong>overwrite them with the governed catalogue name</strong> — consumers
+trust the resolved value, not the model's echo. (Capability uses <code>name</code>; stage uses <code>stageName</code>.)</li>
+<li><strong><code>confidence</code> is 0–100</strong> (the model emits 0–1; selection scales it).</li>
+<li><strong>Empty <code>reason</code> is valid</strong>, not an error: a salvaged capability/stage (reassigned to its true owner)
+and every derived <strong>L2</strong> carry <code>reason: &quot;&quot;</code> because they weren't reasoned in place.</li>
+<li><strong><code>supportType</code></strong> is the enum <code>direct | implied</code>; <code>sourceTickets</code> is populated only for <code>implied</code>.</li>
+</ul>
+<h2>Inputs sent to each call (Value Stream catalogue fields)</h2>
+<p>The governed Value Stream catalogue has: <code>name, id, description, valueProposition, trigger, category, assumptions, definedTerms, stakeholders</code>. What each call currently passes:</p>
+<table>
+<thead>
+<tr>
+<th>call</th>
+<th>VS fields sent</th>
+<th>not sent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VS Selection (candidate block)</td>
+<td>name, id, description, category, trigger, valueProposition, assumptions</td>
+<td>definedTerms, stakeholders</td>
+</tr>
+<tr>
+<td>Stage Selection</td>
+<td>name, id, description, valueProposition, <strong>trigger, assumptions</strong></td>
+<td>category, definedTerms, stakeholders</td>
+</tr>
+<tr>
+<td>Capabilities (merged)</td>
+<td>name, id, description, <strong>valueProposition, trigger, assumptions</strong></td>
+<td>category, definedTerms, stakeholders</td>
+</tr>
+<tr>
+<td>Business Needs</td>
+<td>name, id, description, valueProposition</td>
+<td>assumptions, trigger, category</td>
+</tr>
+</tbody>
+</table>
+<p>Stage candidates already carry: <code>stageName, description, entrance/exit criteria, valueItems, stakeholders</code>.</p>
+<p><strong>Recent enrichment:</strong> <code>trigger</code> + <code>assumptions</code> were added to <strong>Stage Selection</strong> and <strong>Capabilities</strong>
+(and <code>valueProposition</code> to Capabilities), so the model has the Value Stream's intended scope when
+mapping work → stage → L3. <em>(Re-run <code>eval_stages</code> / <code>eval_l3</code> to confirm the lift before final lock.)</em>
+Business Needs still omits assumptions/trigger — add there too if the enrichment proves out.</p>
+
+</body>
+</html>
