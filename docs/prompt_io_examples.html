@@ -118,7 +118,17 @@ assumptions: Orders originate from approved quotes.
 
 [... 48 more candidate blocks, all 50 governed Value Streams ...]
 </code></pre>
-<p><strong>Output</strong> — <code>recommendations[]</code>:</p>
+<p><strong>LLM output</strong> — <code>ValueStreamSelection</code>. The model emits only the four fields below, per pick:</p>
+<pre><code class="language-json">{
+  &quot;picks&quot;: [
+    { &quot;entityId&quot;: &quot;VSR-0042&quot;, &quot;confidence&quot;: 0.91, &quot;supportType&quot;: &quot;direct&quot;,
+      &quot;reason&quot;: &quot;Ticket explicitly targets CPQ automation for enterprise quoting.&quot; },
+    { &quot;entityId&quot;: &quot;VSR-0017&quot;, &quot;confidence&quot;: 0.74, &quot;supportType&quot;: &quot;implied&quot;,
+      &quot;reason&quot;: &quot;Quote-to-order handoff implied by the fulfilment requirement.&quot; }
+  ]
+}
+</code></pre>
+<p><strong>Resolved output</strong> — <code>recommendations[]</code>, built <strong>deterministically after the LLM call</strong> (no second LLM call):</p>
 <pre><code class="language-json">{
   &quot;recommendations&quot;: [
     { &quot;valueStreamId&quot;: &quot;VSR-0042&quot;, &quot;valueStreamName&quot;: &quot;Configure, Price and Quote&quot;, &quot;confidence&quot;: 91,
@@ -128,6 +138,14 @@ assumptions: Orders originate from approved quotes.
   ]
 }
 </code></pre>
+<p><em>Post-selection enrichment (deterministic):</em></p>
+<ul>
+<li><em><code>entityId</code> → resolved to <code>valueStreamId</code> + the catalogue <code>valueStreamName</code>; <code>confidence</code> is scaled 0–1 → 0–100.</em></li>
+<li><em><strong><code>sourceTickets</code> is back-filled, not emitted by the model</strong></em>: each selected Value Stream is matched
+back to the <strong>historic IDMT tickets that carried it</strong> (the precedent from <code>historicEvidence</code>). It is
+populated <strong>only for <code>implied</code> picks</strong>, capped at <code>max_supporting_tickets</code> (default 2) — so an implied
+pick shows which past ticket(s) justify it, while a direct pick stays empty.</li>
+</ul>
 <p><em>Human approval gate — the SME confirms the Value Stream set before any generation runs.</em></p>
 <hr />
 <h2>3. Stage Selection  (LLM ×1, all Value Streams batched)</h2>

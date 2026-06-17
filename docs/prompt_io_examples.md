@@ -81,7 +81,19 @@ assumptions: Orders originate from approved quotes.
 [... 48 more candidate blocks, all 50 governed Value Streams ...]
 ```
 
-**Output** — `recommendations[]`:
+**LLM output** — `ValueStreamSelection`. The model emits only the four fields below, per pick:
+```json
+{
+  "picks": [
+    { "entityId": "VSR-0042", "confidence": 0.91, "supportType": "direct",
+      "reason": "Ticket explicitly targets CPQ automation for enterprise quoting." },
+    { "entityId": "VSR-0017", "confidence": 0.74, "supportType": "implied",
+      "reason": "Quote-to-order handoff implied by the fulfilment requirement." }
+  ]
+}
+```
+
+**Resolved output** — `recommendations[]`, built **deterministically after the LLM call** (no second LLM call):
 ```json
 {
   "recommendations": [
@@ -92,6 +104,13 @@ assumptions: Orders originate from approved quotes.
   ]
 }
 ```
+*Post-selection enrichment (deterministic):*
+- *`entityId` → resolved to `valueStreamId` + the catalogue `valueStreamName`; `confidence` is scaled 0–1 → 0–100.*
+- ***`sourceTickets` is back-filled, not emitted by the model***: each selected Value Stream is matched
+  back to the **historic IDMT tickets that carried it** (the precedent from `historicEvidence`). It is
+  populated **only for `implied` picks**, capped at `max_supporting_tickets` (default 2) — so an implied
+  pick shows which past ticket(s) justify it, while a direct pick stays empty.
+
 *Human approval gate — the SME confirms the Value Stream set before any generation runs.*
 
 ---
