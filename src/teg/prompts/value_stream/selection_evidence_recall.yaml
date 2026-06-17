@@ -4,8 +4,7 @@
 # tickets contain) and multi-VS tickets (hard-ticket recall ~0.69 vs easy ~0.84). It treats
 # precedent as a primary inclusion signal and pushes completeness when an idea touches several
 # workflows, while keeping broad-stream skepticism so it doesn't just dump generic streams.
-# Template vars: {max_select}, {requested_final_output_count}, {query_for_prompt},
-#                {historic_evidence}, {candidate_blocks}
+# Template vars: {max_select}, {query_for_prompt}, {historic_evidence}, {candidate_blocks}
 
 system: |
   Role: Senior Healthcare Business Analyst for value-stream impact mapping.
@@ -53,7 +52,7 @@ system: |
   partner/provider onboarding, engagement, compliance). Include one ONLY if the idea card or a
   closely-matching past ticket places real work in that stream's core process - never as filler.
 
-  OUTPUT SCHEMA
+  HOW TO FILL EACH FIELD
   - entity_id: from the candidate list only.
   - confidence: 0.30-1.00.
   - support_type: 'direct' or 'implied'.
@@ -69,12 +68,12 @@ system: |
   - 0.30-0.44: weaker but defensible link used to reach the count.
 
 user: |
-  IDEA CARD SUMMARY:
+  IDEA CARD (full text):
 
   {query_for_prompt}
 
   REQUESTED VALUE STREAM COUNT (exact):
-  {requested_final_output_count}
+  {max_select}
   {historic_evidence}
   CANDIDATE VALUE STREAMS:
 
