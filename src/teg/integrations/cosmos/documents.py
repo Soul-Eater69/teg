@@ -1,9 +1,9 @@
 """Adapt an ingestion doc to the org Cosmos container schema, at the write boundary.
 
-The shared doc builders produce the shape used by the eval (needs ``properties.themes`` for GT)
-and the search index (needs PascalCase ``entityType`` for its filters). The Cosmos container has a
-different house style, so we transform only at the point of upsert - the builders, eval and the
-locked-in search are left untouched. The org schema (from the existing ``Items`` containers):
+The shared doc builders produce the shape used by the eval (needs ``properties.themes`` for GT).
+The Cosmos container has a different house style, so we transform only at the point of upsert - the
+builders and eval are left untouched. (The search index uses the same UPPERCASE ``entityType`` =
+``ENGAGEMENTREQUEST`` and matching filter.) The org schema (from the existing ``Items`` containers):
 
 - hierarchical partition key ``/domain`` + ``/entityType``; every doc carries ``domain``,
 - ``domain`` = ``WORKITEM``,

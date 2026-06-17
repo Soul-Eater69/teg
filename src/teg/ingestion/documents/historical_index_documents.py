@@ -16,8 +16,11 @@ from teg.ingestion.extraction.jira_records import ExtractedEngagementRequest
 from teg.ingestion.ground_truth.theme_ground_truth import ThemeGroundTruth
 from teg.value_stream.retrieval import build_retrieval_text
 
-SOURCE = "Jira"
-ENTITY_TYPE = ER_ENTITY_TYPE
+# Retrieval-only doc: entityType/source are UPPERCASE (one consistent value everywhere); the historic
+# lane filters `entityType eq 'ENGAGEMENTREQUEST'`. The doc id still derives from ER_ENTITY_TYPE (the
+# stable PascalCase identity) so it equals the Cosmos ER doc's id and never drifts with the casing.
+SOURCE = "JIRA"
+ENTITY_TYPE = "ENGAGEMENTREQUEST"
 
 
 def build_historical_content(condensed: CondensedTicket) -> str:
@@ -37,7 +40,7 @@ def build_historical_index_document(
     # point-read returns both). theme_gt is accepted for signature stability but no longer stored.
     _ = theme_gt
     return {
-        "id": doc_id(ENTITY_TYPE, er.stable_id),  # uuid (deterministic)
+        "id": doc_id(ER_ENTITY_TYPE, er.stable_id),  # uuid (deterministic) - same id as the Cosmos ER doc
         "key": er.key or None,  # IDMT-#### (the retrieval match / leave-one-out key)
         "sourceId": er.stable_id,  # stable Jira internal id
         "source": SOURCE,
