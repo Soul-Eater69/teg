@@ -151,12 +151,12 @@ def test_base_rate_assigned_from_lookup() -> None:
 
 
 def test_vs_details_enriches_candidate_from_catalogue() -> None:
-    # The lean index gives only id+name; build_candidates fills description/category/trigger/value
+    # The lean index gives only id+name; build_candidates fills description/trigger/value
     # from the governed catalogue (vs_details) by VS id.
     vs_hits = [ValueStreamHit("VS1", "Adjudicate Claim", score=1.4)]
-    details = {"VS1": {"description": "end to end claim", "category": "Claims",
+    details = {"VS1": {"description": "end to end claim",
                        "trigger": "claim filed", "valueProposition": "fast pay"}}
     c = build_candidates(vs_hits, [], vs_details=details)[0]
     assert c.value_stream_description == "end to end claim"
-    assert c.category == "Claims" and c.trigger == "claim filed"
+    assert c.trigger == "claim filed"
     assert c.value_proposition == "fast pay"

@@ -47,7 +47,6 @@ class ValueStreamCandidate:
     value_stream_id: str
     value_stream_name: str
     value_stream_description: str = ""
-    category: str = ""
     trigger: str = ""
     value_proposition: str = ""
     from_semantic: bool = False

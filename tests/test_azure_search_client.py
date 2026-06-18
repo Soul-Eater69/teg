@@ -26,7 +26,7 @@ def test_value_stream_hit_mapping() -> None:
     assert hit.value_stream_id == "VSR01261896"
     assert hit.value_stream_name == "Resolve Privacy Incident"
     assert hit.score == 1.0
-    assert hit.category == "" and hit.trigger == ""  # not in the index anymore
+    assert hit.trigger == ""  # not in the index anymore
 
 
 def test_value_stream_hit_prefers_reranker_score() -> None:

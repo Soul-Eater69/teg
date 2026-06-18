@@ -39,7 +39,7 @@ _VS_SELECT = [
     "key",
     "properties/valueStreamId",
     "properties/valueStreamName",
-]  # lean index: description/category/trigger/value come from the catalogue at selection time
+]  # lean index: description/trigger/value come from the catalogue at selection time
 # key (IDMT-####) is the leave-one-out / display id; searchText is the hit snippet.
 _HISTORICAL_SELECT = ["key", "sourceId", "searchText"]  # VS labels come from Cosmos by key, not the index
 
@@ -107,7 +107,7 @@ def _props(doc) -> dict:
 
 def _to_value_stream_hit(doc) -> ValueStreamHit:
     props = _props(doc)
-    # Lean index: only id + name + score. description/category/trigger/value are enriched from
+    # Lean index: only id + name + score. description/trigger/value are enriched from
     # the governed catalogue by VS id during candidate building.
     return ValueStreamHit(
         value_stream_id=str(props.get("valueStreamId") or ""),

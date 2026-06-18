@@ -33,10 +33,6 @@ class StageCatalogue:
         vs = self._by_value_stream.get(value_stream_id)
         return vs.value_proposition if vs else ""
 
-    def assumptions_for(self, value_stream_id: str) -> str:
-        vs = self._by_value_stream.get(value_stream_id)
-        return vs.assumptions if vs else ""
-
     def trigger_for(self, value_stream_id: str) -> str:
         vs = self._by_value_stream.get(value_stream_id)
         return vs.trigger if vs else ""

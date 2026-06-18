@@ -49,7 +49,9 @@ async def _condensed_context(ticket: str | None, summary: str | None) -> tuple[C
         t0 = perf_counter()
         c = (await build_condense_service().condense(CondenseRequest(ticket_id=ticket))).condensed
         print(f"# condensed in {perf_counter() - t0:.2f}s")
-        return CondensedContext(summary_fields=c.summary_fields, generation_signals=c.generation_signals), c.ticket_title
+        # Generation reads RAW text ("raw to decide"): feed the consolidated raw text, not the summary.
+        sf = SummaryFields(generated_summary=c.raw_text, business_problem="", business_capability="")
+        return CondensedContext(summary_fields=sf, generation_signals=c.generation_signals), c.ticket_title
     sf = SummaryFields(generated_summary=summary or "", business_problem="", business_capability="")
     return CondensedContext(summary_fields=sf, generation_signals=GenerationSignals()), "SMOKE"
 

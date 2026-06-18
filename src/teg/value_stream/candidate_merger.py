@@ -66,7 +66,7 @@ def build_candidates(
     for rank, hit in enumerate(value_stream_hits, start=1):
         if not hit.value_stream_id:
             continue
-        # Selection-prompt context (description/category/trigger/value) comes from the governed
+        # Selection-prompt context (description/trigger/value) comes from the governed
         # catalogue when provided (the lean index carries only id+name); else from the hit.
         d = details.get(hit.value_stream_id, {})
         candidate = by_id.setdefault(
@@ -80,7 +80,6 @@ def build_candidates(
         candidate.from_semantic = True
         candidate.semantic_score = hit.score
         candidate.semantic_rank = rank
-        candidate.category = d.get("category") or hit.category
         candidate.trigger = d.get("trigger") or hit.trigger
         candidate.value_proposition = d.get("valueProposition") or hit.value_proposition
 

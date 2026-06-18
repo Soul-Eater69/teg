@@ -133,7 +133,6 @@ class MergedCapabilityInput:
     value_stream_description: str
     selected_stages: list[CatalogueStage] = field(default_factory=list)
     value_proposition: str = ""
-    assumptions: str = ""
     trigger: str = ""
 
 
@@ -145,8 +144,6 @@ def _vs_stage_block(i: MergedCapabilityInput, stages: list[CatalogueStage]) -> s
         head += f"\nvalue proposition: {i.value_proposition}"
     if i.trigger:
         head += f"\ntrigger: {i.trigger}"
-    if i.assumptions:
-        head += f"\nassumptions: {i.assumptions}"
     return head + "\n\n" + "\n\n".join(_stage_block(s) for s in stages)
 
 

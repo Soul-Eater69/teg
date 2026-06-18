@@ -21,8 +21,8 @@ system: |
 
   Each paragraph must be distinct and focused on its own value stream; do not describe the
   whole idea, and do not repeat availability lists or feature bullets (those live in the shared
-  body). Business-facing, Jira-style prose, concrete and grounded - no generic filler, no "TBD",
-  no invention, no ticket/group/epic ids.
+  body). Business-facing, Jira-style prose, concrete and grounded - no generic filler, no
+  placeholders ("(None)", "N/A", "TBD"), no invention, no ticket/group/epic ids.
 
   Return one entry per value stream: its valueStreamId and the paragraph text.
 

@@ -52,7 +52,6 @@ class ThemeService:
                 value_stream_description=vs_details[vs.value_stream_id][0],
                 value_proposition=vs_details[vs.value_stream_id][1],
                 stages=self._catalogue.stages_for(vs.value_stream_id),
-                assumptions=self._catalogue.assumptions_for(vs.value_stream_id),
                 trigger=self._catalogue.trigger_for(vs.value_stream_id),
             )
             for vs in approved

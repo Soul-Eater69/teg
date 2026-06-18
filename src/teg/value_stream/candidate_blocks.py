@@ -24,8 +24,6 @@ def _block(c: ValueStreamCandidate, *, show_scores: bool = True) -> str:
         lines.append(f"lane: {c.lane}")
     if c.value_stream_description:
         lines.append(f"description: {c.value_stream_description}")
-    if c.category:
-        lines.append(f"category: {c.category}")
     if c.trigger:
         lines.append(f"trigger: {c.trigger}")
     if c.value_proposition:

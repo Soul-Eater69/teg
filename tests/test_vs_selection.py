@@ -51,14 +51,12 @@ def test_render_includes_rich_vs_context() -> None:
         value_stream_id="VS1",
         value_stream_name="Acquire Asset",
         value_stream_description="request to delivery",
-        category="Finance",
         trigger="Asset Requester",
         value_proposition="faster asset turnaround",
         from_semantic=True,
         lane="semantic_only",
     )
     block = render_candidate_blocks([candidate])
-    assert "category: Finance" in block
     assert "trigger: Asset Requester" in block
     assert "value: faster asset turnaround" in block
     assert "stakeholders" not in block  # stakeholders deliberately not fed to selection
@@ -67,7 +65,7 @@ def test_render_includes_rich_vs_context() -> None:
 def test_render_omits_rich_context_when_absent() -> None:
     # A historic-only candidate has no catalogue details - those lines are omitted.
     block = render_candidate_blocks([_cand("VS3", "historic_only", name="Issue Payment")])
-    assert "category:" not in block and "trigger:" not in block and "value:" not in block
+    assert "trigger:" not in block and "value:" not in block
 
 
 def test_render_semantic_only_omits_historical() -> None:
