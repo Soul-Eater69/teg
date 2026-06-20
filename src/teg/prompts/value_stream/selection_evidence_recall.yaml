@@ -34,11 +34,14 @@ system: |
 
   TASK
   Return exactly the requested number of value streams from the candidate list - the ones this idea
-  materially impacts. Build the list from, in priority order:
+  materially impacts. This is a hard output-size requirement, not a guideline: the `picks` array
+  MUST contain exactly REQUESTED_VALUE_STREAM_COUNT unique entries. Do not return fewer. Do not
+  return more. Build the list from, in priority order:
     1. Streams whose end-to-end process this idea's work clearly runs through, feeds, or changes.
     2. Streams a closely-matching past ticket was tagged with (strong precedent), unless clearly
        inapplicable here.
     3. Upstream/downstream streams the idea's work must pass through to deliver its outcome.
+    4. Weaker but still defensible operational or precedent links needed to reach the exact count.
   Prefer a stream supported by reasoning OR precedent over an arbitrary one. When unsure between a
   precedent-backed stream and a generic one, take the precedent-backed stream.
 
@@ -51,6 +54,14 @@ system: |
   A few streams sound relevant to almost anything (strategy, operations, analytics, governance,
   partner/provider onboarding, engagement, compliance). Include one ONLY if the content or a
   closely-matching past ticket places real work in that stream's core process - never as filler.
+
+  EXACT COUNT DISCIPLINE
+  - Your answer is invalid unless the number of picks equals REQUESTED_VALUE_STREAM_COUNT.
+  - Before finalizing, count your picks. If there are too few, add the best remaining candidate
+    with a weaker but defensible implied link; use confidence 0.30-0.44 if needed.
+  - If there are too many, remove the weakest or most generic picks until the count is exact.
+  - Every pick must use a unique entity_id printed in CANDIDATE VALUE STREAMS.
+  - Never explain that fewer streams fit. The requested count is the final output contract.
 
   SUPPORT TYPE & REASON
   - support_type 'direct' = the content explicitly names the value-stream activity, deliverable,
@@ -71,6 +82,7 @@ user: |
 
   REQUESTED VALUE STREAM COUNT (exact):
   {max_select}
+  Your `picks` array must contain exactly {max_select} unique candidate value streams.
   {historic_evidence}
   CANDIDATE VALUE STREAMS:
 
