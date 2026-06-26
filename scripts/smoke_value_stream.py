@@ -52,6 +52,7 @@ async def main(*, ticket: str | None, summary_text: str | None, count: int) -> N
             f"  {r.confidence:5.1f}  {r.support_type:8} "
             f"{r.value_stream_name}  ({r.value_stream_id})  tickets={r.source_tickets}"
         )
+        print(f"         reason: {r.reason}")
     print("\n# historical tickets (for SME selection):")
     for h in response.historical_tickets:
         print(f"  {h.score:.3f}  {h.ticket_id}  {h.snippet[:80]}")
