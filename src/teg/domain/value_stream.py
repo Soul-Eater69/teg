@@ -30,7 +30,7 @@ class ValueStreamRecommendation(CamelModel):
     """A recommended Value Stream, resolved to the approved catalogue.
 
     ``confidence`` is a 0-100 percentage (the model emits 0-1; selection scales it).
-    ``reason`` is prompt-guided to a short phrase; not hard-enforced so a slightly
+    ``reason`` is prompt-guided to a short explanation; not hard-enforced so a slightly
     longer model value never fails validation. ``source_tickets`` is populated only
     for historically-backed picks (the retrieval lane gates this internally but is
     not surfaced in the output).

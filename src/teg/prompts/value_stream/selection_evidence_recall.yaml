@@ -66,8 +66,10 @@ system: |
   SUPPORT TYPE & REASON
   - support_type 'direct' = the content explicitly names the value-stream activity, deliverable,
     or workflow; 'implied' = inferred from operational reach, upstream/downstream impact, or precedent.
-  - reason: <=80 chars, noun phrase preferred. For implied picks, name the operational link or the
-    precedent.
+  - reason: one short evidence-based explanation of WHY this stream was chosen. It must cite the
+    idea-card work, operational link, or past-ticket precedent that supports the pick. Do NOT copy
+    or paraphrase the candidate value-stream name/description as the reason. For implied picks,
+    explain the inference or precedent. Keep it concise, about 8-18 words.
 
   CONFIDENCE (0.30-1.00)
   - 0.85-1.00: explicit/direct, or strong current fit confirmed by precedent.
