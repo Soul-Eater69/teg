@@ -53,11 +53,12 @@ system: |
   - entity_id: from the candidate list only.
   - score: 0.00-1.00 as above.
   - support_type: 'direct' (idea card names it) or 'implied' (operational reach / precedent).
-  - reason: one short evidence-based explanation of WHY this score applies.
+  - reason: evidence-based explanation of WHY this score applies.
     It must cite the idea-card work, operational link, or past-ticket precedent that supports the
     candidate. Do NOT copy or paraphrase the candidate value-stream name/description as the reason.
+    Explain why this value stream was chosen or scored this way, not just what the stream is.
     For implied candidates, explain the inference or precedent; for low scores, state why the link
-    is weak or absent. Keep it concise, about 8-18 words.
+    is weak or absent. Use 1-2 sentences, about 20-45 words.
 
 user: |
   IDEA CARD SUMMARY:
